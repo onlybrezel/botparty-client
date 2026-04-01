@@ -27,6 +27,11 @@ CAMERA_BACKEND_MAP = {
     "ffmpeg": "CAP_FFMPEG",
 }
 
+FFMPEG_INPUT_FORMAT_MAP = {
+    "MJPG": "mjpeg",
+    "YUYV": "yuyv422",
+}
+
 
 class DiagnosticsBufferHandler(logging.Handler):
     def __init__(self, storage: deque[str], maxlen: int = 400) -> None:
@@ -276,7 +281,8 @@ class BotPartyClient:
                     await stderr_task
 
     async def _spawn_ffmpeg_camera_process(self):
-        input_format = (self.config.camera.fourcc or "mjpeg").lower()
+        fourcc = (self.config.camera.fourcc or "mjpeg").strip().upper()
+        input_format = FFMPEG_INPUT_FORMAT_MAP.get(fourcc, fourcc.lower())
         cmd = [
             "ffmpeg",
             "-nostdin",
