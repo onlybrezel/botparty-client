@@ -36,6 +36,7 @@ class BotPartyClient:
         self._room: Optional[rtc.Room] = None
         self._livekit_token: Optional[str] = None
         self._robot_id: Optional[str] = None
+        self._target_bitrate_kbps: Optional[int] = None
 
         # Task references for supervisor watchdog
         self._camera_task: Optional[asyncio.Task] = None
@@ -103,10 +104,26 @@ class BotPartyClient:
             track = rtc.LocalVideoTrack.create_video_track("camera", self._camera_source)
 
             if self._room:
-                await self._room.local_participant.publish_track(
-                    track,
-                    rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA),
-                )
+                publish_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
+
+                if self._target_bitrate_kbps:
+                    try:
+                        # Best effort: some SDK versions expose video_encoding on publish options.
+                        publish_options.video_encoding = rtc.VideoEncoding(
+                            max_bitrate=self._target_bitrate_kbps * 1000,
+                            max_framerate=self.config.camera.fps,
+                        )
+                        logger.info(
+                            "🎚️ Applying target bitrate: "
+                            f"{self._target_bitrate_kbps} kbps"
+                        )
+                    except Exception:
+                        logger.warning(
+                            "Current LiveKit Python SDK does not expose publish bitrate controls; "
+                            "continuing with default encoder settings"
+                        )
+
+                await self._room.local_participant.publish_track(track, publish_options)
                 logger.info("📹 Camera track published")
 
             await self._camera_loop(self._camera_source)
@@ -330,6 +347,15 @@ class BotPartyClient:
                         logger.error(f"Claim failed ({resp.status}): {text}")
                         return None, None
                     data = await resp.json()
+
+                    stream = data.get("stream") if isinstance(data, dict) else None
+                    target_kbps = None
+                    if isinstance(stream, dict):
+                        value = stream.get("targetBitrateKbps")
+                        if isinstance(value, (int, float)) and 150 <= value <= 8000:
+                            target_kbps = int(value)
+
+                    self._target_bitrate_kbps = target_kbps
                     return data.get("token"), data.get("robotId")
         except Exception as e:
             logger.error(f"Authentication error: {e}")
