@@ -141,6 +141,7 @@ class BotPartyClient:
         )
 
         interval = 1.0 / self.config.camera.fps
+        next_frame_at = time.monotonic()
         consecutive_failures = 0
 
         while self._running:
@@ -164,7 +165,16 @@ class BotPartyClient:
             )
             source.capture_frame(lk_frame)
             self.stats.camera_frames += 1
-            await asyncio.sleep(interval)
+
+            # Keep a stable cadence: schedule frames on monotonic time instead of
+            # sleeping a fixed interval after processing (which reduces real FPS).
+            next_frame_at += interval
+            sleep_for = next_frame_at - time.monotonic()
+            if sleep_for > 0:
+                await asyncio.sleep(sleep_for)
+            else:
+                # If capture/encoding took too long, realign to now to avoid drift.
+                next_frame_at = time.monotonic()
 
         cap.release()
         logger.info("📷 Camera released")
@@ -180,7 +190,7 @@ class BotPartyClient:
                         headers={"Content-Type": "application/json"},
                         timeout=aiohttp.ClientTimeout(total=5),
                     ) as resp:
-                        if resp.status == 200:
+                        if resp.status in (200, 201):
                             self.stats.last_heartbeat_at = time.time()
             except Exception as e:
                 logger.debug(f"Heartbeat error (non-fatal): {e}")
