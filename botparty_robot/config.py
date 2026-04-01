@@ -14,6 +14,10 @@ class CameraConfig(BaseModel):
     height: int = 720
     fps: int = 30
     device: str = "/dev/video0"
+    backend: str = "v4l2"
+    fourcc: str | None = "MJPG"
+    buffer_size: int = Field(default=1, ge=1, le=8)
+    warmup_frames: int = Field(default=4, ge=0, le=30)
 
 
 class ControlsConfig(BaseModel):

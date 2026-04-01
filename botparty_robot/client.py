@@ -1,6 +1,7 @@
 """Main BotParty robot client – connects to LiveKit and handles commands."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import time
@@ -15,6 +16,15 @@ from .config import RobotConfig
 from .handlers import DefaultHandler
 
 logger = logging.getLogger("botparty.client")
+
+
+CAMERA_BACKEND_MAP = {
+    "auto": None,
+    "any": None,
+    "v4l2": "CAP_V4L2",
+    "gstreamer": "CAP_GSTREAMER",
+    "ffmpeg": "CAP_FFMPEG",
+}
 
 
 class DiagnosticsBufferHandler(logging.Handler):
@@ -124,10 +134,10 @@ class BotPartyClient:
 
     async def _camera_pipeline(self) -> None:
         """Create video source + track, publish to room, start capture loop."""
+        cap = None
         try:
-            self._camera_source = rtc.VideoSource(
-                self.config.camera.width, self.config.camera.height
-            )
+            cap, frame_width, frame_height, camera_fps = self._open_camera()
+            self._camera_source = rtc.VideoSource(frame_width, frame_height)
             track = rtc.LocalVideoTrack.create_video_track("camera", self._camera_source)
 
             if self._room:
@@ -138,7 +148,7 @@ class BotPartyClient:
                         # Best effort: some SDK versions expose video_encoding on publish options.
                         publish_options.video_encoding = rtc.VideoEncoding(
                             max_bitrate=self._target_bitrate_kbps * 1000,
-                            max_framerate=self.config.camera.fps,
+                            max_framerate=int(round(camera_fps)),
                         )
                         logger.info(
                             "🎚️ Applying target bitrate: "
@@ -153,40 +163,43 @@ class BotPartyClient:
                 await self._room.local_participant.publish_track(track, publish_options)
                 logger.info("📹 Camera track published")
 
-            await self._camera_loop(self._camera_source)
+            await self._camera_loop(
+                cap,
+                self._camera_source,
+                frame_width,
+                frame_height,
+                camera_fps,
+            )
 
         except asyncio.CancelledError:
             pass
         except Exception as e:
             logger.error(f"Camera pipeline error: {e}")
+        finally:
+            if cap is not None:
+                cap.release()
+                logger.info("📷 Camera released")
 
-    async def _camera_loop(self, source: rtc.VideoSource) -> None:
+    async def _camera_loop(
+        self,
+        cap,
+        source: rtc.VideoSource,
+        frame_width: int,
+        frame_height: int,
+        camera_fps: float,
+    ) -> None:
         """Capture frames from camera and send to LiveKit."""
         try:
             import cv2
-            import numpy as np
         except ImportError:
-            logger.error("OpenCV/numpy not installed: pip install opencv-python-headless numpy")
+            logger.error("OpenCV not installed: pip install opencv-python-headless")
             return
 
-        device = self.config.camera.device
-        cap = cv2.VideoCapture(0 if device == "/dev/video0" else device)
-        cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera.width)
-        cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera.height)
-        cap.set(cv2.CAP_PROP_FPS, self.config.camera.fps)
-
-        if not cap.isOpened():
-            logger.error(f"Could not open camera: {device}")
-            return
-
-        logger.info(
-            f"📷 Camera opened: {device} "
-            f"({self.config.camera.width}x{self.config.camera.height}@{self.config.camera.fps}fps)"
-        )
-
-        interval = 1.0 / self.config.camera.fps
+        interval = 1.0 / camera_fps if camera_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
         next_frame_at = time.monotonic()
         consecutive_failures = 0
+        frames_since_report = 0
+        report_started_at = time.monotonic()
 
         while self._running:
             ret, frame = cap.read()
@@ -202,13 +215,27 @@ class BotPartyClient:
             consecutive_failures = 0
             frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
             lk_frame = rtc.VideoFrame(
-                self.config.camera.width,
-                self.config.camera.height,
+                frame_width,
+                frame_height,
                 rtc.VideoBufferType.RGBA,
                 frame_rgba.tobytes(),
             )
             source.capture_frame(lk_frame)
             self.stats.camera_frames += 1
+            frames_since_report += 1
+
+            now = time.monotonic()
+            elapsed = now - report_started_at
+            if elapsed >= 10:
+                logger.info(
+                    "📊 Camera runtime: sent_fps=%.1f target_fps=%.1f resolution=%dx%d",
+                    frames_since_report / elapsed,
+                    camera_fps,
+                    frame_width,
+                    frame_height,
+                )
+                frames_since_report = 0
+                report_started_at = now
 
             # Keep a stable cadence: schedule frames on monotonic time instead of
             # sleeping a fixed interval after processing (which reduces real FPS).
@@ -220,8 +247,71 @@ class BotPartyClient:
                 # If capture/encoding took too long, realign to now to avoid drift.
                 next_frame_at = time.monotonic()
 
-        cap.release()
-        logger.info("📷 Camera released")
+    def _open_camera(self):
+        import cv2
+
+        device = 0 if self.config.camera.device == "/dev/video0" else self.config.camera.device
+        backend_flag = self._resolve_camera_backend(cv2)
+
+        cap = (
+            cv2.VideoCapture(device, backend_flag)
+            if backend_flag is not None
+            else cv2.VideoCapture(device)
+        )
+        if not cap.isOpened():
+            raise RuntimeError(f"Could not open camera: {self.config.camera.device}")
+
+        self._configure_camera_capture(cap, cv2)
+
+        for _ in range(self.config.camera.warmup_frames):
+            with contextlib.suppress(Exception):
+                cap.read()
+
+        frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or self.config.camera.width
+        frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or self.config.camera.height
+        camera_fps = cap.get(cv2.CAP_PROP_FPS)
+        if not camera_fps or camera_fps < 1:
+            camera_fps = float(self.config.camera.fps)
+
+        backend_name = "default"
+        with contextlib.suppress(Exception):
+            backend_name = cap.getBackendName() or backend_name
+
+        logger.info(
+            "📷 Camera opened: device=%s backend=%s resolution=%dx%d fps=%.1f requested=%dx%d@%dfps",
+            self.config.camera.device,
+            backend_name,
+            frame_width,
+            frame_height,
+            camera_fps,
+            self.config.camera.width,
+            self.config.camera.height,
+            self.config.camera.fps,
+        )
+        return cap, frame_width, frame_height, camera_fps
+
+    def _configure_camera_capture(self, cap, cv2) -> None:
+        if self.config.camera.fourcc:
+            fourcc = self.config.camera.fourcc.strip().upper()
+            if len(fourcc) == 4:
+                with contextlib.suppress(Exception):
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*fourcc))
+
+        with contextlib.suppress(Exception):
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, self.config.camera.buffer_size)
+        with contextlib.suppress(Exception):
+            cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.camera.width)
+        with contextlib.suppress(Exception):
+            cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera.height)
+        with contextlib.suppress(Exception):
+            cap.set(cv2.CAP_PROP_FPS, self.config.camera.fps)
+
+    def _resolve_camera_backend(self, cv2):
+        backend = self.config.camera.backend.strip().lower()
+        backend_attr = CAMERA_BACKEND_MAP.get(backend)
+        if backend_attr is None:
+            return None
+        return getattr(cv2, backend_attr, None)
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic API heartbeat so the server knows we're alive."""
@@ -500,4 +590,3 @@ class BotPartyClient:
             f"👋 Goodbye! Stats: commands={self.stats.commands_received}, "
             f"frames={self.stats.camera_frames}, reconnects={self.stats.reconnect_attempts}"
         )
-

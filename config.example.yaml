@@ -8,6 +8,10 @@ camera:
   height: 720
   fps: 30
   device: "/dev/video0"
+  backend: "v4l2"
+  fourcc: "MJPG"
+  buffer_size: 1
+  warmup_frames: 4
 
 controls:
   gpio_enabled: false
