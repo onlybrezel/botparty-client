@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import re
 import time
 from dataclasses import dataclass, field
 from collections import deque
@@ -250,7 +251,7 @@ class BotPartyClient:
     def _open_camera(self):
         import cv2
 
-        device = 0 if self.config.camera.device == "/dev/video0" else self.config.camera.device
+        device = self._resolve_camera_device()
         backend_flag = self._resolve_camera_backend(cv2)
 
         cap = (
@@ -289,6 +290,13 @@ class BotPartyClient:
             self.config.camera.fps,
         )
         return cap, frame_width, frame_height, camera_fps
+
+    def _resolve_camera_device(self):
+        device = self.config.camera.device.strip()
+        match = re.fullmatch(r"/dev/video(\d+)", device)
+        if match:
+            return int(match.group(1))
+        return device
 
     def _configure_camera_capture(self, cap, cv2) -> None:
         if self.config.camera.fourcc:
