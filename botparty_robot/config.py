@@ -14,6 +14,7 @@ class CameraConfig(BaseModel):
     height: int = 720
     fps: int = 30
     device: str = "/dev/video0"
+    pipeline: str = "opencv"
     backend: str = "v4l2"
     fourcc: str | None = "MJPG"
     buffer_size: int = Field(default=1, ge=1, le=8)

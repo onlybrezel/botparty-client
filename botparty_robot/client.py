@@ -137,7 +137,12 @@ class BotPartyClient:
         """Create video source + track, publish to room, start capture loop."""
         cap = None
         try:
-            cap, frame_width, frame_height, camera_fps = self._open_camera()
+            if self._camera_pipeline_mode() == "ffmpeg":
+                frame_width = self.config.camera.width
+                frame_height = self.config.camera.height
+                camera_fps = float(self.config.camera.fps)
+            else:
+                cap, frame_width, frame_height, camera_fps = self._open_camera()
             self._camera_source = rtc.VideoSource(frame_width, frame_height)
             track = rtc.LocalVideoTrack.create_video_track("camera", self._camera_source)
 
@@ -164,13 +169,21 @@ class BotPartyClient:
                 await self._room.local_participant.publish_track(track, publish_options)
                 logger.info("📹 Camera track published")
 
-            await self._camera_loop(
-                cap,
-                self._camera_source,
-                frame_width,
-                frame_height,
-                camera_fps,
-            )
+            if self._camera_pipeline_mode() == "ffmpeg":
+                await self._camera_loop_ffmpeg(
+                    self._camera_source,
+                    frame_width,
+                    frame_height,
+                    camera_fps,
+                )
+            else:
+                await self._camera_loop(
+                    cap,
+                    self._camera_source,
+                    frame_width,
+                    frame_height,
+                    camera_fps,
+                )
 
         except asyncio.CancelledError:
             pass
@@ -180,6 +193,132 @@ class BotPartyClient:
             if cap is not None:
                 cap.release()
                 logger.info("📷 Camera released")
+
+    async def _camera_loop_ffmpeg(
+        self,
+        source: rtc.VideoSource,
+        frame_width: int,
+        frame_height: int,
+        camera_fps: float,
+    ) -> None:
+        frame_bytes = frame_width * frame_height * 4
+        proc = None
+        frames_since_report = 0
+        report_started_at = time.monotonic()
+        stderr_task = None
+
+        try:
+            proc = await self._spawn_ffmpeg_camera_process()
+            logger.info(
+                "📷 Camera opened via ffmpeg: device=%s resolution=%dx%d fps=%.1f format=%s",
+                self.config.camera.device,
+                frame_width,
+                frame_height,
+                camera_fps,
+                (self.config.camera.fourcc or "auto").upper(),
+            )
+
+            if proc.stderr is not None:
+                stderr_task = asyncio.create_task(self._drain_ffmpeg_stderr(proc.stderr))
+
+            while self._running:
+                if proc.stdout is None:
+                    raise RuntimeError("ffmpeg camera process has no stdout pipe")
+
+                frame = await proc.stdout.readexactly(frame_bytes)
+                lk_frame = rtc.VideoFrame(
+                    frame_width,
+                    frame_height,
+                    rtc.VideoBufferType.RGBA,
+                    frame,
+                )
+                source.capture_frame(lk_frame)
+                self.stats.camera_frames += 1
+                frames_since_report += 1
+
+                now = time.monotonic()
+                elapsed = now - report_started_at
+                if elapsed >= 10:
+                    logger.info(
+                        "📊 Camera runtime: sent_fps=%.1f target_fps=%.1f resolution=%dx%d",
+                        frames_since_report / elapsed,
+                        camera_fps,
+                        frame_width,
+                        frame_height,
+                    )
+                    frames_since_report = 0
+                    report_started_at = now
+
+            if proc.returncode not in (None, 0):
+                raise RuntimeError(f"ffmpeg camera process exited with code {proc.returncode}")
+
+        except asyncio.IncompleteReadError as exc:
+            raise RuntimeError(
+                f"ffmpeg camera stream ended early ({len(exc.partial)} of {frame_bytes} bytes)"
+            ) from exc
+        except FileNotFoundError as exc:
+            raise RuntimeError(
+                "ffmpeg is not installed; install it or switch camera.pipeline back to 'opencv'"
+            ) from exc
+        finally:
+            if proc is not None:
+                with contextlib.suppress(ProcessLookupError):
+                    proc.terminate()
+                with contextlib.suppress(Exception):
+                    await asyncio.wait_for(proc.wait(), timeout=5)
+                if proc.returncode is None:
+                    with contextlib.suppress(ProcessLookupError):
+                        proc.kill()
+                        await proc.wait()
+            if stderr_task is not None:
+                stderr_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await stderr_task
+
+    async def _spawn_ffmpeg_camera_process(self):
+        input_format = (self.config.camera.fourcc or "mjpeg").lower()
+        cmd = [
+            "ffmpeg",
+            "-nostdin",
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-f",
+            "v4l2",
+            "-thread_queue_size",
+            "64",
+            "-input_format",
+            input_format,
+            "-video_size",
+            f"{self.config.camera.width}x{self.config.camera.height}",
+            "-framerate",
+            str(self.config.camera.fps),
+            "-i",
+            self.config.camera.device,
+            "-pix_fmt",
+            "rgba",
+            "-f",
+            "rawvideo",
+            "pipe:1",
+        ]
+        return await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+    async def _drain_ffmpeg_stderr(self, stderr) -> None:
+        while True:
+            line = await stderr.readline()
+            if not line:
+                return
+            message = line.decode("utf-8", errors="replace").strip()
+            if message:
+                logger.warning("ffmpeg: %s", message)
 
     async def _camera_loop(
         self,
@@ -320,6 +459,9 @@ class BotPartyClient:
         if backend_attr is None:
             return None
         return getattr(cv2, backend_attr, None)
+
+    def _camera_pipeline_mode(self) -> str:
+        return self.config.camera.pipeline.strip().lower()
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic API heartbeat so the server knows we're alive."""
