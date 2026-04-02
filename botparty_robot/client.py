@@ -564,6 +564,24 @@ class BotPartyClient:
                     ) as resp:
                         if resp.status in (200, 201):
                             data = await resp.json()
+                            stream = data.get("stream") if isinstance(data, dict) else None
+                            if isinstance(stream, dict):
+                                value = stream.get("targetBitrateKbps")
+                                next_bitrate: Optional[int] = None
+                                if isinstance(value, (int, float)) and 150 <= value <= 8000:
+                                    next_bitrate = int(value)
+                                if next_bitrate != self._target_bitrate_kbps:
+                                    self._target_bitrate_kbps = next_bitrate
+                                    logger.info(
+                                        "Remote stream policy updated: targetBitrateKbps=%s",
+                                        self._target_bitrate_kbps,
+                                    )
+                                    if self._camera_task and not self._camera_task.done():
+                                        self._camera_task.cancel()
+                                        with contextlib.suppress(asyncio.CancelledError):
+                                            await self._camera_task
+                                        self._camera_task = asyncio.create_task(self._camera_pipeline())
+
                             actions = data.get("actions", []) if isinstance(data, dict) else []
                             for action in actions:
                                 if isinstance(action, dict):
@@ -581,7 +599,7 @@ class BotPartyClient:
                 self._camera_task.cancel()
                 try:
                     await self._camera_task
-                except Exception:
+                except asyncio.CancelledError:
                     pass
             self.video_profile = create_video_profile(self.config)
             self._camera_task = asyncio.create_task(self._camera_pipeline())
@@ -601,7 +619,7 @@ class BotPartyClient:
             logger.info("Remote action: restart_audio")
             if self._audio_task and not self._audio_task.done():
                 self._audio_task.cancel()
-                with contextlib.suppress(Exception):
+                with contextlib.suppress(asyncio.CancelledError):
                     await self._audio_task
             if self.video_profile.has_audio():
                 self._audio_task = asyncio.create_task(
