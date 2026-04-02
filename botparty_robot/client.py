@@ -827,10 +827,24 @@ class BotPartyClient:
                     json={"claimToken": self.config.server.claim_token},
                     headers={"Content-Type": "application/json"},
                     timeout=aiohttp.ClientTimeout(total=10),
+                    allow_redirects=False,
                 ) as resp:
+                    if resp.status in (301, 302, 307, 308):
+                        location = resp.headers.get("Location", "")
+                        logger.error(
+                            f"Server redirected ({resp.status}) to: {location}. "
+                            "Your api_url is likely http:// but the server requires https://. "
+                            "Update api_url in your config.yaml."
+                        )
+                        return None, None
                     if resp.status not in (200, 201):
                         text = await resp.text()
                         logger.error(f"Claim failed ({resp.status}): {text}")
+                        if resp.status == 404 and self.config.server.api_url.startswith("http://"):
+                            logger.error(
+                                "Hint: your api_url uses http:// - "
+                                "try https:// if your server has SSL enabled."
+                            )
                         return None, None
                     data = await resp.json()
 
