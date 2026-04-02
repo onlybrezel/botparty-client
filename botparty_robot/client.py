@@ -598,9 +598,9 @@ class BotPartyClient:
             if self._camera_task and not self._camera_task.done():
                 self._camera_task.cancel()
                 try:
-                    await self._camera_task
-                except asyncio.CancelledError:
-                    pass
+                    await asyncio.wait_for(self._camera_task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    logger.warning("Camera task shutdown timeout - forcing restart anyway")
             self.video_profile = create_video_profile(self.config)
             self._camera_task = asyncio.create_task(self._camera_pipeline())
             return
@@ -619,8 +619,10 @@ class BotPartyClient:
             logger.info("Remote action: restart_audio")
             if self._audio_task and not self._audio_task.done():
                 self._audio_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await self._audio_task
+                try:
+                    await asyncio.wait_for(self._audio_task, timeout=2.0)
+                except (asyncio.CancelledError, asyncio.TimeoutError):
+                    logger.warning("Audio task shutdown timeout - forcing restart anyway")
             if self.video_profile.has_audio():
                 self._audio_task = asyncio.create_task(
                     self.video_profile.start_audio(rtc, self._room, lambda: self._running)
