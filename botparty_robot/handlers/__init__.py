@@ -1,11 +1,16 @@
-"""Robot command handlers."""
+"""Backward-compatible handler exports.
+
+New BotParty robot integrations should live in ``botparty_robot.hardware``.
+"""
 
 from __future__ import annotations
 
 import logging
 from abc import ABC, abstractmethod
+from typing import Any
 
-from ..config import ControlsConfig, SafetyConfig
+from ..config import ControlsConfig, RobotConfig, SafetyConfig
+from ..hardware import create_hardware
 
 logger = logging.getLogger("botparty.handler")
 
@@ -37,52 +42,27 @@ class DefaultHandler(BaseHandler):
               action_1, action_2, action_3
     """
 
-    def on_command(self, command: str, value: object = None) -> None:
-        logger.info(f"🎮 Command: {command} = {value}")
+    def __init__(self, controls: ControlsConfig, safety: SafetyConfig) -> None:
+        super().__init__(controls, safety)
+        self._adapter = create_hardware(
+            RobotConfig(
+                server={"claim_token": "legacy"},
+                controls=controls,
+                safety=safety,
+                hardware={
+                    "type": "l298n" if controls.gpio_enabled else "none",
+                    "options": {
+                        "forward_pins": [controls.motor_left_forward],
+                        "backward_pins": [controls.motor_left_backward],
+                        "left_pins": [controls.motor_right_forward],
+                        "right_pins": [controls.motor_right_backward],
+                    },
+                },
+            )
+        )
 
-        if self.controls.gpio_enabled:
-            self._gpio_command(command, value)
+    def on_command(self, command: str, value: Any = None) -> None:
+        self._adapter.on_command(command, value)
 
     def emergency_stop(self) -> None:
-        logger.warning("🛑 EMERGENCY STOP")
-        if self.controls.gpio_enabled:
-            self._stop_all_gpio()
-
-    def _gpio_command(self, command: str, value: object = None) -> None:
-        """Send GPIO commands. Requires RPi.GPIO or gpiozero."""
-        try:
-            import RPi.GPIO as GPIO  # type: ignore[import-untyped]
-        except ImportError:
-            logger.debug("RPi.GPIO not available – skipping GPIO command")
-            return
-
-        pin_map = {
-            "forward": self.controls.motor_left_forward,
-            "backward": self.controls.motor_left_backward,
-            "left": self.controls.motor_right_forward,
-            "right": self.controls.motor_right_backward,
-        }
-
-        if command == "stop":
-            self._stop_all_gpio()
-        elif command in pin_map:
-            pin = pin_map[command]
-            if pin is not None:
-                GPIO.setup(pin, GPIO.OUT)
-                GPIO.output(pin, GPIO.HIGH)
-                logger.debug(f"GPIO {pin} HIGH")
-
-    def _stop_all_gpio(self) -> None:
-        try:
-            import RPi.GPIO as GPIO  # type: ignore[import-untyped]
-            for pin in [
-                self.controls.motor_left_forward,
-                self.controls.motor_left_backward,
-                self.controls.motor_right_forward,
-                self.controls.motor_right_backward,
-            ]:
-                if pin is not None:
-                    GPIO.setup(pin, GPIO.OUT)
-                    GPIO.output(pin, GPIO.LOW)
-        except ImportError:
-            pass
+        self._adapter.emergency_stop()

@@ -1,5 +1,7 @@
 """Configuration models for the robot client."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -31,6 +33,28 @@ class ControlsConfig(BaseModel):
     servo_camera_tilt: int | None = None
 
 
+class HardwareConfig(BaseModel):
+    type: str = "none"
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class VideoConfig(BaseModel):
+    type: str = "opencv"
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
+class TTSConfig(BaseModel):
+    enabled: bool = False
+    type: str = "none"
+    playback_device: str = "default"
+    volume: int = Field(default=70, ge=0, le=100)
+    filter_urls: bool = False
+    allow_anonymous: bool = True
+    blocked_senders: list[str] = Field(default_factory=list)
+    delay_ms: int = Field(default=0, ge=0, le=30000)
+    options: dict[str, Any] = Field(default_factory=dict)
+
+
 class SafetyConfig(BaseModel):
     emergency_stop_pin: int | None = None
     max_run_time_ms: int = Field(default=2000, ge=500, le=10000)
@@ -41,4 +65,7 @@ class RobotConfig(BaseModel):
     server: ServerConfig
     camera: CameraConfig = CameraConfig()
     controls: ControlsConfig = ControlsConfig()
+    hardware: HardwareConfig = HardwareConfig()
+    video: VideoConfig = VideoConfig()
+    tts: TTSConfig = TTSConfig()
     safety: SafetyConfig = SafetyConfig()

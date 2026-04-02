@@ -21,6 +21,125 @@ controls:
   motor_right_forward: 22
   motor_right_backward: 23
 
+hardware:
+  type: "none"
+  options: {}
+
+# hardware:
+#   type: "l298n"
+#   options:
+#     forward_pins: [17]
+#     backward_pins: [18]
+#     left_pins: [22]
+#     right_pins: [23]
+#     drive_seconds: 0.35
+#     turn_seconds: 0.20
+#
+# hardware:
+#   type: "serial_board"
+#   options:
+#     device: "/dev/ttyUSB0"
+#     baud_rate: 115200
+#
+# hardware:
+#   type: "mqtt_pub"
+#   options:
+#     host: "localhost"
+#     port: 1883
+#     topic: "botparty/robot/command"
+#
+# hardware:
+#   type: "custom"
+#   options:
+#     class: "my_robot.handler.MyRobotHandler"
+
+video:
+  type: "opencv"
+  options: {}
+
+# video:
+#   type: "ffmpeg"
+#   options:
+#     ffmpeg_path: "ffmpeg"
+#
+# video:
+#   type: "ffmpeg_arecord"
+#   options:
+#     ffmpeg_path: "ffmpeg"
+#     arecord_path: "arecord"
+#     audio_device: "default"
+#     audio_sample_rate: 48000
+#     audio_channels: 1
+#
+# video:
+#   type: "ffmpeg_hud"
+#   options: {}
+#
+# video:
+#   type: "ffmpeg_libcamera"
+#   options:
+#     libcamera_path: "libcamera-vid"
+#
+# video:
+#   type: "cozmo_vid"
+#   options:
+#     annotated: true
+#
+# video:
+#   type: "vector_vid"
+#   options:
+#     annotated: true
+
+tts:
+  enabled: false
+  type: "none"
+  playback_device: "default"
+  volume: 70
+  filter_urls: false
+  allow_anonymous: true
+  blocked_senders: []
+  delay_ms: 0
+  options: {}
+
+# tts:
+#   enabled: true
+#   type: "espeak"
+#   playback_device: "Headphones"
+#   volume: 75
+#   options:
+#     voice: "de"
+#     voice_variant: "m3"
+#     speed: 165
+#
+# tts:
+#   enabled: true
+#   type: "pico"
+#   playback_device: "Headphones"
+#   options:
+#     voice: "de-DE"
+#
+# tts:
+#   enabled: true
+#   type: "polly"
+#   playback_device: "Headphones"
+#   options:
+#     region_name: "eu-central-1"
+#     robot_voice: "Vicki"
+#
+# tts:
+#   enabled: true
+#   type: "google_cloud"
+#   playback_device: "Headphones"
+#   options:
+#     key_file: "/home/pi/google-tts.json"
+#     voice: "de-DE-Neural2-B"
+#
+# tts:
+#   enabled: true
+#   type: "custom"
+#   options:
+#     class: "my_robot.tts.MyTTS"
+
 safety:
   emergency_stop_pin: 27
   max_run_time_ms: 2000

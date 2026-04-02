@@ -6,15 +6,17 @@ import json
 import logging
 import re
 import time
-from dataclasses import dataclass, field
 from collections import deque
-from typing import Optional
+from dataclasses import dataclass, field
+from typing import Any, Optional
 
 import aiohttp
 from livekit import api as lkapi, rtc
 
 from .config import RobotConfig
-from .handlers import DefaultHandler
+from .hardware import create_hardware
+from .tts import create_tts_profile
+from .video import create_video_profile
 
 logger = logging.getLogger("botparty.client")
 
@@ -27,11 +29,10 @@ CAMERA_BACKEND_MAP = {
     "ffmpeg": "CAP_FFMPEG",
 }
 
-FFMPEG_INPUT_FORMAT_MAP = {
-    "MJPG": "mjpeg",
-    "YUYV": "yuyv422",
-}
-
+TTS_SAY_COMMANDS = {"say", "speak", "tts", "tts:say", "tts.say"}
+TTS_MUTE_COMMANDS = {"tts:mute", "tts.mute", "mute_tts", "tts_mute"}
+TTS_UNMUTE_COMMANDS = {"tts:unmute", "tts.unmute", "unmute_tts", "tts_unmute"}
+TTS_VOLUME_COMMANDS = {"tts:volume", "tts.volume", "tts_volume", "volume_tts"}
 
 class DiagnosticsBufferHandler(logging.Handler):
     def __init__(self, storage: deque[str], maxlen: int = 400) -> None:
@@ -63,7 +64,9 @@ class WatchdogStats:
 class BotPartyClient:
     def __init__(self, config: RobotConfig) -> None:
         self.config = config
-        self.handler = DefaultHandler(config.controls, config.safety)
+        self.handler = create_hardware(config)
+        self.video_profile = create_video_profile(config)
+        self.tts = create_tts_profile(config)
         self._running = False
         self._room: Optional[rtc.Room] = None
         self._livekit_token: Optional[str] = None
@@ -76,7 +79,10 @@ class BotPartyClient:
         self._watchdog_task: Optional[asyncio.Task] = None
         self._actions_task: Optional[asyncio.Task] = None
         self._diag_upload_task: Optional[asyncio.Task] = None
+        self._audio_task: Optional[asyncio.Task] = None
+        self._tts_task: Optional[asyncio.Task] = None
         self._camera_source: Optional[rtc.VideoSource] = None
+        self._tts_queue: asyncio.Queue[tuple[str, dict[str, Any] | None]] = asyncio.Queue()
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -128,6 +134,7 @@ class BotPartyClient:
             self._watchdog_task = asyncio.create_task(self._supervisor_watchdog())
             self._actions_task = asyncio.create_task(self._actions_loop())
             self._diag_upload_task = asyncio.create_task(self._diagnostics_upload_loop())
+            self._tts_task = asyncio.create_task(self._tts_loop())
 
             # Keep running until shutdown
             while self._running:
@@ -142,7 +149,13 @@ class BotPartyClient:
         """Create video source + track, publish to room, start capture loop."""
         cap = None
         try:
-            if self._camera_pipeline_mode() == "ffmpeg":
+            mode = self._camera_pipeline_mode()
+            if mode == "none":
+                logger.info("📷 Video disabled by profile: %s", self.config.video.type)
+                await self.video_profile.run_disabled(lambda: self._running)
+                return
+
+            if mode in {"ffmpeg", "sdk"}:
                 frame_width = self.config.camera.width
                 frame_height = self.config.camera.height
                 camera_fps = float(self.config.camera.fps)
@@ -174,12 +187,24 @@ class BotPartyClient:
                 await self._room.local_participant.publish_track(track, publish_options)
                 logger.info("📹 Camera track published")
 
-            if self._camera_pipeline_mode() == "ffmpeg":
+            if self.video_profile.has_audio():
+                self._audio_task = asyncio.create_task(
+                    self.video_profile.start_audio(rtc, self._room, lambda: self._running)
+                )
+
+            if mode == "ffmpeg":
                 await self._camera_loop_ffmpeg(
                     self._camera_source,
                     frame_width,
                     frame_height,
                     camera_fps,
+                )
+            elif mode == "sdk":
+                await self.video_profile.capture_sdk_frames(
+                    rtc,
+                    self._camera_source,
+                    lambda: self._running,
+                    lambda: self._increment_frame_count(),
                 )
             else:
                 await self._camera_loop(
@@ -198,6 +223,14 @@ class BotPartyClient:
             if cap is not None:
                 cap.release()
                 logger.info("📷 Camera released")
+            if self._audio_task is not None and not self._audio_task.done():
+                self._audio_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await self._audio_task
+                self._audio_task = None
+
+    def _increment_frame_count(self) -> None:
+        self.stats.camera_frames += 1
 
     async def _camera_loop_ffmpeg(
         self,
@@ -213,9 +246,10 @@ class BotPartyClient:
         stderr_task = None
 
         try:
-            proc = await self._spawn_ffmpeg_camera_process()
+            proc = await self.video_profile.spawn_ffmpeg_process()
             logger.info(
-                "📷 Camera opened via ffmpeg: device=%s resolution=%dx%d fps=%.1f format=%s",
+                "📷 Camera opened via %s: device=%s resolution=%dx%d fps=%.1f format=%s",
+                self.config.video.type,
                 self.config.camera.device,
                 frame_width,
                 frame_height,
@@ -238,7 +272,7 @@ class BotPartyClient:
                     frame,
                 )
                 source.capture_frame(lk_frame)
-                self.stats.camera_frames += 1
+                self._increment_frame_count()
                 frames_since_report += 1
 
                 now = time.monotonic()
@@ -263,7 +297,7 @@ class BotPartyClient:
             ) from exc
         except FileNotFoundError as exc:
             raise RuntimeError(
-                "ffmpeg is not installed; install it or switch camera.pipeline back to 'opencv'"
+                "ffmpeg is not installed; install it or switch video.type back to 'opencv'"
             ) from exc
         finally:
             if proc is not None:
@@ -279,43 +313,6 @@ class BotPartyClient:
                 stderr_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await stderr_task
-
-    async def _spawn_ffmpeg_camera_process(self):
-        fourcc = (self.config.camera.fourcc or "mjpeg").strip().upper()
-        input_format = FFMPEG_INPUT_FORMAT_MAP.get(fourcc, fourcc.lower())
-        cmd = [
-            "ffmpeg",
-            "-nostdin",
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-fflags",
-            "nobuffer",
-            "-flags",
-            "low_delay",
-            "-f",
-            "v4l2",
-            "-thread_queue_size",
-            "64",
-            "-input_format",
-            input_format,
-            "-video_size",
-            f"{self.config.camera.width}x{self.config.camera.height}",
-            "-framerate",
-            str(self.config.camera.fps),
-            "-i",
-            self.config.camera.device,
-            "-pix_fmt",
-            "rgba",
-            "-f",
-            "rawvideo",
-            "pipe:1",
-        ]
-        return await asyncio.create_subprocess_exec(
-            *cmd,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
 
     async def _drain_ffmpeg_stderr(self, stderr) -> None:
         while True:
@@ -360,6 +357,7 @@ class BotPartyClient:
 
             consecutive_failures = 0
             frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+            frame_rgba = self.video_profile.transform_rgba(frame_rgba, frame_width, frame_height)
             lk_frame = rtc.VideoFrame(
                 frame_width,
                 frame_height,
@@ -367,7 +365,7 @@ class BotPartyClient:
                 frame_rgba.tobytes(),
             )
             source.capture_frame(lk_frame)
-            self.stats.camera_frames += 1
+            self._increment_frame_count()
             frames_since_report += 1
 
             now = time.monotonic()
@@ -467,7 +465,7 @@ class BotPartyClient:
         return getattr(cv2, backend_attr, None)
 
     def _camera_pipeline_mode(self) -> str:
-        return self.config.camera.pipeline.strip().lower()
+        return self.video_profile.capture_mode().strip().lower()
 
     async def _heartbeat_loop(self) -> None:
         """Send periodic API heartbeat so the server knows we're alive."""
@@ -518,6 +516,20 @@ class BotPartyClient:
                     self._camera_task = asyncio.create_task(self._camera_pipeline())
                 else:
                     logger.error("Camera restarted 5 times – giving up on camera")
+
+            if self._audio_task and self._audio_task.done() and self.video_profile.has_audio():
+                exc = self._audio_task.exception() if not self._audio_task.cancelled() else None
+                if exc:
+                    logger.warning("Audio task died – restarting: %s", exc)
+                self._audio_task = asyncio.create_task(
+                    self.video_profile.start_audio(rtc, self._room, lambda: self._running)
+                )
+
+            if self._tts_task and self._tts_task.done():
+                exc = self._tts_task.exception() if not self._tts_task.cancelled() else None
+                if exc:
+                    logger.warning("TTS task died – restarting: %s", exc)
+                self._tts_task = asyncio.create_task(self._tts_loop())
 
             # ── Heartbeat task supervisor ────────────────────────────────────
             if self._heartbeat_task and self._heartbeat_task.done():
@@ -571,12 +583,30 @@ class BotPartyClient:
                     await self._camera_task
                 except Exception:
                     pass
+            self.video_profile = create_video_profile(self.config)
             self._camera_task = asyncio.create_task(self._camera_pipeline())
             return
 
         if action_type == "restart_control":
             logger.info("Remote action: restart_control")
-            self.handler = DefaultHandler(self.config.controls, self.config.safety)
+            self.handler = create_hardware(self.config)
+            return
+
+        if action_type == "restart_tts":
+            logger.info("Remote action: restart_tts")
+            self.tts = create_tts_profile(self.config)
+            return
+
+        if action_type == "restart_audio":
+            logger.info("Remote action: restart_audio")
+            if self._audio_task and not self._audio_task.done():
+                self._audio_task.cancel()
+                with contextlib.suppress(Exception):
+                    await self._audio_task
+            if self.video_profile.has_audio():
+                self._audio_task = asyncio.create_task(
+                    self.video_profile.start_audio(rtc, self._room, lambda: self._running)
+                )
             return
 
         if action_type == "restart_chat":
@@ -623,6 +653,103 @@ class BotPartyClient:
 
             await asyncio.sleep(2)
 
+    async def _tts_loop(self) -> None:
+        while self._running:
+            try:
+                message, metadata = await asyncio.wait_for(self._tts_queue.get(), timeout=1.0)
+            except asyncio.TimeoutError:
+                continue
+
+            try:
+                if not self.tts.should_speak(message, metadata):
+                    continue
+
+                if self.tts.delay_ms > 0:
+                    await asyncio.sleep(self.tts.delay_ms / 1000.0)
+                    if not self.tts.should_speak(message, metadata):
+                        continue
+
+                await asyncio.to_thread(self.tts.say, message, metadata)
+            except Exception as e:
+                logger.warning("TTS playback failed: %s", e)
+            finally:
+                self._tts_queue.task_done()
+
+    def _normalize_tts_payload(self, command: str, value: Any) -> tuple[str, dict[str, Any] | None]:
+        message = ""
+        metadata: dict[str, Any] | None = None
+        normalized = command.strip()
+
+        for prefix in ("tts:say:", "tts.say:", "say:", "speak:"):
+            if normalized.lower().startswith(prefix):
+                message = normalized[len(prefix) :].strip()
+                break
+
+        if not message:
+            if isinstance(value, str):
+                message = value.strip()
+            elif isinstance(value, dict):
+                metadata = dict(value)
+                raw_message = value.get("message")
+                if not isinstance(raw_message, str):
+                    raw_message = value.get("text")
+                if not isinstance(raw_message, str):
+                    raw_message = value.get("value")
+                if isinstance(raw_message, str):
+                    message = raw_message.strip()
+            elif value is not None:
+                message = str(value).strip()
+
+        return message, metadata
+
+    def _coerce_tts_volume(self, value: Any) -> int | None:
+        raw = value
+        if isinstance(value, dict):
+            raw = value.get("level", value.get("value", value.get("volume")))
+        try:
+            return max(0, min(int(raw), 100))
+        except (TypeError, ValueError):
+            return None
+
+    def _maybe_handle_tts_command(self, command: str, value: Any = None) -> bool:
+        normalized = command.strip().lower()
+        if not normalized:
+            return False
+
+        if normalized in TTS_MUTE_COMMANDS:
+            self.tts.mute()
+            logger.info("TTS muted")
+            return True
+
+        if normalized in TTS_UNMUTE_COMMANDS:
+            self.tts.unmute()
+            logger.info("TTS unmuted")
+            return True
+
+        if normalized in TTS_VOLUME_COMMANDS:
+            level = self._coerce_tts_volume(value)
+            if level is not None:
+                self.tts.set_volume(level)
+                logger.info("TTS volume set to %s%%", level)
+            else:
+                logger.warning("Ignoring invalid TTS volume payload: %r", value)
+            return True
+
+        is_tts_text_command = normalized in TTS_SAY_COMMANDS or normalized.startswith(
+            ("tts:say:", "tts.say:", "say:", "speak:")
+        )
+        if not is_tts_text_command:
+            return False
+
+        message, metadata = self._normalize_tts_payload(command, value)
+        if not message:
+            logger.debug("Ignoring empty TTS message")
+            return True
+
+        self._tts_queue.put_nowait((message, metadata))
+        logger.debug("Queued TTS message (%d chars)", len(message))
+        return True
+
     def _handle_data(self, data: rtc.DataPacket) -> None:
         """Handle incoming DataChannel commands from controllers."""
         try:
@@ -644,6 +771,8 @@ class BotPartyClient:
 
             self.stats.last_command_at = time.time()
             self.stats.commands_received += 1
+            if self._maybe_handle_tts_command(command, value):
+                return
             self.handler.on_command(command, value)
             logger.debug(f"CMD: {command}={value} (latency: {latency_ms:.0f}ms)")
 
@@ -727,6 +856,8 @@ class BotPartyClient:
         # Cancel all supervised tasks
         for task_ref in [
             self._camera_task,
+            self._audio_task,
+            self._tts_task,
             self._heartbeat_task,
             self._watchdog_task,
             self._actions_task,
