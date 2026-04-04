@@ -91,6 +91,7 @@ class BotPartyClient:
         self._diag_last_sent_idx = 0
         self._livekit_connected = False
         self._reconnect_task: Optional[asyncio.Task] = None
+        self._control_ws_connected = False
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
@@ -587,6 +588,10 @@ class BotPartyClient:
         """Poll pending remote actions from API and execute them."""
         while self._running:
             try:
+                if self._control_ws_connected:
+                    await asyncio.sleep(3)
+                    continue
+
                 async with aiohttp.ClientSession() as session:
                     async with session.post(
                         f"{self.config.server.api_url}/api/v1/robots/actions/poll",
@@ -596,28 +601,8 @@ class BotPartyClient:
                     ) as resp:
                         if resp.status in (200, 201):
                             data = await resp.json()
-                            stream = data.get("stream") if isinstance(data, dict) else None
-                            if isinstance(stream, dict):
-                                value = stream.get("targetBitrateKbps")
-                                next_bitrate: Optional[int] = None
-                                if isinstance(value, (int, float)) and 150 <= value <= 3000:
-                                    next_bitrate = int(value)
-                                if next_bitrate != self._target_bitrate_kbps:
-                                    self._target_bitrate_kbps = next_bitrate
-                                    logger.info(
-                                        "Remote stream policy updated: targetBitrateKbps=%s",
-                                        self._target_bitrate_kbps,
-                                    )
-                                    if self._camera_task and not self._camera_task.done():
-                                        self._camera_task.cancel()
-                                        with contextlib.suppress(asyncio.CancelledError):
-                                            await self._camera_task
-                                        self._camera_task = asyncio.create_task(self._camera_pipeline())
-
-                            actions = data.get("actions", []) if isinstance(data, dict) else []
-                            for action in actions:
-                                if isinstance(action, dict):
-                                    await self._execute_action(action)
+                            if isinstance(data, dict):
+                                await self._apply_remote_actions_payload(data)
             except Exception as e:
                 logger.debug(f"Action poll error (non-fatal): {e}")
 
@@ -673,6 +658,30 @@ class BotPartyClient:
             self._diag_enabled_until = time.time() + duration_sec
             logger.info(f"Remote action: diagnostics enabled for {duration_sec}s")
             return
+
+    async def _apply_remote_actions_payload(self, payload: dict[str, Any]) -> None:
+        stream = payload.get("stream") if isinstance(payload, dict) else None
+        if isinstance(stream, dict):
+            value = stream.get("targetBitrateKbps")
+            next_bitrate: Optional[int] = None
+            if isinstance(value, (int, float)) and 150 <= value <= 3000:
+                next_bitrate = int(value)
+            if next_bitrate != self._target_bitrate_kbps:
+                self._target_bitrate_kbps = next_bitrate
+                logger.info(
+                    "Remote stream policy updated: targetBitrateKbps=%s",
+                    self._target_bitrate_kbps,
+                )
+                if self._camera_task and not self._camera_task.done():
+                    self._camera_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await self._camera_task
+                    self._camera_task = asyncio.create_task(self._camera_pipeline())
+
+        actions = payload.get("actions", []) if isinstance(payload, dict) else []
+        for action in actions:
+            if isinstance(action, dict):
+                await self._execute_action(action)
 
     async def _diagnostics_upload_loop(self) -> None:
         """Upload temporary diagnostics logs while diagnostics mode is enabled."""
@@ -841,7 +850,7 @@ class BotPartyClient:
         logger.debug(f"CMD[{source}]: {command}={value} (latency: {latency_ms:.0f}ms)")
 
     def _is_motion_command(self, command: str) -> bool:
-        return command in {"forward", "backward", "left", "right", "stop"}
+        return command in {"forward", "backward", "left", "right"}
 
     def _resolve_gateway_ws_url(self) -> str:
         api_url = self.config.server.api_url.rstrip("/")
@@ -865,6 +874,7 @@ class BotPartyClient:
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.ws_connect(ws_url, heartbeat=20) as ws:
                         attempt = 0
+                        self._control_ws_connected = True
                         logger.info("🔌 Control websocket connected")
                         await ws.send_json(
                             {
@@ -872,12 +882,14 @@ class BotPartyClient:
                                 "data": {"claimToken": self.config.server.claim_token},
                             }
                         )
+                        await ws.send_json({"event": "robot:actions:pull", "data": {}})
 
                         while self._running:
                             try:
                                 msg = await ws.receive(timeout=10)
                             except asyncio.TimeoutError:
                                 await ws.send_json({"event": "robot:heartbeat", "data": {}})
+                                await ws.send_json({"event": "robot:actions:pull", "data": {}})
                                 continue
 
                             if msg.type == aiohttp.WSMsgType.TEXT:
@@ -899,16 +911,22 @@ class BotPartyClient:
                                 elif event == "control:emergency-stop":
                                     logger.warning("Emergency stop from gateway")
                                     self.handler.emergency_stop()
+                                elif event == "robot:actions":
+                                    await self._apply_remote_actions_payload(data)
                             elif msg.type == aiohttp.WSMsgType.CLOSED:
                                 break
                             elif msg.type == aiohttp.WSMsgType.ERROR:
                                 break
 
                             await ws.send_json({"event": "robot:heartbeat", "data": {}})
+                            await ws.send_json({"event": "robot:actions:pull", "data": {}})
             except Exception as e:
+                self._control_ws_connected = False
                 delay = min(2 ** min(attempt, 6), 30)
                 logger.warning(f"Control websocket disconnected ({e}); retrying in {delay}s")
                 await asyncio.sleep(delay)
+            finally:
+                self._control_ws_connected = False
 
     async def _reconnect(self) -> None:
         """Attempt to reconnect to LiveKit with exponential backoff."""
