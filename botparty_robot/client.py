@@ -148,7 +148,7 @@ class BotPartyClient:
             self._control_ws_task = asyncio.create_task(self._control_ws_loop())
 
             # Keep running until shutdown
-            while self._running:
+            while self._running and self._livekit_connected:
                 await asyncio.sleep(1)
 
         except Exception as e:
@@ -517,6 +517,9 @@ class BotPartyClient:
                 else:
                     logger.warning("Camera task ended unexpectedly")
 
+                if not self._livekit_connected:
+                    continue
+
                 self.stats.camera_task_restarts += 1
                 if self.stats.camera_task_restarts <= 5:
                     logger.info(
@@ -527,7 +530,12 @@ class BotPartyClient:
                 else:
                     logger.error("Camera restarted 5 times – giving up on camera")
 
-            if self._audio_task and self._audio_task.done() and self.video_profile.has_audio():
+            if (
+                self._livekit_connected
+                and self._audio_task
+                and self._audio_task.done()
+                and self.video_profile.has_audio()
+            ):
                 exc = self._audio_task.exception() if not self._audio_task.cancelled() else None
                 if exc:
                     logger.warning("Audio task died – restarting: %s", exc)
@@ -564,6 +572,14 @@ class BotPartyClient:
             heartbeat_age = time.time() - self.stats.last_heartbeat_at
             if heartbeat_age > 60:
                 logger.warning(f"⚠️ Heartbeat stale: last sent {heartbeat_age:.0f}s ago")
+                if self._livekit_connected:
+                    self._livekit_connected = False
+                    await self._stop_livekit_media_tasks()
+                    if self._room:
+                        with contextlib.suppress(Exception):
+                            await self._room.disconnect()
+                    if not self._reconnect_task or self._reconnect_task.done():
+                        self._reconnect_task = asyncio.create_task(self._reconnect())
 
         logger.info("🐕 Supervisor watchdog stopped")
 
