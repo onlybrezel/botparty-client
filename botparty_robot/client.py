@@ -92,6 +92,8 @@ class BotPartyClient:
         self._livekit_connected = False
         self._reconnect_task: Optional[asyncio.Task] = None
         self._control_ws_connected = False
+        self._last_actions_pull_at = 0.0
+        self._last_heartbeat_stale_warning_at = 0.0
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
@@ -114,8 +116,18 @@ class BotPartyClient:
 
             # 2. Connect to LiveKit room
             await self._connect(token)
-            if self._running:
-                await asyncio.sleep(2)
+
+            if not self._running:
+                break
+
+            # Avoid racing a parallel reconnect task with a brand-new auth/connect cycle.
+            if self._reconnect_task and not self._reconnect_task.done():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await self._reconnect_task
+                if self._livekit_connected:
+                    continue
+
+            await asyncio.sleep(2)
 
     async def _connect(self, token: str) -> None:
         """Connect to LiveKit and start all supervised tasks."""
@@ -572,15 +584,13 @@ class BotPartyClient:
             # ── Heartbeat staleness warning ──────────────────────────────────
             heartbeat_age = time.time() - self.stats.last_heartbeat_at
             if heartbeat_age > 60:
-                logger.warning(f"⚠️ Heartbeat stale: last sent {heartbeat_age:.0f}s ago")
-                if self._livekit_connected:
-                    self._livekit_connected = False
-                    await self._stop_livekit_media_tasks()
-                    if self._room:
-                        with contextlib.suppress(Exception):
-                            await self._room.disconnect()
-                    if not self._reconnect_task or self._reconnect_task.done():
-                        self._reconnect_task = asyncio.create_task(self._reconnect())
+                now = time.time()
+                if now - self._last_heartbeat_stale_warning_at >= 30:
+                    logger.warning(
+                        "⚠️ API heartbeat stale: last success %.0fs ago; keeping LiveKit session running",
+                        heartbeat_age,
+                    )
+                    self._last_heartbeat_stale_warning_at = now
 
         logger.info("🐕 Supervisor watchdog stopped")
 
@@ -882,14 +892,14 @@ class BotPartyClient:
                                 "data": {"claimToken": self.config.server.claim_token},
                             }
                         )
-                        await ws.send_json({"event": "robot:actions:pull", "data": {}})
+                        await self._maybe_pull_actions_ws(ws, force=True)
 
                         while self._running:
                             try:
                                 msg = await ws.receive(timeout=10)
                             except asyncio.TimeoutError:
                                 await ws.send_json({"event": "robot:heartbeat", "data": {}})
-                                await ws.send_json({"event": "robot:actions:pull", "data": {}})
+                                await self._maybe_pull_actions_ws(ws)
                                 continue
 
                             if msg.type == aiohttp.WSMsgType.TEXT:
@@ -917,9 +927,6 @@ class BotPartyClient:
                                 break
                             elif msg.type == aiohttp.WSMsgType.ERROR:
                                 break
-
-                            await ws.send_json({"event": "robot:heartbeat", "data": {}})
-                            await ws.send_json({"event": "robot:actions:pull", "data": {}})
             except Exception as e:
                 self._control_ws_connected = False
                 delay = min(2 ** min(attempt, 6), 30)
@@ -927,6 +934,14 @@ class BotPartyClient:
                 await asyncio.sleep(delay)
             finally:
                 self._control_ws_connected = False
+
+    async def _maybe_pull_actions_ws(self, ws: aiohttp.ClientWebSocketResponse, force: bool = False) -> None:
+        now = time.time()
+        if not force and now - self._last_actions_pull_at < 2.5:
+            return
+
+        await ws.send_json({"event": "robot:actions:pull", "data": {}})
+        self._last_actions_pull_at = now
 
     async def _reconnect(self) -> None:
         """Attempt to reconnect to LiveKit with exponential backoff."""
