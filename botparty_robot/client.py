@@ -90,7 +90,6 @@ class BotPartyClient:
         self._diag_buffer: deque[str] = deque(maxlen=400)
         self._diag_last_sent_idx = 0
         self._livekit_connected = False
-        self._reconnect_task: Optional[asyncio.Task] = None
         self._control_ws_connected = False
         self._last_actions_pull_at = 0.0
         self._last_heartbeat_stale_warning_at = 0.0
@@ -104,7 +103,7 @@ class BotPartyClient:
         self._running = True
         while self._running:
             # 1. Authenticate with the API to get LiveKit token
-            token, robot_id = await self._authenticate()
+            token, robot_id, livekit_url = await self._authenticate()
             if not token:
                 logger.error("Authentication failed. Retrying in 5s.")
                 await asyncio.sleep(5)
@@ -112,6 +111,9 @@ class BotPartyClient:
 
             self._livekit_token = token
             self._robot_id = robot_id
+            if livekit_url and livekit_url != self.config.server.livekit_url:
+                logger.info("Using LiveKit URL from API claim response: %s", livekit_url)
+                self.config.server.livekit_url = livekit_url
             logger.info(f"✅ Authenticated as robot {robot_id}")
 
             # 2. Connect to LiveKit room
@@ -119,13 +121,6 @@ class BotPartyClient:
 
             if not self._running:
                 break
-
-            # Avoid racing a parallel reconnect task with a brand-new auth/connect cycle.
-            if self._reconnect_task and not self._reconnect_task.done():
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await self._reconnect_task
-                if self._livekit_connected:
-                    continue
 
             await asyncio.sleep(2)
 
@@ -143,8 +138,6 @@ class BotPartyClient:
             if self._running:
                 self._livekit_connected = False
                 asyncio.create_task(self._stop_livekit_media_tasks())
-                if not self._reconnect_task or self._reconnect_task.done():
-                    self._reconnect_task = asyncio.create_task(self._reconnect())
 
         try:
             await self._room.connect(self.config.server.livekit_url, token)
@@ -943,46 +936,6 @@ class BotPartyClient:
         await ws.send_json({"event": "robot:actions:pull", "data": {}})
         self._last_actions_pull_at = now
 
-    async def _reconnect(self) -> None:
-        """Attempt to reconnect to LiveKit with exponential backoff."""
-        if not self._running:
-            return
-
-        attempt = 0
-        while self._running:
-            attempt += 1
-            wait = min(2 ** attempt, 60)
-            logger.info(f"🔄 Reconnect attempt {attempt} in {wait}s...")
-            await asyncio.sleep(wait)
-
-            if not self._running:
-                return
-
-            try:
-                # Refresh token before reconnect
-                token, robot_id = await self._authenticate()
-                if not token:
-                    logger.error("Re-authentication failed")
-                    continue
-
-                self._livekit_token = token
-                self.stats.reconnect_attempts += 1
-
-                if self._room:
-                    await self._room.connect(self.config.server.livekit_url, token)
-                    self._livekit_connected = True
-                    logger.info(f"✅ Reconnected (attempt {attempt})")
-
-                    # Restart camera pipeline after reconnect
-                    if self._camera_task:
-                        self._camera_task.cancel()
-                    self._camera_task = asyncio.create_task(self._camera_pipeline())
-                    return
-            except Exception as e:
-                logger.error(f"Reconnect attempt {attempt} failed: {e}")
-
-        self._livekit_connected = False
-
     async def _stop_livekit_media_tasks(self) -> None:
         """Stop camera/audio tasks when LiveKit disconnects so local capture does not keep running."""
         for task_ref in [self._camera_task, self._audio_task]:
@@ -993,7 +946,7 @@ class BotPartyClient:
                 except (asyncio.CancelledError, Exception):
                     pass
 
-    async def _authenticate(self) -> tuple[Optional[str], Optional[str]]:
+    async def _authenticate(self) -> tuple[Optional[str], Optional[str], Optional[str]]:
         """Get LiveKit token from BotParty API using claim token."""
         try:
             async with aiohttp.ClientSession() as session:
@@ -1011,7 +964,7 @@ class BotPartyClient:
                             "Your api_url is likely http:// but the server requires https://. "
                             "Update api_url in your config.yaml."
                         )
-                        return None, None
+                        return None, None, None
                     if resp.status not in (200, 201):
                         text = await resp.text()
                         logger.error(f"Claim failed ({resp.status}): {text}")
@@ -1020,7 +973,7 @@ class BotPartyClient:
                                 "Hint: your api_url uses http:// - "
                                 "try https:// if your server has SSL enabled."
                             )
-                        return None, None
+                        return None, None, None
                     data = await resp.json()
 
                     stream = data.get("stream") if isinstance(data, dict) else None
@@ -1031,10 +984,13 @@ class BotPartyClient:
                             target_kbps = int(value)
 
                     self._target_bitrate_kbps = target_kbps
-                    return data.get("token"), data.get("robotId")
+                    livekit_url = data.get("livekitUrl")
+                    if not isinstance(livekit_url, str):
+                        livekit_url = None
+                    return data.get("token"), data.get("robotId"), livekit_url
         except Exception as e:
             logger.error(f"Authentication error: {e}")
-            return None, None
+            return None, None, None
 
     async def shutdown(self) -> None:
         """Gracefully shut down the client."""
@@ -1053,7 +1009,6 @@ class BotPartyClient:
             self._actions_task,
             self._diag_upload_task,
             self._control_ws_task,
-            self._reconnect_task,
         ]:
             if task_ref and not task_ref.done():
                 task_ref.cancel()
