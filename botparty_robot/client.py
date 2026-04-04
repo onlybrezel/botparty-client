@@ -824,7 +824,7 @@ class BotPartyClient:
             ts = time.time() * 1000
 
         latency_ms = (time.time() * 1000) - ts
-        if latency_ms > self.config.safety.latency_threshold_ms:
+        if source == "livekit" and latency_ms > self.config.safety.latency_threshold_ms:
             logger.warning(f"⚠️ High latency on {source}: {latency_ms:.0f}ms - triggering E-STOP")
             self.handler.emergency_stop()
             return
