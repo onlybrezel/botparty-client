@@ -829,7 +829,9 @@ class BotPartyClient:
             self.handler.emergency_stop()
             return
 
-        self.stats.last_command_at = time.time()
+        # Only motion commands arm the run-time watchdog timeout.
+        if self._is_motion_command(command):
+            self.stats.last_command_at = time.time()
         self.stats.commands_received += 1
 
         if self._maybe_handle_tts_command(command, value):
@@ -837,6 +839,9 @@ class BotPartyClient:
 
         self.handler.on_command(command, value)
         logger.debug(f"CMD[{source}]: {command}={value} (latency: {latency_ms:.0f}ms)")
+
+    def _is_motion_command(self, command: str) -> bool:
+        return command in {"forward", "backward", "left", "right", "stop"}
 
     def _resolve_gateway_ws_url(self) -> str:
         api_url = self.config.server.api_url.rstrip("/")
