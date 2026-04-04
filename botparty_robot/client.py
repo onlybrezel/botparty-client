@@ -89,6 +89,8 @@ class BotPartyClient:
         self._diag_enabled_until = 0.0
         self._diag_buffer: deque[str] = deque(maxlen=400)
         self._diag_last_sent_idx = 0
+        self._livekit_connected = False
+        self._reconnect_task: Optional[asyncio.Task] = None
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
@@ -97,19 +99,22 @@ class BotPartyClient:
     async def run(self) -> None:
         """Main loop: authenticate, connect to LiveKit, run supervisor."""
         self._running = True
+        while self._running:
+            # 1. Authenticate with the API to get LiveKit token
+            token, robot_id = await self._authenticate()
+            if not token:
+                logger.error("Authentication failed. Retrying in 5s.")
+                await asyncio.sleep(5)
+                continue
 
-        # 1. Authenticate with the API to get LiveKit token
-        token, robot_id = await self._authenticate()
-        if not token:
-            logger.error("Authentication failed. Check your claim_token.")
-            return
+            self._livekit_token = token
+            self._robot_id = robot_id
+            logger.info(f"✅ Authenticated as robot {robot_id}")
 
-        self._livekit_token = token
-        self._robot_id = robot_id
-        logger.info(f"✅ Authenticated as robot {robot_id}")
-
-        # 2. Connect to LiveKit room
-        await self._connect(token)
+            # 2. Connect to LiveKit room
+            await self._connect(token)
+            if self._running:
+                await asyncio.sleep(2)
 
     async def _connect(self, token: str) -> None:
         """Connect to LiveKit and start all supervised tasks."""
@@ -123,10 +128,14 @@ class BotPartyClient:
         def on_disconnected():
             logger.warning("Disconnected from LiveKit room")
             if self._running:
-                asyncio.create_task(self._reconnect())
+                self._livekit_connected = False
+                asyncio.create_task(self._stop_livekit_media_tasks())
+                if not self._reconnect_task or self._reconnect_task.done():
+                    self._reconnect_task = asyncio.create_task(self._reconnect())
 
         try:
             await self._room.connect(self.config.server.livekit_url, token)
+            self._livekit_connected = True
             logger.info(f"🎥 Connected to LiveKit room: robot-{self._robot_id}")
 
             # Start supervised tasks
@@ -144,8 +153,7 @@ class BotPartyClient:
 
         except Exception as e:
             logger.error(f"LiveKit connection error: {e}")
-        finally:
-            await self.shutdown()
+            self._livekit_connected = False
 
     async def _camera_pipeline(self) -> None:
         """Create video source + track, publish to room, start capture loop."""
@@ -262,7 +270,7 @@ class BotPartyClient:
             if proc.stderr is not None:
                 stderr_task = asyncio.create_task(self._drain_ffmpeg_stderr(proc.stderr))
 
-            while self._running:
+            while self._running and self._livekit_connected:
                 if proc.stdout is None:
                     raise RuntimeError("ffmpeg camera process has no stdout pipe")
 
@@ -346,7 +354,7 @@ class BotPartyClient:
         frames_since_report = 0
         report_started_at = time.monotonic()
 
-        while self._running:
+        while self._running and self._livekit_connected:
             ret, frame = cap.read()
             if not ret:
                 consecutive_failures += 1
@@ -886,10 +894,11 @@ class BotPartyClient:
         if not self._running:
             return
 
-        max_attempts = 10
-        for attempt in range(1, max_attempts + 1):
+        attempt = 0
+        while self._running:
+            attempt += 1
             wait = min(2 ** attempt, 60)
-            logger.info(f"🔄 Reconnect attempt {attempt}/{max_attempts} in {wait}s...")
+            logger.info(f"🔄 Reconnect attempt {attempt} in {wait}s...")
             await asyncio.sleep(wait)
 
             if not self._running:
@@ -907,6 +916,7 @@ class BotPartyClient:
 
                 if self._room:
                     await self._room.connect(self.config.server.livekit_url, token)
+                    self._livekit_connected = True
                     logger.info(f"✅ Reconnected (attempt {attempt})")
 
                     # Restart camera pipeline after reconnect
@@ -917,8 +927,17 @@ class BotPartyClient:
             except Exception as e:
                 logger.error(f"Reconnect attempt {attempt} failed: {e}")
 
-        logger.error("All reconnect attempts exhausted – shutting down")
-        await self.shutdown()
+        self._livekit_connected = False
+
+    async def _stop_livekit_media_tasks(self) -> None:
+        """Stop camera/audio tasks when LiveKit disconnects so local capture does not keep running."""
+        for task_ref in [self._camera_task, self._audio_task]:
+            if task_ref and not task_ref.done():
+                task_ref.cancel()
+                try:
+                    await task_ref
+                except (asyncio.CancelledError, Exception):
+                    pass
 
     async def _authenticate(self) -> tuple[Optional[str], Optional[str]]:
         """Get LiveKit token from BotParty API using claim token."""
@@ -967,6 +986,7 @@ class BotPartyClient:
         """Gracefully shut down the client."""
         logger.info("🛑 Shutting down...")
         self._running = False
+        self._livekit_connected = False
         self.handler.emergency_stop()
 
         # Cancel all supervised tasks
@@ -979,6 +999,7 @@ class BotPartyClient:
             self._actions_task,
             self._diag_upload_task,
             self._control_ws_task,
+            self._reconnect_task,
         ]:
             if task_ref and not task_ref.done():
                 task_ref.cancel()
