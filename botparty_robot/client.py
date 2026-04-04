@@ -81,6 +81,7 @@ class BotPartyClient:
         self._diag_upload_task: Optional[asyncio.Task] = None
         self._audio_task: Optional[asyncio.Task] = None
         self._tts_task: Optional[asyncio.Task] = None
+        self._control_ws_task: Optional[asyncio.Task] = None
         self._camera_source: Optional[rtc.VideoSource] = None
         self._tts_queue: asyncio.Queue[tuple[str, dict[str, Any] | None]] = asyncio.Queue()
 
@@ -135,6 +136,7 @@ class BotPartyClient:
             self._actions_task = asyncio.create_task(self._actions_loop())
             self._diag_upload_task = asyncio.create_task(self._diagnostics_upload_loop())
             self._tts_task = asyncio.create_task(self._tts_loop())
+            self._control_ws_task = asyncio.create_task(self._control_ws_loop())
 
             # Keep running until shutdown
             while self._running:
@@ -536,6 +538,12 @@ class BotPartyClient:
                 logger.warning("Heartbeat task died – restarting")
                 self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
 
+            if self._control_ws_task and self._control_ws_task.done():
+                exc = self._control_ws_task.exception() if not self._control_ws_task.cancelled() else None
+                if exc:
+                    logger.warning("Control websocket task died - restarting: %s", exc)
+                self._control_ws_task = asyncio.create_task(self._control_ws_loop())
+
             # ── Command timeout safety ───────────────────────────────────────
             if self.stats.last_command_at > 0:
                 elapsed = time.time() - self.stats.last_command_at
@@ -568,7 +576,7 @@ class BotPartyClient:
                             if isinstance(stream, dict):
                                 value = stream.get("targetBitrateKbps")
                                 next_bitrate: Optional[int] = None
-                                if isinstance(value, (int, float)) and 150 <= value <= 8000:
+                                if isinstance(value, (int, float)) and 150 <= value <= 3000:
                                     next_bitrate = int(value)
                                 if next_bitrate != self._target_bitrate_kbps:
                                     self._target_bitrate_kbps = next_bitrate
@@ -777,27 +785,101 @@ class BotPartyClient:
             command = payload.get("command", "")
             value = payload.get("value")
             timestamp = payload.get("timestamp", 0)
-
-            # Reject commands with no timestamp (safety)
-            if not timestamp:
-                return
-
-            # Latency check
-            latency_ms = (time.time() * 1000) - timestamp
-            if latency_ms > self.config.safety.latency_threshold_ms:
-                logger.warning(f"⚠️ High latency: {latency_ms:.0f}ms – triggering E-STOP")
-                self.handler.emergency_stop()
-                return
-
-            self.stats.last_command_at = time.time()
-            self.stats.commands_received += 1
-            if self._maybe_handle_tts_command(command, value):
-                return
-            self.handler.on_command(command, value)
-            logger.debug(f"CMD: {command}={value} (latency: {latency_ms:.0f}ms)")
+            self._process_command(command, value, timestamp, source="livekit")
 
         except Exception as e:
             logger.error(f"Data handling error: {e}")
+
+    def _process_command(self, command: str, value: Any, timestamp: Any, source: str) -> None:
+        if not command:
+            return
+
+        try:
+            ts = float(timestamp)
+        except (TypeError, ValueError):
+            ts = time.time() * 1000
+
+        latency_ms = (time.time() * 1000) - ts
+        if latency_ms > self.config.safety.latency_threshold_ms:
+            logger.warning(f"⚠️ High latency on {source}: {latency_ms:.0f}ms - triggering E-STOP")
+            self.handler.emergency_stop()
+            return
+
+        self.stats.last_command_at = time.time()
+        self.stats.commands_received += 1
+
+        if self._maybe_handle_tts_command(command, value):
+            return
+
+        self.handler.on_command(command, value)
+        logger.debug(f"CMD[{source}]: {command}={value} (latency: {latency_ms:.0f}ms)")
+
+    def _resolve_gateway_ws_url(self) -> str:
+        api_url = self.config.server.api_url.rstrip("/")
+        if api_url.endswith("/api/v1"):
+            api_url = api_url[:-7]
+        if api_url.startswith("https://"):
+            return f"wss://{api_url[len('https://'):]}/ws"
+        if api_url.startswith("http://"):
+            return f"ws://{api_url[len('http://'):]}/ws"
+        return f"ws://{api_url}/ws"
+
+    async def _control_ws_loop(self) -> None:
+        """Keep a websocket control channel alive for low-latency command relay."""
+        ws_url = self._resolve_gateway_ws_url()
+        attempt = 0
+
+        while self._running:
+            attempt += 1
+            try:
+                timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_read=30)
+                async with aiohttp.ClientSession(timeout=timeout) as session:
+                    async with session.ws_connect(ws_url, heartbeat=20) as ws:
+                        attempt = 0
+                        logger.info("🔌 Control websocket connected")
+                        await ws.send_json(
+                            {
+                                "event": "robot:claim",
+                                "data": {"claimToken": self.config.server.claim_token},
+                            }
+                        )
+
+                        while self._running:
+                            try:
+                                msg = await ws.receive(timeout=10)
+                            except asyncio.TimeoutError:
+                                await ws.send_json({"event": "robot:heartbeat", "data": {}})
+                                continue
+
+                            if msg.type == aiohttp.WSMsgType.TEXT:
+                                try:
+                                    payload = json.loads(msg.data)
+                                except Exception:
+                                    continue
+
+                                event = payload.get("event")
+                                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+
+                                if event == "control:command":
+                                    self._process_command(
+                                        str(data.get("command", "")),
+                                        data.get("value"),
+                                        data.get("timestamp"),
+                                        source="gateway",
+                                    )
+                                elif event == "control:emergency-stop":
+                                    logger.warning("Emergency stop from gateway")
+                                    self.handler.emergency_stop()
+                            elif msg.type == aiohttp.WSMsgType.CLOSED:
+                                break
+                            elif msg.type == aiohttp.WSMsgType.ERROR:
+                                break
+
+                            await ws.send_json({"event": "robot:heartbeat", "data": {}})
+            except Exception as e:
+                delay = min(2 ** min(attempt, 6), 30)
+                logger.warning(f"Control websocket disconnected ({e}); retrying in {delay}s")
+                await asyncio.sleep(delay)
 
     async def _reconnect(self) -> None:
         """Attempt to reconnect to LiveKit with exponential backoff."""
@@ -872,7 +954,7 @@ class BotPartyClient:
                     target_kbps = None
                     if isinstance(stream, dict):
                         value = stream.get("targetBitrateKbps")
-                        if isinstance(value, (int, float)) and 150 <= value <= 8000:
+                        if isinstance(value, (int, float)) and 150 <= value <= 3000:
                             target_kbps = int(value)
 
                     self._target_bitrate_kbps = target_kbps
@@ -896,6 +978,7 @@ class BotPartyClient:
             self._watchdog_task,
             self._actions_task,
             self._diag_upload_task,
+            self._control_ws_task,
         ]:
             if task_ref and not task_ref.done():
                 task_ref.cancel()
