@@ -40,25 +40,31 @@ camera:
   width: 1280
   height: 720
   fps: 30
-  device: "/dev/video0"  # or "picamera2" for Pi Camera
-  pipeline: "opencv"
+  device: "/dev/video0"
   backend: "v4l2"
   fourcc: "MJPG"
   buffer_size: 1
   warmup_frames: 4
 
-controls:
-  gpio_enabled: true
-  motor_left_forward: 17
-  motor_left_backward: 18
-  motor_right_forward: 22
-  motor_right_backward: 23
-  servo_camera_pan: 12
-  servo_camera_tilt: 13
+# Video pipeline – selects how the camera feed is captured and streamed.
+# Available: ffmpeg, ffmpeg_arecord, ffmpeg_libcamera, opencv, none
+video:
+  type: "ffmpeg"
+  options: {}
+
+# Motor controller – pick the type that matches your board.
+hardware:
+  type: "l298n"
+  options:
+    forward_pins: [17]
+    backward_pins: [18]
+    left_pins: [22]
+    right_pins: [23]
+    drive_seconds: 0.35
+    turn_seconds: 0.20
 
 safety:
-  emergency_stop_pin: 27
-  max_run_time_ms: 2000  # Auto-stop if no command received
+  max_run_time_ms: 2000
   latency_threshold_ms: 300
 
 tts:
@@ -272,18 +278,17 @@ The base `requirements.txt` covers the default BotParty path plus common bridges
 
 ## Streaming Tuning
 
-The robot client now exposes a few camera-capture knobs that matter for smoother low-latency streams:
+The robot client exposes several camera-capture knobs for smoother low-latency streams:
 
-- `pipeline`: `opencv` for maximum compatibility, `ffmpeg` when you want the fastest capture path on Linux robots.
-- `backend`: camera API to ask OpenCV for. On Raspberry Pi/Linux, `v4l2` is the best default.
-- `fourcc`: preferred capture format. `MJPG` often helps USB cameras hold higher resolutions/FPS more reliably.
-- `buffer_size`: keep this low, usually `1`, to avoid stale buffered frames.
-- `warmup_frames`: discard the first few frames while the camera settles.
-- `video.type`: selects the RemoTV-style BotParty video profile (`opencv`, `ffmpeg`, `ffmpeg_arecord`, `ffmpeg_hud`, `ffmpeg_libcamera`, `cozmo_vid`, `vector_vid`, `none`)
+- `video.type`: selects the capture pipeline (`ffmpeg`, `ffmpeg_arecord`, `ffmpeg_libcamera`, `ffmpeg_hud`, `opencv`, `none`)
+- `camera.backend`: camera API asked of OpenCV. On Raspberry Pi/Linux, `v4l2` is the best default.
+- `camera.fourcc`: preferred capture format. `MJPG` often helps USB cameras hold higher resolutions/FPS more reliably.
+- `camera.buffer_size`: keep this low, usually `1`, to avoid stale buffered frames.
+- `camera.warmup_frames`: discard the first few frames while the camera settles.
 
 Recommended starting points:
 
-- Pi + USB camera: start with `pipeline: "ffmpeg"` if `ffmpeg` is installed; otherwise `pipeline: "opencv"`, `backend: "v4l2"`, `fourcc: "MJPG"`, `buffer_size: 1`
+- Pi + USB camera: `video.type: "ffmpeg"` if ffmpeg is installed; otherwise `video.type: "opencv"`, `backend: "v4l2"`, `fourcc: "MJPG"`, `buffer_size: 1`
 - For OpenCV capture on weaker Pis, expect `1280x720@30` to be too ambitious; `640x360@30` or `1280x720@15` is often more realistic
 - Weak CPU or unstable stream: drop to `960x540@24` or `640x360@30`
 - If a camera misbehaves with `MJPG`, try `fourcc: null`

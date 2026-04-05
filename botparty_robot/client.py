@@ -13,6 +13,8 @@ from typing import Any, Optional
 import aiohttp
 from livekit import rtc
 
+from . import __version__
+
 from .camera import CameraManager
 from .config import RobotConfig
 from .gateway import GatewayConnection
@@ -30,17 +32,13 @@ TELEMETRY_INTERVAL_SEC = 30
 
 
 class DiagnosticsBufferHandler(logging.Handler):
-    def __init__(self, storage: deque[str], maxlen: int = 400) -> None:
+    def __init__(self, storage: deque[str]) -> None:
         super().__init__(level=logging.INFO)
         self.storage = storage
-        self.maxlen = maxlen
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            msg = self.format(record)
-            self.storage.append(msg)
-            while len(self.storage) > self.maxlen:
-                self.storage.popleft()
+            self.storage.append(self.format(record))
         except Exception:
             pass
 
@@ -89,6 +87,8 @@ class BotPartyClient:
         self._tts_queue: asyncio.Queue[tuple[str, dict[str, Any] | None]] = asyncio.Queue(maxsize=20)
         # serializes hardware commands so blocking adapters (GPIO time.sleep) don't overlap
         self._hardware_lock: asyncio.Lock = asyncio.Lock()
+        # shared HTTP session – created lazily, reused across all REST calls
+        self._http_session: Optional[aiohttp.ClientSession] = None
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -107,6 +107,12 @@ class BotPartyClient:
     # ------------------------------------------------------------------
     # Lifecycle
     # ------------------------------------------------------------------
+
+    def _get_session(self) -> aiohttp.ClientSession:
+        """Return the shared HTTP session, creating it if necessary."""
+        if self._http_session is None or self._http_session.closed:
+            self._http_session = aiohttp.ClientSession()
+        return self._http_session
 
     async def run(self) -> None:
         self._running = True
@@ -131,6 +137,8 @@ class BotPartyClient:
 
     async def _connect(self, token: str) -> None:
         self._room = rtc.Room()
+        # Reset per-session counters so a fresh connection starts clean.
+        self.stats.camera_task_restarts = 0
 
         @self._room.on("data_received")
         def on_data(data: rtc.DataPacket):
@@ -184,6 +192,9 @@ class BotPartyClient:
 
         if self._room:
             await self._room.disconnect()
+
+        if self._http_session and not self._http_session.closed:
+            await self._http_session.close()
 
         logger.info(
             "Goodbye! Stats: commands=%d frames=%d reconnects=%d",
@@ -332,15 +343,15 @@ class BotPartyClient:
                     self.stats.last_heartbeat_at = time.time()
                 else:
                     # Gateway not connected - fall back to REST
-                    async with aiohttp.ClientSession() as session:
-                        async with session.post(
-                            f"{self.config.server.api_url}/api/v1/robots/heartbeat",
-                            json={"robotId": self._robot_id},
-                            headers={"Content-Type": "application/json"},
-                            timeout=aiohttp.ClientTimeout(total=5),
-                        ) as resp:
-                            if resp.status in (200, 201):
-                                self.stats.last_heartbeat_at = time.time()
+                    session = self._get_session()
+                    async with session.post(
+                        f"{self.config.server.api_url}/api/v1/robots/heartbeat",
+                        json={"robotId": self._robot_id},
+                        headers={"Content-Type": "application/json"},
+                        timeout=aiohttp.ClientTimeout(total=5),
+                    ) as resp:
+                        if resp.status in (200, 201):
+                            self.stats.last_heartbeat_at = time.time()
 
                 if time.time() - self._last_telemetry_sent_at >= TELEMETRY_INTERVAL_SEC:
                     await self._send_telemetry()
@@ -373,13 +384,13 @@ class BotPartyClient:
         # WS-first: no REST round-trip overhead when the socket is up
         sent = await self._gateway.send_event("robot:telemetry", payload)
         if not sent:
-            async with aiohttp.ClientSession() as session:
-                await session.post(
-                    f"{self.config.server.api_url}/api/v1/robots/telemetry",
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=5),
-                )
+            session = self._get_session()
+            await session.post(
+                f"{self.config.server.api_url}/api/v1/robots/telemetry",
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=5),
+            )
 
     def _read_temperature_c(self) -> Optional[float]:
         for path in (
@@ -387,8 +398,8 @@ class BotPartyClient:
             "/sys/class/hwmon/hwmon0/temp1_input",
         ):
             try:
-                raw = open(path, "r", encoding="utf-8").read().strip()
-                value = float(raw)
+                with open(path, encoding="utf-8") as fh:
+                    value = float(fh.read().strip())
                 if value > 1000:
                     value /= 1000.0
                 if -40 <= value <= 150:
@@ -399,14 +410,15 @@ class BotPartyClient:
 
     def _get_uptime_sec(self) -> Optional[int]:
         try:
-            raw = open("/proc/uptime", "r", encoding="utf-8").read().split()[0]
-            return max(0, int(float(raw)))
+            with open("/proc/uptime", encoding="utf-8") as fh:
+                return max(0, int(float(fh.read().split()[0])))
         except Exception:
             return None
 
     def _read_cpu_percent(self) -> Optional[float]:
         try:
-            parts = open("/proc/stat", "r", encoding="utf-8").readline().split()
+            with open("/proc/stat", encoding="utf-8") as fh:
+                parts = fh.readline().split()
             if len(parts) < 5 or parts[0] != "cpu":
                 return None
 
@@ -460,17 +472,17 @@ class BotPartyClient:
                     await asyncio.sleep(3)
                     continue
 
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{self.config.server.api_url}/api/v1/robots/actions/poll",
-                        json={"claimToken": self.config.server.claim_token},
-                        headers={"Content-Type": "application/json"},
-                        timeout=aiohttp.ClientTimeout(total=5),
-                    ) as resp:
-                        if resp.status in (200, 201):
-                            data = await resp.json()
-                            if isinstance(data, dict):
-                                await self._apply_remote_actions_payload(data)
+                session = self._get_session()
+                async with session.post(
+                    f"{self.config.server.api_url}/api/v1/robots/actions/poll",
+                    json={"claimToken": self.config.server.claim_token},
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                ) as resp:
+                    if resp.status in (200, 201):
+                        data = await resp.json()
+                        if isinstance(data, dict):
+                            await self._apply_remote_actions_payload(data)
             except Exception as e:
                 logger.debug("Action poll error (non-fatal): %s", e)
             await asyncio.sleep(3)
@@ -527,6 +539,7 @@ class BotPartyClient:
                 duration = 120
             duration_sec = max(10, min(int(duration), 900))
             self._diag_enabled_until = time.time() + duration_sec
+            self._diag_last_sent_idx = 0  # restart from current buffer head
             logger.info("Remote action: diagnostics enabled for %ds", duration_sec)
 
     # ------------------------------------------------------------------
@@ -538,19 +551,23 @@ class BotPartyClient:
             try:
                 if time.time() < self._diag_enabled_until:
                     lines = list(self._diag_buffer)
+                    # Guard against the deque wrapping: if our stored index now
+                    # exceeds the buffer length, reset so new lines are picked up.
+                    if self._diag_last_sent_idx >= len(lines):
+                        self._diag_last_sent_idx = 0
                     if self._diag_last_sent_idx < len(lines):
                         batch = lines[self._diag_last_sent_idx:self._diag_last_sent_idx + 50]
                         self._diag_last_sent_idx += len(batch)
-                        async with aiohttp.ClientSession() as session:
-                            await session.post(
-                                f"{self.config.server.api_url}/api/v1/robots/logs",
-                                json={
-                                    "claimToken": self.config.server.claim_token,
-                                    "lines": batch,
-                                },
-                                headers={"Content-Type": "application/json"},
-                                timeout=aiohttp.ClientTimeout(total=5),
-                            )
+                        session = self._get_session()
+                        await session.post(
+                            f"{self.config.server.api_url}/api/v1/robots/logs",
+                            json={
+                                "claimToken": self.config.server.claim_token,
+                                "lines": batch,
+                            },
+                            headers={"Content-Type": "application/json"},
+                            timeout=aiohttp.ClientTimeout(total=5),
+                        )
             except Exception as e:
                 logger.debug("Diagnostics upload error (non-fatal): %s", e)
             await asyncio.sleep(2)
@@ -717,42 +734,42 @@ class BotPartyClient:
 
     async def _authenticate(self) -> tuple[Optional[str], Optional[str], Optional[str]]:
         try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{self.config.server.api_url}/api/v1/robots/claim",
-                    json={"claimToken": self.config.server.claim_token},
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=10),
-                    allow_redirects=False,
-                ) as resp:
-                    if resp.status in (301, 302, 307, 308):
-                        location = resp.headers.get("Location", "")
-                        logger.error(
-                            "Server redirected (%d) to: %s - check api_url (http vs https)",
-                            resp.status,
-                            location,
-                        )
-                        return None, None, None
-                    if resp.status not in (200, 201):
-                        text = await resp.text()
-                        logger.error("Claim failed (%d): %s", resp.status, text)
-                        if resp.status == 404 and self.config.server.api_url.startswith("http://"):
-                            logger.error("Hint: try https:// if your server has SSL enabled")
-                        return None, None, None
+            session = self._get_session()
+            async with session.post(
+                f"{self.config.server.api_url}/api/v1/robots/claim",
+                json={"claimToken": self.config.server.claim_token},
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=10),
+                allow_redirects=False,
+            ) as resp:
+                if resp.status in (301, 302, 307, 308):
+                    location = resp.headers.get("Location", "")
+                    logger.error(
+                        "Server redirected (%d) to: %s - check api_url (http vs https)",
+                        resp.status,
+                        location,
+                    )
+                    return None, None, None
+                if resp.status not in (200, 201):
+                    text = await resp.text()
+                    logger.error("Claim failed (%d): %s", resp.status, text)
+                    if resp.status == 404 and self.config.server.api_url.startswith("http://"):
+                        logger.error("Hint: try https:// if your server has SSL enabled")
+                    return None, None, None
 
-                    data = await resp.json()
-                    stream = data.get("stream") if isinstance(data, dict) else None
-                    target_kbps = None
-                    if isinstance(stream, dict):
-                        v = stream.get("targetBitrateKbps")
-                        if isinstance(v, (int, float)) and 150 <= v <= 3000:
-                            target_kbps = int(v)
-                    self._target_bitrate_kbps = target_kbps
+                data = await resp.json()
+                stream = data.get("stream") if isinstance(data, dict) else None
+                target_kbps = None
+                if isinstance(stream, dict):
+                    v = stream.get("targetBitrateKbps")
+                    if isinstance(v, (int, float)) and 150 <= v <= 3000:
+                        target_kbps = int(v)
+                self._target_bitrate_kbps = target_kbps
 
-                    livekit_url = data.get("livekitUrl")
-                    if not isinstance(livekit_url, str):
-                        livekit_url = None
-                    return data.get("token"), data.get("robotId"), livekit_url
+                livekit_url = data.get("livekitUrl")
+                if not isinstance(livekit_url, str):
+                    livekit_url = None
+                return data.get("token"), data.get("robotId"), livekit_url
         except Exception as e:
             logger.error("Authentication error: %s", e)
             return None, None, None

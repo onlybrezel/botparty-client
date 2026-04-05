@@ -20,7 +20,13 @@ class HardwareAdapter(BaseHardware):
         self.device = self.option_str("device", "/dev/ttyUSB0")
         self.baud_rate = self.option_int("baud_rate", 115200)
         self.device_name = self.options.get("device_name")
-        self.line_ending = self.option_str("line_ending", "\\n").encode("utf-8").decode("unicode_escape")
+        # Accept escape sequences like \n, \r\n from config (e.g. "\\r\\n").
+        # Default is a plain newline.
+        raw_ending = self.options.get("line_ending", "\n")
+        if isinstance(raw_ending, str):
+            self.line_ending = raw_ending.encode("utf-8").decode("unicode_escape")
+        else:
+            self.line_ending = "\n"
         self.stop_command = self.option_str("stop_command", "stop")
         self.payload_mode = self.option_str("payload_mode", "plain")
 
@@ -62,7 +68,7 @@ class HardwareAdapter(BaseHardware):
         if self.serial is None:
             self.log.info("command=%s", payload)
             return
-        self.serial.write(payload.encode("utf-8") + self.line_ending.encode("utf-8"))
+        self.serial.write((payload + self.line_ending).encode("utf-8"))
         self.serial.flush()
 
     def emergency_stop(self) -> None:

@@ -72,20 +72,22 @@ class HardwareAdapter(BaseHardware):
             self._pulse_drive(None, self.forward_drive, 0.3, self.forward_slow)
         elif self.matches(command, "backward"):
             self._pulse_drive(None, self.backward_drive, 0.3, self.backward_slow)
-        elif command == "bl":
-            self._pulse_drive(self.steer_left, self.backward_drive, 0.5)
-        elif command == "br":
-            self._pulse_drive(self.steer_right, self.backward_drive, 0.5)
-        elif command == "S2INC":
-            self._set_pwm(self.aux_channel, self.aux_increment)
-        elif command == "S2DEC":
-            self._set_pwm(self.aux_channel, self.aux_decrement)
-        elif command == "POS60":
-            self._set_pwm(self.aux_channel, self.aux_pos60)
-        elif command == "NEG60":
-            self._set_pwm(self.aux_channel, self.aux_neg60)
-        elif self.matches(command, "stop"):
-            self.emergency_stop()
+        else:
+            cmd = command.strip().upper()
+            if cmd == "BL":
+                self._pulse_drive(self.steer_left, self.backward_drive, 0.5)
+            elif cmd == "BR":
+                self._pulse_drive(self.steer_right, self.backward_drive, 0.5)
+            elif cmd == "S2INC":
+                self._set_pwm(self.aux_channel, self.aux_increment)
+            elif cmd == "S2DEC":
+                self._set_pwm(self.aux_channel, self.aux_decrement)
+            elif cmd == "POS60":
+                self._set_pwm(self.aux_channel, self.aux_pos60)
+            elif cmd == "NEG60":
+                self._set_pwm(self.aux_channel, self.aux_neg60)
+            elif self.matches(command, "stop"):
+                self.emergency_stop()
 
     def emergency_stop(self) -> None:
         self._set_pwm(self.steer_channel, self.steer_center)

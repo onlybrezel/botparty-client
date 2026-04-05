@@ -11,6 +11,7 @@ import yaml
 
 from .client import BotPartyClient
 from .config import RobotConfig
+from . import __version__
 
 logging.basicConfig(
     level=logging.INFO,
@@ -147,7 +148,7 @@ async def main() -> None:
         logger.error("Please set your claim_token in config.yaml!")
         sys.exit(1)
 
-    logger.info("🤖 BotParty Robot Client v0.1.0")
+    logger.info("🤖 BotParty Robot Client v%s", __version__)
     logger.info(f"   API: {config.server.api_url}")
     logger.info(f"   LiveKit: {config.server.livekit_url}")
     logger.info(f"   Hardware: {config.hardware.type}")
