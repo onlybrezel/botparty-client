@@ -202,13 +202,39 @@ class BotPartyClient:
             lambda: self._livekit_connected,
         )
 
+    async def _cancel_camera_task(self, timeout_sec: float = 6.5) -> None:
+        task = self._camera_task
+        if not task or task.done():
+            return
+
+        task.cancel()
+        try:
+            await asyncio.wait_for(task, timeout=timeout_sec)
+        except asyncio.TimeoutError:
+            logger.warning(
+                "Camera task did not shut down within %.1fs; waiting for device release",
+                timeout_sec,
+            )
+        except asyncio.CancelledError:
+            pass
+
+        # Give the OS and ffmpeg a short moment to release /dev/video* cleanly.
+        await asyncio.sleep(0.5)
+
+    async def _restart_camera_pipeline(self, reason: str) -> None:
+        logger.info("Restarting camera pipeline: %s", reason)
+        await self._cancel_camera_task()
+        self.video_profile = create_video_profile(self.config)
+        self._camera.video_profile = self.video_profile
+        self._camera_task = asyncio.create_task(self._start_camera())
+
     async def _stop_media_tasks(self) -> None:
         audio = self._camera.audio_task
-        for task in [self._camera_task, audio]:
-            if task and not task.done():
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, Exception):
-                    await task
+        await self._cancel_camera_task()
+        if audio and not audio.done():
+            audio.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await audio
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
@@ -233,7 +259,9 @@ class BotPartyClient:
                             "Restarting camera pipeline (attempt %d/5)",
                             self.stats.camera_task_restarts,
                         )
-                        self._camera_task = asyncio.create_task(self._start_camera())
+                        await self._restart_camera_pipeline(
+                            f"supervisor attempt {self.stats.camera_task_restarts}/5"
+                        )
                     else:
                         logger.error("Camera restarted 5 times - giving up")
 
@@ -454,11 +482,8 @@ class BotPartyClient:
             if next_bitrate != self._target_bitrate_kbps:
                 self._target_bitrate_kbps = next_bitrate
                 logger.info("Remote stream policy: targetBitrateKbps=%s", self._target_bitrate_kbps)
-                if self._camera_task and not self._camera_task.done():
-                    self._camera_task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await self._camera_task
-                    self._camera_task = asyncio.create_task(self._start_camera())
+                if self._livekit_connected:
+                    await self._restart_camera_pipeline("stream policy updated")
 
         for action in payload.get("actions", []) if isinstance(payload, dict) else []:
             if isinstance(action, dict):
@@ -469,13 +494,8 @@ class BotPartyClient:
 
         if action_type == "restart_video":
             logger.info("Remote action: restart_video")
-            if self._camera_task and not self._camera_task.done():
-                self._camera_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
-                    await asyncio.wait_for(self._camera_task, timeout=2.0)
-            self.video_profile = create_video_profile(self.config)
-            self._camera.video_profile = self.video_profile
-            self._camera_task = asyncio.create_task(self._start_camera())
+            if self._livekit_connected:
+                await self._restart_camera_pipeline("remote action restart_video")
 
         elif action_type == "restart_control":
             logger.info("Remote action: restart_control")
