@@ -26,6 +26,7 @@ TTS_SAY_COMMANDS = {"say", "speak", "tts", "tts:say", "tts.say"}
 TTS_MUTE_COMMANDS = {"tts:mute", "tts.mute", "mute_tts", "tts_mute"}
 TTS_UNMUTE_COMMANDS = {"tts:unmute", "tts.unmute", "unmute_tts", "tts_unmute"}
 TTS_VOLUME_COMMANDS = {"tts:volume", "tts.volume", "tts_volume", "volume_tts"}
+TELEMETRY_INTERVAL_SEC = 30
 
 
 class DiagnosticsBufferHandler(logging.Handler):
@@ -92,6 +93,7 @@ class BotPartyClient:
         self._diag_last_sent_idx = 0
         self._last_heartbeat_stale_warning_at = 0.0
         self._last_telemetry_sent_at = 0.0
+        self._last_cpu_sample: Optional[tuple[float, float]] = None
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(
@@ -309,7 +311,7 @@ class BotPartyClient:
                             if resp.status in (200, 201):
                                 self.stats.last_heartbeat_at = time.time()
 
-                if time.time() - self._last_telemetry_sent_at >= 20:
+                if time.time() - self._last_telemetry_sent_at >= TELEMETRY_INTERVAL_SEC:
                     await self._send_telemetry()
                     self._last_telemetry_sent_at = time.time()
             except Exception as e:
@@ -319,8 +321,8 @@ class BotPartyClient:
     async def _send_telemetry(self) -> None:
         payload: dict[str, Any] = {
             "claimToken": self.config.server.claim_token,
-            "cpuPercent": None,
-            "memoryPercent": None,
+            "cpuPercent": self._read_cpu_percent(),
+            "memoryPercent": self._read_memory_percent(),
             "temperatureC": self._read_temperature_c(),
             "uptimeSec": self._get_uptime_sec(),
             "controlConnected": self._gateway.connected,
@@ -332,7 +334,8 @@ class BotPartyClient:
             import psutil  # type: ignore
             payload["cpuPercent"] = float(psutil.cpu_percent(interval=None))
             payload["memoryPercent"] = float(psutil.virtual_memory().percent)
-            payload["uptimeSec"] = int(time.time() - psutil.boot_time())
+            boot_time = float(psutil.boot_time())
+            payload["uptimeSec"] = max(0, int(time.time() - boot_time))
         except Exception:
             pass
 
@@ -365,7 +368,53 @@ class BotPartyClient:
 
     def _get_uptime_sec(self) -> Optional[int]:
         try:
-            return int(time.time() - os.times().elapsed)
+            raw = open("/proc/uptime", "r", encoding="utf-8").read().split()[0]
+            return max(0, int(float(raw)))
+        except Exception:
+            return None
+
+    def _read_cpu_percent(self) -> Optional[float]:
+        try:
+            parts = open("/proc/stat", "r", encoding="utf-8").readline().split()
+            if len(parts) < 5 or parts[0] != "cpu":
+                return None
+
+            values = [float(value) for value in parts[1:]]
+            idle = values[3]
+            total = sum(values)
+            previous = self._last_cpu_sample
+            self._last_cpu_sample = (idle, total)
+
+            if previous is None:
+                return None
+
+            prev_idle, prev_total = previous
+            total_delta = total - prev_total
+            idle_delta = idle - prev_idle
+            if total_delta <= 0:
+                return None
+
+            usage = 100.0 * (1.0 - (idle_delta / total_delta))
+            return max(0.0, min(100.0, usage))
+        except Exception:
+            return None
+
+    def _read_memory_percent(self) -> Optional[float]:
+        try:
+            meminfo: dict[str, int] = {}
+            with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+                for line in handle:
+                    key, value = line.split(":", 1)
+                    meminfo[key] = int(value.strip().split()[0])
+
+            total = meminfo.get("MemTotal")
+            available = meminfo.get("MemAvailable")
+            if not total or available is None or total <= 0:
+                return None
+
+            used = total - available
+            usage = (used / total) * 100.0
+            return max(0.0, min(100.0, usage))
         except Exception:
             return None
 
