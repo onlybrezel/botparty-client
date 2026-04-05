@@ -292,24 +292,31 @@ class BotPartyClient:
     async def _heartbeat_loop(self) -> None:
         while self._running:
             try:
-                async with aiohttp.ClientSession() as session:
-                    async with session.post(
-                        f"{self.config.server.api_url}/api/v1/robots/heartbeat",
-                        json={"robotId": self._robot_id},
-                        headers={"Content-Type": "application/json"},
-                        timeout=aiohttp.ClientTimeout(total=5),
-                    ) as resp:
-                        if resp.status in (200, 201):
-                            self.stats.last_heartbeat_at = time.time()
+                sent = await self._gateway.send_event(
+                    "robot:heartbeat", {"robotId": self._robot_id}
+                )
+                if sent:
+                    self.stats.last_heartbeat_at = time.time()
+                else:
+                    # Gateway not connected - fall back to REST
+                    async with aiohttp.ClientSession() as session:
+                        async with session.post(
+                            f"{self.config.server.api_url}/api/v1/robots/heartbeat",
+                            json={"robotId": self._robot_id},
+                            headers={"Content-Type": "application/json"},
+                            timeout=aiohttp.ClientTimeout(total=5),
+                        ) as resp:
+                            if resp.status in (200, 201):
+                                self.stats.last_heartbeat_at = time.time()
 
-                    if time.time() - self._last_telemetry_sent_at >= 20:
-                        await self._send_telemetry(session)
-                        self._last_telemetry_sent_at = time.time()
+                if time.time() - self._last_telemetry_sent_at >= 20:
+                    await self._send_telemetry()
+                    self._last_telemetry_sent_at = time.time()
             except Exception as e:
                 logger.debug("Heartbeat error (non-fatal): %s", e)
             await asyncio.sleep(15)
 
-    async def _send_telemetry(self, session: aiohttp.ClientSession) -> None:
+    async def _send_telemetry(self) -> None:
         payload: dict[str, Any] = {
             "claimToken": self.config.server.claim_token,
             "cpuPercent": None,
@@ -329,12 +336,16 @@ class BotPartyClient:
         except Exception:
             pass
 
-        await session.post(
-            f"{self.config.server.api_url}/api/v1/robots/telemetry",
-            json=payload,
-            headers={"Content-Type": "application/json"},
-            timeout=aiohttp.ClientTimeout(total=5),
-        )
+        # WS-first: no REST round-trip overhead when the socket is up
+        sent = await self._gateway.send_event("robot:telemetry", payload)
+        if not sent:
+            async with aiohttp.ClientSession() as session:
+                await session.post(
+                    f"{self.config.server.api_url}/api/v1/robots/telemetry",
+                    json=payload,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=5),
+                )
 
     def _read_temperature_c(self) -> Optional[float]:
         for path in (
@@ -595,6 +606,14 @@ class BotPartyClient:
         if command in {"forward", "backward", "left", "right"}:
             self.stats.last_command_at = time.time()
         self.stats.commands_received += 1
+
+        # Chat messages: speak them if TTS chat-to-TTS is enabled
+        if command == "chat":
+            if self.config.tts.chat_to_tts and self.tts.can_handle():
+                message, metadata = self._normalize_tts_payload(command, value)
+                if message:
+                    self._tts_queue.put_nowait((message, metadata))
+            return
 
         if self._maybe_handle_tts_command(command, value):
             return

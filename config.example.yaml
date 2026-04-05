@@ -1,146 +1,240 @@
+# BotParty Robot Client - Configuration File
+# ============================================
+#
+# QUICK START:
+#   1. Set server.claim_token  (copy it from the BotParty web dashboard)
+#   2. Set server.api_url      (address of your BotParty server)
+#   3. Pick your hardware type in the "hardware" section below
+#   4. Run:  python -m botparty_robot
+#
+# Everything has sensible defaults - only change what you actually need.
+
+
+# -- Server connection ---------------------------------------------------------
+
 server:
-  api_url: "http://localhost:4000"
-  livekit_url: "ws://localhost:7880"
+  # These must not be changed.
+  api_url: "https://bp.julgie.de"
+
+  # These must not be changed.
+  livekit_url: "wss://bp.julgie.de:7880"
+
+  # Your robot's claim token from the BotParty dashboard.
+  # Treat this like a password - do not share it publicly.
   claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
 
+
+# -- Camera --------------------------------------------------------------------
+
 camera:
+  # Video device.  /dev/video0 is the first USB or Raspberry Pi camera.
+  # Run "ls /dev/video*" to list available cameras.
+  device: "/dev/video0"
+
+  # Resolution. Lower values reduce CPU load on slower hardware.
   width: 1280
   height: 720
   fps: 30
-  device: "/dev/video0"
-  pipeline: "opencv"
-  backend: "v4l2"
-  fourcc: "MJPG"
-  buffer_size: 1
-  warmup_frames: 4
 
-controls:
-  gpio_enabled: false
-  motor_left_forward: 17
-  motor_left_backward: 18
-  motor_right_forward: 22
-  motor_right_backward: 23
+
+# -- Video pipeline ------------------------------------------------------------
+#
+# Controls how the camera feed is captured and streamed.
+#
+# Available types:
+#   ffmpeg            - best quality, lowest latency  [RECOMMENDED]
+#                       requires: sudo apt install ffmpeg
+#   ffmpeg_arecord    - same as ffmpeg + microphone audio
+#                       requires: sudo apt install ffmpeg alsa-utils
+#   ffmpeg_libcamera  - Raspberry Pi Camera Module v2/v3 (libcamera stack)
+#                       requires: libcamera-vid installed
+#   opencv            - pure Python fallback, no extra dependencies
+#                       slower and lower quality than ffmpeg
+
+video:
+  type: "ffmpeg"
+  options: {}
+
+# -- With microphone audio (USB mic or Pi audio hat): -------------------------
+# video:
+#   type: "ffmpeg_arecord"
+#   options:
+#     audio_device: "default"      # run "arecord -l" to list ALSA devices
+#     audio_sample_rate: 48000
+#     audio_channels: 1
+
+# -- Raspberry Pi Camera Module (libcamera, not v4l2): -----------------------
+# video:
+#   type: "ffmpeg_libcamera"
+#   options: {}
+
+# -- Pure Python fallback (no ffmpeg needed): ---------------------------------
+# video:
+#   type: "opencv"
+#   options: {}
+
+
+# -- Hardware / Motor controller -----------------------------------------------
+#
+# Set "type" to match your motor controller board.
+# Options under "options" are specific to each hardware type.
+#
+# Available types:
+#   none          - no movement (safe default, good for testing video)
+#   l298n         - L298N dual H-bridge (the most common cheap driver)
+#   adafruit_pwm  - Adafruit 16-channel PWM/Servo Hat
+#   motor_hat     - Adafruit DC + Stepper Motor Hat
+#   serial_board  - Arduino / Parallax board over USB serial
+#   mqtt_pub      - publish commands to a local MQTT broker (e.g. ROS2 bridge)
+#   pololu        - Pololu DRV8835 / MC33926 dual motor driver
+#   mdd10         - Cytron MDD10 10A motor driver
+#   motozero      - MotoZero 4-motor controller
+#   thunderborg   - PiBorg ThunderBorg
+#   gopigo2       - GoPiGo 2
+#   gopigo3       - GoPiGo 3
+#   cozmo         - Anki Cozmo
+#   vector        - Anki Vector
+#   owi_arm       - OWI 535 USB Robotic Arm
+#   custom        - your own Python class (see the "custom" example below)
 
 hardware:
   type: "none"
   options: {}
 
+# -- L298N dual H-bridge (BCM GPIO pin numbers): ------------------------------
 # hardware:
 #   type: "l298n"
 #   options:
-#     forward_pins: [17]
-#     backward_pins: [18]
-#     left_pins: [22]
-#     right_pins: [23]
-#     drive_seconds: 0.35
-#     turn_seconds: 0.20
-#
+#     forward_pins: [17]       # GPIO pins to activate for forward
+#     backward_pins: [18]      # GPIO pins to activate for backward
+#     left_pins: [22]          # GPIO pins to activate for left turn
+#     right_pins: [23]         # GPIO pins to activate for right turn
+#     drive_seconds: 0.35      # how long one drive command lasts (seconds)
+#     turn_seconds: 0.20       # how long one turn command lasts (seconds)
+
+# -- Arduino / USB serial board: ----------------------------------------------
 # hardware:
 #   type: "serial_board"
 #   options:
-#     device: "/dev/ttyUSB0"
+#     device: "/dev/ttyUSB0"   # run "ls /dev/ttyUSB*" to find your Arduino
 #     baud_rate: 115200
-#
+
+# -- MQTT (e.g. bridge to ROS2 or Home Assistant): ----------------------------
 # hardware:
 #   type: "mqtt_pub"
 #   options:
 #     host: "localhost"
 #     port: 1883
 #     topic: "botparty/robot/command"
+
+# -- Custom hardware (write your own driver): ---------------------------------
+#
+# Steps:
+#   1. Copy  botparty_robot/hardware/hardware_custom_example.py
+#      to the same folder as this config.yaml and rename it
+#      to hardware_custom.py
+#   2. Open hardware_custom.py and fill in your motor logic
+#   3. Run as usual - the client finds hardware_custom.py automatically
 #
 # hardware:
 #   type: "custom"
 #   options:
-#     class: "my_robot.handler.MyRobotHandler"
+#     # Any extra keys here are available as self.options inside your class:
+#     speed: 50
 
-video:
-  type: "opencv"
-  options: {}
 
-# video:
-#   type: "ffmpeg"
-#   options:
-#     ffmpeg_path: "ffmpeg"
+# -- Text-to-Speech ------------------------------------------------------------
 #
-# video:
-#   type: "ffmpeg_arecord"
-#   options:
-#     ffmpeg_path: "ffmpeg"
-#     arecord_path: "arecord"
-#     audio_device: "default"
-#     audio_sample_rate: 48000
-#     audio_channels: 1
+# When enabled, chat messages typed by viewers are spoken aloud through the
+# robot's speaker.
 #
-# video:
-#   type: "ffmpeg_hud"
-#   options: {}
-#
-# video:
-#   type: "ffmpeg_libcamera"
-#   options:
-#     libcamera_path: "libcamera-vid"
-#
-# video:
-#   type: "cozmo_vid"
-#   options:
-#     annotated: true
-#
-# video:
-#   type: "vector_vid"
-#   options:
-#     annotated: true
+# Available TTS engines:
+#   none         - TTS disabled
+#   espeak       - eSpeak (free, offline)
+#                  install: sudo apt install espeak
+#   pico         - SVOX Pico (better voice quality, still offline)
+#                  install: sudo apt install libttspico-utils
+#   festival     - Festival Speech Synthesis
+#                  install: sudo apt install festival
+#   polly        - Amazon Polly (cloud, requires AWS credentials)
+#   google_cloud - Google Cloud TTS (cloud, requires credentials JSON)
 
 tts:
+  # Set to true to activate text-to-speech.
   enabled: false
+
+  # TTS engine (see list above).
   type: "none"
+
+  # ALSA playback device.  Run "aplay -l" to list available sound cards.
+  # Common values: "default", "Headphones", "plughw:1,0"
   playback_device: "default"
+
+  # Speaker volume (0-100).
   volume: 70
-  filter_urls: false
+
+  # Speak everything users type in chat when TTS is enabled.
+  # Set to false to only speak explicit "say" commands sent by the controller UI.
+  chat_to_tts: true
+
+  # Strip URLs from messages before reading them aloud (prevents spam).
+  filter_urls: true
+
+  # Allow viewers who are not logged in to trigger TTS.
   allow_anonymous: true
-  blocked_senders: []
-  delay_ms: 0
+
+  # Extra options passed to the selected TTS engine (engine-specific).
   options: {}
 
+# -- eSpeak example: ----------------------------------------------------------
 # tts:
 #   enabled: true
 #   type: "espeak"
-#   playback_device: "Headphones"
+#   playback_device: "default"
 #   volume: 75
+#   chat_to_tts: true
+#   filter_urls: true
 #   options:
-#     voice: "de"
-#     voice_variant: "m3"
-#     speed: 165
-#
+#     voice: "en"              # language - run "espeak --voices" for the full list
+#     speed: 165               # words per minute
+
+# -- SVOX Pico example (better quality): --------------------------------------
 # tts:
 #   enabled: true
 #   type: "pico"
-#   playback_device: "Headphones"
+#   playback_device: "default"
+#   volume: 80
 #   options:
-#     voice: "de-DE"
-#
+#     voice: "en-US"           # en-US  en-GB  de-DE  fr-FR  es-ES  it-IT
+
+# -- Amazon Polly (cloud, requires AWS credentials): --------------------------
 # tts:
 #   enabled: true
 #   type: "polly"
-#   playback_device: "Headphones"
+#   playback_device: "default"
 #   options:
-#     region_name: "eu-central-1"
-#     robot_voice: "Vicki"
-#
+#     region_name: "us-east-1"
+#     robot_voice: "Joanna"    # run "aws polly describe-voices" for available voices
+
+# -- Google Cloud TTS (cloud, requires service-account JSON): -----------------
 # tts:
 #   enabled: true
 #   type: "google_cloud"
-#   playback_device: "Headphones"
+#   playback_device: "default"
 #   options:
 #     key_file: "/home/pi/google-tts.json"
-#     voice: "de-DE-Neural2-B"
+#     voice: "en-US-Neural2-F"
+
+
+# -- Safety limits -------------------------------------------------------------
 #
-# tts:
-#   enabled: true
-#   type: "custom"
-#   options:
-#     class: "my_robot.tts.MyTTS"
+# These protect the robot from runaway commands.  Safe to leave at defaults.
 
 safety:
-  emergency_stop_pin: 27
+  # Auto-stop motors if no new drive command arrives within this time (ms).
+  # Keeps the robot from driving off if the browser tab is closed mid-drive.
   max_run_time_ms: 2000
+
+  # Drop control commands that arrive with more latency than this (ms).
+  # Prevents stale inputs from executing after a connection hiccup.
   latency_threshold_ms: 300

@@ -1,0 +1,19 @@
+# Your local hardware implementation - keep out of git
+hardware_custom.py
+
+# Your local config - keep credentials out of git
+config.yaml
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+*.egg
+
+# Editor
+.vscode/
+.idea/

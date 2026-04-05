@@ -16,7 +16,6 @@ class CameraConfig(BaseModel):
     height: int = 720
     fps: int = 30
     device: str = "/dev/video0"
-    pipeline: str = "opencv"
     backend: str = "v4l2"
     fourcc: str | None = "MJPG"
     buffer_size: int = Field(default=1, ge=1, le=8)
@@ -39,7 +38,7 @@ class HardwareConfig(BaseModel):
 
 
 class VideoConfig(BaseModel):
-    type: str = "opencv"
+    type: str = "ffmpeg"
     options: dict[str, Any] = Field(default_factory=dict)
 
 
@@ -48,6 +47,7 @@ class TTSConfig(BaseModel):
     type: str = "none"
     playback_device: str = "default"
     volume: int = Field(default=70, ge=0, le=100)
+    chat_to_tts: bool = True
     filter_urls: bool = False
     allow_anonymous: bool = True
     blocked_senders: list[str] = Field(default_factory=list)

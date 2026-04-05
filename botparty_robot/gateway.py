@@ -37,11 +37,23 @@ class GatewayConnection:
         self._on_actions = on_actions
         self._running_fn = running_fn
         self._connected = False
+        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._last_actions_pull_at = 0.0
 
     @property
     def connected(self) -> bool:
         return self._connected
+
+    async def send_event(self, event: str, data: dict) -> bool:
+        """Send an event over the active WebSocket. Returns False if not connected."""
+        ws = self._ws
+        if not self._connected or ws is None:
+            return False
+        try:
+            await ws.send_json({"event": event, "data": data})
+            return True
+        except Exception:
+            return False
 
     async def run(self) -> None:
         """WebSocket loop - reconnects with exponential backoff."""
@@ -54,6 +66,7 @@ class GatewayConnection:
                 timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_read=30)
                 async with aiohttp.ClientSession(timeout=timeout) as session:
                     async with session.ws_connect(ws_url, heartbeat=20) as ws:
+                        self._ws = ws
                         attempt = 0
                         self._connected = True
                         logger.info("Control websocket connected")
@@ -81,6 +94,7 @@ class GatewayConnection:
                 logger.warning("Control websocket disconnected (%s); retrying in %ds", e, delay)
                 await asyncio.sleep(delay)
             finally:
+                self._ws = None
                 self._connected = False
 
     async def _handle_message(self, raw: str) -> None:
