@@ -4,6 +4,7 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
 import re
 import time
 from collections import deque
@@ -93,6 +94,7 @@ class BotPartyClient:
         self._control_ws_connected = False
         self._last_actions_pull_at = 0.0
         self._last_heartbeat_stale_warning_at = 0.0
+        self._last_telemetry_sent_at = 0.0
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s"))
@@ -496,9 +498,68 @@ class BotPartyClient:
                     ) as resp:
                         if resp.status in (200, 201):
                             self.stats.last_heartbeat_at = time.time()
+
+                    if time.time() - self._last_telemetry_sent_at >= 20:
+                        await self._send_telemetry(session)
+                        self._last_telemetry_sent_at = time.time()
             except Exception as e:
                 logger.debug(f"Heartbeat error (non-fatal): {e}")
             await asyncio.sleep(15)
+
+    def _read_temperature_c(self) -> float | None:
+        candidates = [
+            "/sys/class/thermal/thermal_zone0/temp",
+            "/sys/class/hwmon/hwmon0/temp1_input",
+        ]
+
+        for path in candidates:
+            try:
+                with open(path, "r", encoding="utf-8") as handle:
+                    raw = handle.read().strip()
+                value = float(raw)
+                if value > 1000:
+                    value = value / 1000.0
+                if -40 <= value <= 150:
+                    return value
+            except Exception:
+                continue
+
+        return None
+
+    async def _send_telemetry(self, session: aiohttp.ClientSession) -> None:
+        payload = {
+            "claimToken": self.config.server.claim_token,
+            "cpuPercent": None,
+            "memoryPercent": None,
+            "temperatureC": self._read_temperature_c(),
+            "uptimeSec": int(time.time() - psutil_boot) if (psutil_boot := self._get_boot_time()) else None,
+            "controlConnected": self._control_ws_connected,
+            "livekitConnected": self._livekit_connected,
+            "commandsReceived": self.stats.commands_received,
+            "cameraFrames": self.stats.camera_frames,
+        }
+
+        try:
+            import psutil  # type: ignore
+
+            payload["cpuPercent"] = float(psutil.cpu_percent(interval=None))
+            payload["memoryPercent"] = float(psutil.virtual_memory().percent)
+            payload["uptimeSec"] = int(time.time() - psutil.boot_time())
+        except Exception:
+            pass
+
+        await session.post(
+            f"{self.config.server.api_url}/api/v1/robots/telemetry",
+            json=payload,
+            headers={"Content-Type": "application/json"},
+            timeout=aiohttp.ClientTimeout(total=5),
+        )
+
+    def _get_boot_time(self) -> float | None:
+        try:
+            return float(time.time() - os.times().elapsed)
+        except Exception:
+            return None
 
     async def _supervisor_watchdog(self) -> None:
         """
