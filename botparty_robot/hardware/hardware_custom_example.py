@@ -36,7 +36,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from .base import BaseHardware
+from botparty_robot.hardware.base import BaseHardware
 
 
 class HardwareAdapter(BaseHardware):

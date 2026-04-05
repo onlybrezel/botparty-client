@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import importlib.util
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
@@ -30,8 +29,13 @@ def _load_custom_module():
     ]
     for path in search_paths:
         if path.exists():
-            spec = importlib.util.spec_from_file_location("hardware_custom", path)
+            # Use the botparty_robot.hardware package context so legacy templates
+            # with "from .base import BaseHardware" still import correctly.
+            spec = importlib.util.spec_from_file_location("botparty_robot.hardware.hardware_custom", path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load module spec from {path}")
             module = importlib.util.module_from_spec(spec)
+            module.__package__ = "botparty_robot.hardware"
             spec.loader.exec_module(module)
             logger.info("Loaded custom hardware from: %s", path)
             return module
@@ -61,13 +65,6 @@ class HardwareAdapter(BaseHardware):
     def setup(self) -> None:
         if callable(getattr(self.inner, "setup", None)):
             self.inner.setup()
-
-    def on_command(self, command: str, value: Any = None) -> None:
-        self.inner.on_command(command, value)
-
-    def emergency_stop(self) -> None:
-        self.inner.emergency_stop()
-
 
     def on_command(self, command: str, value: Any = None) -> None:
         self.inner.on_command(command, value)
