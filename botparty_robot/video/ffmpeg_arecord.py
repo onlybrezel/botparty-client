@@ -6,7 +6,7 @@ import asyncio
 import contextlib
 import logging
 
-from ..audio import resolve_alsa_device
+from ..audio import list_alsa_devices, resolve_alsa_device
 from .ffmpeg import VideoProfile as FFmpegVideoProfile
 
 logger = logging.getLogger("botparty.camera")
@@ -27,8 +27,18 @@ class VideoProfile(FFmpegVideoProfile):
         bytes_per_sample = 2
         frame_bytes = samples_per_channel * channels * bytes_per_sample
         arecord_path = self.options.get("arecord_path", "arecord")
-        audio_device = resolve_alsa_device(str(self.options.get("audio_device", "default")), "capture")
+        requested_audio_device = str(self.options.get("audio_device", "default"))
+        audio_device = resolve_alsa_device(requested_audio_device, "capture")
         audio_format = self.options.get("arecord_format", "S16_LE")
+
+        candidate_devices: list[str] = [audio_device]
+        requested_normalized = requested_audio_device.strip().lower()
+        if requested_normalized in {"", "default", "pulse"}:
+            for dev in list_alsa_devices("capture"):
+                candidate_devices.append(f"plughw:{dev['hw']}")
+
+        # Keep order stable while removing duplicates.
+        candidate_devices = list(dict.fromkeys(candidate_devices))
 
         source = rtc.AudioSource(sample_rate, channels)
         track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
@@ -84,42 +94,65 @@ class VideoProfile(FFmpegVideoProfile):
                 if msg:
                     logger.warning("arecord: %s", msg)
 
-        proc = await asyncio.create_subprocess_exec(
-            arecord_path,
-            "-q",
-            "-D",
-            str(audio_device),
-            "-f",
-            str(audio_format),
-            "-c",
-            str(channels),
-            "-r",
-            str(sample_rate),
-            "-t",
-            "raw",
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-        )
-        stderr_task = None
-        read_task = None
-        publish_task = None
-        try:
-            if proc.stdout is None:
+        last_error: str | None = None
+        for idx, current_audio_device in enumerate(candidate_devices):
+            if not running():
                 return
 
-            read_task = asyncio.create_task(_read_stdout(proc.stdout))
-            publish_task = asyncio.create_task(_publish_audio())
-            if proc.stderr is not None:
-                stderr_task = asyncio.create_task(_drain_stderr(proc.stderr))
+            logger.info(
+                "Starting arecord capture: device=%s sample_rate=%d channels=%d",
+                current_audio_device,
+                sample_rate,
+                channels,
+            )
+            proc = await asyncio.create_subprocess_exec(
+                arecord_path,
+                "-q",
+                "-D",
+                str(current_audio_device),
+                "-f",
+                str(audio_format),
+                "-c",
+                str(channels),
+                "-r",
+                str(sample_rate),
+                "-t",
+                "raw",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
 
-            await asyncio.gather(read_task, publish_task)
-        finally:
-            for task in (read_task, publish_task, stderr_task):
-                if task is not None:
-                    task.cancel()
-                    with contextlib.suppress(asyncio.CancelledError):
-                        await task
-            await asyncio.shield(self._shutdown_audio_process(proc))
+            stderr_task = None
+            read_task = None
+            publish_task = None
+            try:
+                if proc.stdout is None:
+                    return
+
+                read_task = asyncio.create_task(_read_stdout(proc.stdout))
+                publish_task = asyncio.create_task(_publish_audio())
+                if proc.stderr is not None:
+                    stderr_task = asyncio.create_task(_drain_stderr(proc.stderr))
+
+                await asyncio.gather(read_task, publish_task)
+            finally:
+                for task in (read_task, publish_task, stderr_task):
+                    if task is not None:
+                        task.cancel()
+                        with contextlib.suppress(asyncio.CancelledError):
+                            await task
+                await asyncio.shield(self._shutdown_audio_process(proc))
+
+            if proc.returncode in (None, 0):
+                return
+
+            last_error = f"arecord exited with code {proc.returncode} on device {current_audio_device}"
+            if idx + 1 < len(candidate_devices):
+                logger.warning("%s; trying fallback capture device", last_error)
+                continue
+
+        if last_error:
+            logger.error("Audio capture stopped: %s", last_error)
 
     async def _shutdown_audio_process(self, proc) -> None:
         with contextlib.suppress(ProcessLookupError):
