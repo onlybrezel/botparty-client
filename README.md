@@ -2,6 +2,18 @@
 
 The official Python client for connecting your robot to **BotParty**.
 
+📖 **Full documentation is in the [`docs/`](docs/index.md) folder.**
+
+| Guide | |
+|-------|-|
+| [Getting started](docs/index.md) | Overview and quick start |
+| [Installation](docs/installation.md) | Raspberry Pi, Jetson, Ubuntu, Docker |
+| [Configuration](docs/configuration.md) | Full `config.yaml` reference |
+| [Hardware adapters](docs/hardware/index.md) | L298N, serial, MQTT, PWM HAT, custom, and more |
+| [Video profiles](docs/video/index.md) | FFmpeg, libcamera, OpenCV |
+| [TTS profiles](docs/tts/index.md) | eSpeak, Pico, Festival, Polly, Google Cloud |
+| [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
+
 ## Supported Hardware
 - Raspberry Pi 3B+ / 4 / 5 (with Pi Camera or USB camera)
 - NVIDIA Jetson Nano / Orin
