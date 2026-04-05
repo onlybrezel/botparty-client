@@ -263,18 +263,31 @@ class CameraManager:
             ) from exc
         finally:
             if proc is not None:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.terminate()
-                with contextlib.suppress(Exception):
-                    await asyncio.wait_for(proc.wait(), timeout=5)
-                if proc.returncode is None:
-                    with contextlib.suppress(ProcessLookupError):
-                        proc.kill()
-                        await proc.wait()
+                await asyncio.shield(self._shutdown_process(proc, "ffmpeg"))
             if stderr_task is not None:
                 stderr_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await stderr_task
+
+    async def _shutdown_process(self, proc, name: str) -> None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+            return
+        except asyncio.TimeoutError:
+            logger.warning("%s did not exit after SIGTERM; killing", name)
+        except asyncio.CancelledError:
+            # Cleanup must continue even if the owning task was cancelled.
+            pass
+
+        if proc.returncode is None:
+            with contextlib.suppress(ProcessLookupError):
+                proc.kill()
+
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(proc.wait(), timeout=2)
 
     async def _drain_stderr(self, stderr) -> None:
         while True:

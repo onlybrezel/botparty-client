@@ -63,7 +63,23 @@ class VideoProfile(FFmpegVideoProfile):
         except asyncio.IncompleteReadError:
             return
         finally:
+            await asyncio.shield(self._shutdown_audio_process(proc))
+
+    async def _shutdown_audio_process(self, proc) -> None:
+        with contextlib.suppress(ProcessLookupError):
+            proc.terminate()
+
+        try:
+            await asyncio.wait_for(proc.wait(), timeout=5)
+            return
+        except asyncio.TimeoutError:
+            pass
+        except asyncio.CancelledError:
+            pass
+
+        if proc.returncode is None:
             with contextlib.suppress(ProcessLookupError):
-                proc.terminate()
-            with contextlib.suppress(Exception):
-                await asyncio.wait_for(proc.wait(), timeout=5)
+                proc.kill()
+
+        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+            await asyncio.wait_for(proc.wait(), timeout=2)
