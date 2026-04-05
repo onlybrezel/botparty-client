@@ -21,16 +21,17 @@ class HardwareAdapter(BaseHardware):
         self.thrust = self.option_float("thrust", 0.1)
         self.system_address = self.option_str("system_address", "serial:///dev/ttymxc2:921600")
         self._ready = False
+        self._loop: asyncio.AbstractEventLoop | None = None
 
     def setup(self) -> None:
         if self.rover is None:
             return
         try:
-            loop = asyncio.get_running_loop()
+            self._loop = asyncio.get_running_loop()
         except RuntimeError:
             self.log.warning("no running event loop available; NavQ connection deferred")
             return
-        loop.create_task(self._connect())
+        self._loop.create_task(self._connect())
 
     async def _connect(self) -> None:
         if self.rover is None:
@@ -57,29 +58,28 @@ class HardwareAdapter(BaseHardware):
             await asyncio.sleep(duration)
         await self.rover.offboard.set_attitude(self.mavsdk.offboard.Attitude(0.0, 0.0, yaw, 0.0))
 
+    def _schedule(self, coro) -> None:
+        """Schedule a coroutine on the stored event loop, safe to call from any thread."""
+        if self._loop is None:
+            self.log.warning("no event loop stored; NavQ command dropped")
+            return
+        asyncio.run_coroutine_threadsafe(coro, self._loop)
+
     def on_command(self, command: str, value: Any = None) -> None:
         if self.rover is None:
             self.log.info("command=%s value=%s", command, value)
             return
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            self.log.warning("no running event loop available for NavQ command")
-            return
         if self.matches(command, "forward"):
-            loop.create_task(self._drive(0.0, self.thrust, 1.0))
+            self._schedule(self._drive(0.0, self.thrust, 1.0))
         elif self.matches(command, "backward"):
-            loop.create_task(self._drive(0.0, -self.thrust, 1.0))
+            self._schedule(self._drive(0.0, -self.thrust, 1.0))
         elif self.matches(command, "left"):
-            loop.create_task(self._drive(-self.yaw_step, self.thrust, 1.0))
+            self._schedule(self._drive(-self.yaw_step, self.thrust, 1.0))
         elif self.matches(command, "right"):
-            loop.create_task(self._drive(self.yaw_step, self.thrust, 1.0))
+            self._schedule(self._drive(self.yaw_step, self.thrust, 1.0))
         elif self.matches(command, "stop"):
-            loop.create_task(self._drive(0.0, 0.0, 0.0))
+            self.emergency_stop()
 
     def emergency_stop(self) -> None:
         if self.rover is not None:
-            try:
-                asyncio.get_running_loop().create_task(self._drive(0.0, 0.0, 0.0))
-            except RuntimeError:
-                self.log.warning("no running event loop available for NavQ emergency_stop")
+            self._schedule(self._drive(0.0, 0.0, 0.0))

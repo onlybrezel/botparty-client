@@ -85,7 +85,10 @@ class BotPartyClient:
         self._diag_upload_task: Optional[asyncio.Task] = None
         self._tts_task: Optional[asyncio.Task] = None
         self._gateway_task: Optional[asyncio.Task] = None
-        self._tts_queue: asyncio.Queue[tuple[str, dict[str, Any] | None]] = asyncio.Queue()
+        # maxsize prevents unbounded growth when TTS is slow and chat floods in
+        self._tts_queue: asyncio.Queue[tuple[str, dict[str, Any] | None]] = asyncio.Queue(maxsize=20)
+        # serializes hardware commands so blocking adapters (GPIO time.sleep) don't overlap
+        self._hardware_lock: asyncio.Lock = asyncio.Lock()
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -600,7 +603,10 @@ class BotPartyClient:
 
         message, metadata = self._normalize_tts_payload(command, value)
         if message:
-            self._tts_queue.put_nowait((message, metadata))
+            try:
+                self._tts_queue.put_nowait((message, metadata))
+            except asyncio.QueueFull:
+                logger.debug("TTS queue full, dropping say command")
         return True
 
     def _normalize_tts_payload(self, command: str, value: Any) -> tuple[str, dict[str, Any] | None]:
@@ -681,14 +687,29 @@ class BotPartyClient:
             if self.config.tts.chat_to_tts and self.tts.can_handle():
                 message, metadata = self._normalize_tts_payload(command, value)
                 if message:
-                    self._tts_queue.put_nowait((message, metadata))
+                    try:
+                        self._tts_queue.put_nowait((message, metadata))
+                    except asyncio.QueueFull:
+                        logger.debug("TTS queue full, dropping message")
             return
 
         if self._maybe_handle_tts_command(command, value):
             return
 
-        self.handler.on_command(command, value)
         logger.debug("CMD[%s]: %s=%s (latency: %.0fms)", source, command, value, latency_ms)
+        asyncio.create_task(self._run_hardware_command(command, value))
+
+    async def _run_hardware_command(self, command: str, value: Any) -> None:
+        """Run a hardware command in a thread pool to avoid blocking the event loop.
+
+        The lock serialises commands so GPIO adapters with time.sleep() don't
+        overlap - e.g. two simultaneous 'forward' pulses on the same motor pins.
+        """
+        async with self._hardware_lock:
+            try:
+                await asyncio.to_thread(self.handler.on_command, command, value)
+            except Exception as exc:
+                logger.warning("Hardware command error (cmd=%s): %s", command, exc)
 
     # ------------------------------------------------------------------
     # Authentication

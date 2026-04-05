@@ -56,7 +56,7 @@ class HardwareAdapter(BaseHardware):
         if self.gpio is None:
             self.log.info("command=%s value=%s", command, value)
             return
-        if command == "MAXSPEED":
+        if command.strip().upper() == "MAXSPEED":
             self.max_speed_enabled = True
             return
         if self.matches(command, "forward"):

@@ -321,7 +321,7 @@ class CameraManager:
         report_started_at = time.monotonic()
 
         while running_fn() and connected_fn():
-            ret, frame = cap.read()
+            ret, frame = await asyncio.to_thread(cap.read)
             if not ret:
                 consecutive_failures += 1
                 logger.warning("Camera read failure #%d", consecutive_failures)

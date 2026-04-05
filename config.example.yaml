@@ -13,10 +13,10 @@
 # -- Server connection ---------------------------------------------------------
 
 server:
-  # These must not be changed.
+  # Update these URLs to match your BotParty server deployment.
   api_url: "https://bp.julgie.de"
 
-  # These must not be changed.
+  # Update these URLs to match your BotParty server deployment.
   livekit_url: "wss://bp.julgie.de:7880"
 
   # Your robot's claim token from the BotParty dashboard.

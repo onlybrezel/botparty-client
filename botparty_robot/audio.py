@@ -102,6 +102,3 @@ def set_alsa_volume(spec: str | None, level: int) -> bool:
             return True
     return False
 
-
-def run_shell(command: str) -> int:
-    return subprocess.run(command, shell=True, check=False).returncode
