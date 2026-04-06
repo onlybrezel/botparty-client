@@ -26,7 +26,7 @@ class VideoProfile(BaseVideoProfile):
             f"-analyzeduration 0 -probesize 32 -fpsprobesize 0 "
             f"-f rawvideo -pixel_format yuv420p "
             f"-video_size {self.camera.width}x{self.camera.height} -framerate {self.camera.fps} "
-            f"-use_wallclock_as_timestamps 1 -i - -pix_fmt rgba -f rawvideo pipe:1"
+            f"-i - -pix_fmt rgba -vsync 0 -f rawvideo pipe:1"
         )
         return await asyncio.create_subprocess_shell(
             cmd,

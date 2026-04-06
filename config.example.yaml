@@ -31,7 +31,8 @@ camera:
   # Run "ls /dev/video*" to list available cameras.
   device: "/dev/video0"
 
-  # Resolution. Lower values reduce CPU load on slower hardware.
+  # Resolution. Lower values reduce encoding latency significantly on slower hardware.
+  # 640x480 is recommended for Raspberry Pi Zero / 3. Use 1280x720 only on Pi 4+.
   width: 1280
   height: 720
   fps: 30
