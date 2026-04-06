@@ -44,7 +44,7 @@ Open `config.yaml` and fill in at minimum:
 ```yaml
 server:
   api_url: https://botparty.live      # or your self-hosted URL
-  livekit_url: wss://botparty.live/livekit
+  livekit_url: wss://botparty.live/rtc
   claim_token: PASTE_YOUR_CLAIM_TOKEN_HERE
 ```
 

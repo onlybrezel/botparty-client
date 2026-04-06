@@ -7,7 +7,7 @@ from pydantic import BaseModel, Field
 
 class ServerConfig(BaseModel):
     api_url: str = "https://botparty.live"
-    livekit_url: str = "wss://botparty.live/livekit"
+    livekit_url: str = "wss://botparty.live/rtc"
     claim_token: str
 
 

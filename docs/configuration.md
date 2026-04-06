@@ -17,13 +17,13 @@ Connection settings for the BotParty server.
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `api_url` | string | — | Base URL of the BotParty instance (e.g. `https://botparty.live`) |
-| `livekit_url` | string | — | LiveKit WebSocket URL (e.g. `wss://botparty.live/livekit`) |
+| `livekit_url` | string | — | LiveKit WebSocket URL (e.g. `wss://botparty.live/rtc`) |
 | `claim_token` | string | — | **Required.** Your robot's claim token from the dashboard |
 
 ```yaml
 server:
   api_url: "https://botparty.live"
-  livekit_url: "wss://botparty.live/livekit"
+  livekit_url: "wss://botparty.live/rtc"
   claim_token: "your-claim-token-here"
 ```
 
