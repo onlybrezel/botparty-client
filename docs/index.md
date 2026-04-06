@@ -43,8 +43,8 @@ Open `config.yaml` and fill in at minimum:
 
 ```yaml
 server:
-  api_url: https://botparty.io        # or your self-hosted URL
-  livekit_url: wss://livekit.botparty.io
+  api_url: https://botparty.live      # or your self-hosted URL
+  livekit_url: wss://botparty.live/livekit
   claim_token: PASTE_YOUR_CLAIM_TOKEN_HERE
 ```
 
@@ -62,7 +62,7 @@ You should see output like:
 
 ```
 2025-01-01 12:00:00 [INFO] botparty: BotParty Robot Client v0.1.0
-2025-01-01 12:00:00 [INFO] botparty: API: https://botparty.io
+2025-01-01 12:00:00 [INFO] botparty: API: https://botparty.live
 2025-01-01 12:00:00 [INFO] botparty: Hardware: l298n
 2025-01-01 12:00:00 [INFO] botparty: Video: ffmpeg
 2025-01-01 12:00:00 [INFO] botparty: TTS: espeak (enabled=True)

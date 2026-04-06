@@ -15,14 +15,14 @@ server:
 
 ### Robot shows as offline in the dashboard immediately after claiming
 
-Check that `api_url` and `livekit_url` in `config.yaml` match the server your dashboard is connecting to. If you are self-hosting BotParty, these must point to your instance, not `botparty.io`.
+Check that `api_url` and `livekit_url` in `config.yaml` match the server your dashboard is connecting to. If you are self-hosting BotParty, these must point to your instance, not `botparty.live`.
 
 ### "Connection refused" on startup
 
 The BotParty API server is not reachable. Verify:
 
 ```bash
-curl https://botparty.io/health   # or your api_url
+curl https://botparty.live/api/v1/health   # or your api_url + /api/v1/health
 ```
 
 ### Client keeps reconnecting every few seconds

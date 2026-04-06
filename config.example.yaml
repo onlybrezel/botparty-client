@@ -14,10 +14,10 @@
 
 server:
   # These must not be changed.
-  api_url: "https://bp.julgie.de"
+  api_url: "https://botparty.live"
 
   # These must not be changed.
-  livekit_url: "wss://bp.julgie.de:7880"
+  livekit_url: "wss://botparty.live/rtc"
 
   # Your robot's claim token from the BotParty dashboard.
   # Treat this like a password - do not share it publicly.

@@ -41,8 +41,8 @@ Edit `config.yaml` and set at least:
 
 ```yaml
 server:
-  api_url: "https://bp.julgie.de"
-  livekit_url: "wss://bp.julgie.de:7880"
+  api_url: "https://botparty.live"
+  livekit_url: "wss://botparty.live/livekit"
   claim_token: "YOUR_CLAIM_TOKEN"
 
 video:

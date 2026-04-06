@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class ServerConfig(BaseModel):
-    api_url: str = "http://localhost:4000"
-    livekit_url: str = "ws://localhost:7880"
+    api_url: str = "https://botparty.live"
+    livekit_url: str = "wss://botparty.live/livekit"
     claim_token: str
 
 
