@@ -28,6 +28,7 @@ video:
 | `analyzeduration` | int | `0` | FFmpeg probe duration in microseconds. Lower keeps startup and buffering tight. |
 | `probesize` | int | `32` | FFmpeg probe size in bytes. Lower reduces startup buffering. |
 | `fpsprobesize` | int | `0` | Disable extra FPS probing to start reading frames immediately. |
+| `publish_fps` | float | `camera.fps` | Max frame rate sent into LiveKit. Lower this to prevent encoder backlog. |
 | `loglevel` | string | `error` | FFmpeg log level (`error`, `warning`, `info`) |
 | `target_bitrate_kbps` | int | `auto` | Cap LiveKit video bitrate. If unset, the client applies a conservative low-latency default based on resolution and FPS. |
 
@@ -109,6 +110,7 @@ dmesg | grep video
 
 - Keep `video.options.thread_queue_size` small (`2` is the default)
 - Prefer `camera.fourcc: "MJPG"` on USB webcams
+- Set `video.options.publish_fps` lower than camera FPS (for example `15` or `18`) to avoid sender-side encoder queue buildup
 - Lower resolution before lowering bitrate; CPU pressure often shows up as delay before it shows up as dropped FPS
 
 **"Device or resource busy"**

@@ -214,16 +214,23 @@ class CameraManager:
         frame_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
         reader_task = None
         reader_error: Exception | None = None
+        dropped_for_pacing = 0
+
+        requested_publish_fps = float(self.video_profile.options.get("publish_fps", camera_fps))
+        publish_fps = min(camera_fps, max(5.0, requested_publish_fps)) if camera_fps > 0 else max(5.0, requested_publish_fps)
+        publish_interval = 1.0 / publish_fps if publish_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
+        next_publish_at = time.monotonic()
 
         try:
             proc = await self.video_profile.spawn_ffmpeg_process()
             logger.info(
-                "Camera opened via %s: device=%s resolution=%dx%d fps=%.1f format=%s",
+                "Camera opened via %s: device=%s resolution=%dx%d fps=%.1f publish_fps=%.1f format=%s",
                 self.config.video.type,
                 self.config.camera.device,
                 frame_width,
                 frame_height,
                 camera_fps,
+                publish_fps,
                 (self.config.camera.fourcc or "auto").upper(),
             )
 
@@ -265,25 +272,35 @@ class CameraManager:
                 if frame is None:
                     break
 
+                now = time.monotonic()
+                if now < next_publish_at:
+                    dropped_for_pacing += 1
+                    continue
+
+                if now - next_publish_at > publish_interval * 2:
+                    next_publish_at = now
+
                 lk_frame = rtc.VideoFrame(frame_width, frame_height, rtc.VideoBufferType.RGBA, frame)
                 source.capture_frame(lk_frame)
                 self._inc_frame()
                 frames_since_report += 1
+                next_publish_at += publish_interval
 
                 # Keep the reader task moving so old frames are discarded instead of queued.
                 await asyncio.sleep(0)
 
-                now = time.monotonic()
                 elapsed = now - report_started_at
                 if elapsed >= 10:
                     logger.info(
-                        "Camera runtime: sent_fps=%.1f target_fps=%.1f resolution=%dx%d",
+                        "Camera runtime: sent_fps=%.1f target_fps=%.1f dropped_pacing=%d resolution=%dx%d",
                         frames_since_report / elapsed,
-                        camera_fps,
+                        publish_fps,
+                        dropped_for_pacing,
                         frame_width,
                         frame_height,
                     )
                     frames_since_report = 0
+                    dropped_for_pacing = 0
                     report_started_at = now
 
             if reader_error is not None:
