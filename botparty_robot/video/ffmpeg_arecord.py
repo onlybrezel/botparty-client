@@ -21,7 +21,7 @@ class VideoProfile(FFmpegVideoProfile):
     async def start_audio(self, rtc, room, running):
         sample_rate = int(self.options.get("audio_sample_rate", 48000))
         channels = int(self.options.get("audio_channels", 1))
-        chunk_ms = int(self.options.get("audio_chunk_ms", 20))
+        chunk_ms = int(self.options.get("audio_chunk_ms", 40))
         queue_frames = max(1, int(self.options.get("audio_queue_frames", 8)))
         samples_per_channel = sample_rate * chunk_ms // 1000
         bytes_per_sample = 2

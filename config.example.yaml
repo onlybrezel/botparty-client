@@ -63,6 +63,7 @@ video:
 #     audio_device: "default"      # run "arecord -l" to list ALSA devices
 #     audio_sample_rate: 48000
 #     audio_channels: 1
+#     audio_chunk_ms: 40           # increase to 60-80 if you see "Audio capture backlog" warnings
 
 # -- Raspberry Pi Camera Module (libcamera, not v4l2): -----------------------
 # video:

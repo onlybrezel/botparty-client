@@ -56,14 +56,18 @@ class VideoProfile(BaseVideoProfile):
             f"{self.camera.width}x{self.camera.height}",
             "-framerate",
             str(self.camera.fps),
+            # v4l2 hardware timestamps are often non-monotonic; wall clock is more
+            # reliable for keeping DTS strictly increasing and avoiding frame bursts.
+            "-use_wallclock_as_timestamps",
+            "1",
             "-i",
             self.camera.device,
+            # fps filter caps output to the configured rate inside ffmpeg so Python
+            # never receives more frames than it will publish (avoids decoding waste).
             "-vf",
-            f"scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,format=rgba",
+            f"scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,fps={int(round(self.camera.fps))},format=rgba",
             "-pix_fmt",
             "rgba",
-            "-vsync",
-            "0",
             "-f",
             "rawvideo",
             "pipe:1",
