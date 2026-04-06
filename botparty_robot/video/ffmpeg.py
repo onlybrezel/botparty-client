@@ -60,6 +60,8 @@ class VideoProfile(BaseVideoProfile):
             "1",
             "-i",
             self.camera.device,
+            "-vf",
+            f"scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,format=rgba",
             "-pix_fmt",
             "rgba",
             "-f",
