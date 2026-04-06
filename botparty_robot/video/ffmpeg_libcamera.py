@@ -20,11 +20,13 @@ class VideoProfile(BaseVideoProfile):
         cmd = (
             f"{libcam} -t 0 "
             f"--width {self.camera.width} --height {self.camera.height} "
-            f"--framerate {self.camera.fps} --codec yuv420 -o - | "
+            f"--framerate {self.camera.fps} --codec yuv420 --nopreview -o - | "
             f"{ffmpeg} -nostdin -hide_banner -loglevel error "
-            f"-fflags nobuffer -flags low_delay -f rawvideo -pixel_format yuv420p "
+            f"-avioflags direct -fflags nobuffer -flags low_delay "
+            f"-analyzeduration 0 -probesize 32 -fpsprobesize 0 "
+            f"-f rawvideo -pixel_format yuv420p "
             f"-video_size {self.camera.width}x{self.camera.height} -framerate {self.camera.fps} "
-            f"-i - -pix_fmt rgba -f rawvideo pipe:1"
+            f"-use_wallclock_as_timestamps 1 -i - -pix_fmt rgba -f rawvideo pipe:1"
         )
         return await asyncio.create_subprocess_shell(
             cmd,

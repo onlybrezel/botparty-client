@@ -12,9 +12,9 @@ video:
 
 ## How it works
 
-1. FFmpeg opens the V4L2 device with `fflags nobuffer` and `flags low_delay` to minimise buffering.
+1. FFmpeg opens the V4L2 device with aggressive low-latency flags such as `fflags nobuffer`, `flags low_delay`, and tiny probe sizes.
 2. Frames are decoded to raw RGBA and piped to stdout.
-3. The client reads frames from the pipe and publishes them to the LiveKit room.
+3. The client keeps only the newest frame when the publish loop falls briefly behind, so stale video does not build up in the pipe.
 
 ---
 
@@ -24,7 +24,10 @@ video:
 |--------|------|---------|-------------|
 | `ffmpeg_path` | string | `ffmpeg` | Path to the ffmpeg binary |
 | `input_driver` | string | `v4l2` | V4L2 driver name passed to `-f` |
-| `thread_queue_size` | int | `64` | FFmpeg thread queue size |
+| `thread_queue_size` | int | `2` | FFmpeg input queue size. Keep this small to avoid stale frames. |
+| `analyzeduration` | int | `0` | FFmpeg probe duration in microseconds. Lower keeps startup and buffering tight. |
+| `probesize` | int | `32` | FFmpeg probe size in bytes. Lower reduces startup buffering. |
+| `fpsprobesize` | int | `0` | Disable extra FPS probing to start reading frames immediately. |
 | `loglevel` | string | `error` | FFmpeg log level (`error`, `warning`, `info`) |
 | `target_bitrate_kbps` | int | `null` | Cap LiveKit video bitrate |
 
@@ -78,6 +81,10 @@ arecord -D plughw:1,0 -d 3 test.wav   # record 3 seconds to verify it works
 | `audio_device` | string | `default` | ALSA capture device |
 | `audio_sample_rate` | int | `48000` | Sample rate in Hz |
 | `audio_channels` | int | `1` | 1 = mono, 2 = stereo |
+| `audio_chunk_ms` | int | `10` | Audio chunk size pushed into LiveKit |
+| `audio_queue_frames` | int | `8` | Max queued audio chunks before old audio is dropped |
+
+For low-latency teleoperation, keep `audio_queue_frames` small. With the default `audio_chunk_ms: 10` and `audio_queue_frames: 8`, the client holds at most about 80 ms of extra audio before dropping old chunks.
 
 ---
 
@@ -97,6 +104,12 @@ dmesg | grep video
 - Use MJPG instead of YUYV
 - Reduce resolution: `width: 640, height: 480`
 - Lower FPS: `fps: 15`
+
+**Stable FPS but 1-2 seconds behind real time**
+
+- Keep `video.options.thread_queue_size` small (`2` is the default)
+- Prefer `camera.fourcc: "MJPG"` on USB webcams
+- Lower resolution before lowering bitrate; CPU pressure often shows up as delay before it shows up as dropped FPS
 
 **"Device or resource busy"**
 

@@ -211,6 +211,9 @@ class CameraManager:
         frames_since_report = 0
         report_started_at = time.monotonic()
         stderr_task = None
+        frame_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
+        reader_task = None
+        reader_error: Exception | None = None
 
         try:
             proc = await self.video_profile.spawn_ffmpeg_process()
@@ -226,16 +229,49 @@ class CameraManager:
 
             if proc.stderr is not None:
                 stderr_task = asyncio.create_task(self._drain_stderr(proc.stderr))
+            if proc.stdout is None:
+                raise RuntimeError("ffmpeg process has no stdout pipe")
+
+            async def read_frames() -> None:
+                nonlocal reader_error
+
+                try:
+                    while True:
+                        frame = await proc.stdout.readexactly(frame_bytes)
+                        if frame_queue.full():
+                            with contextlib.suppress(asyncio.QueueEmpty):
+                                frame_queue.get_nowait()
+                        frame_queue.put_nowait(frame)
+                except asyncio.IncompleteReadError as exc:
+                    if exc.partial:
+                        reader_error = RuntimeError(
+                            f"ffmpeg stream ended early ({len(exc.partial)} of {frame_bytes} bytes)"
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    reader_error = exc
+                finally:
+                    if frame_queue.full():
+                        with contextlib.suppress(asyncio.QueueEmpty):
+                            frame_queue.get_nowait()
+                    with contextlib.suppress(asyncio.QueueFull):
+                        frame_queue.put_nowait(None)
+
+            reader_task = asyncio.create_task(read_frames())
 
             while running_fn() and connected_fn():
-                if proc.stdout is None:
-                    raise RuntimeError("ffmpeg process has no stdout pipe")
+                frame = await frame_queue.get()
+                if frame is None:
+                    break
 
-                frame = await proc.stdout.readexactly(frame_bytes)
                 lk_frame = rtc.VideoFrame(frame_width, frame_height, rtc.VideoBufferType.RGBA, frame)
                 source.capture_frame(lk_frame)
                 self._inc_frame()
                 frames_since_report += 1
+
+                # Keep the reader task moving so old frames are discarded instead of queued.
+                await asyncio.sleep(0)
 
                 now = time.monotonic()
                 elapsed = now - report_started_at
@@ -250,6 +286,9 @@ class CameraManager:
                     frames_since_report = 0
                     report_started_at = now
 
+            if reader_error is not None:
+                raise reader_error
+
             if proc.returncode not in (None, 0):
                 raise RuntimeError(f"ffmpeg process exited with code {proc.returncode}")
 
@@ -262,6 +301,10 @@ class CameraManager:
                 "ffmpeg not found; install it or switch video.type to 'opencv'"
             ) from exc
         finally:
+            if reader_task is not None:
+                reader_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await reader_task
             if proc is not None:
                 await asyncio.shield(self._shutdown_process(proc, "ffmpeg"))
             if stderr_task is not None:
