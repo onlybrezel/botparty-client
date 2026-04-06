@@ -82,10 +82,10 @@ arecord -D plughw:1,0 -d 3 test.wav   # record 3 seconds to verify it works
 | `audio_device` | string | `default` | ALSA capture device |
 | `audio_sample_rate` | int | `48000` | Sample rate in Hz |
 | `audio_channels` | int | `1` | 1 = mono, 2 = stereo |
-| `audio_chunk_ms` | int | `10` | Audio chunk size pushed into LiveKit |
+| `audio_chunk_ms` | int | `20` | Audio chunk size pushed into LiveKit |
 | `audio_queue_frames` | int | `8` | Max queued audio chunks before old audio is dropped |
 
-For low-latency teleoperation, keep `audio_queue_frames` small. With the default `audio_chunk_ms: 10` and `audio_queue_frames: 8`, the client holds at most about 80 ms of extra audio before dropping old chunks.
+For low-latency teleoperation, keep `audio_queue_frames` small. With the default `audio_chunk_ms: 20` and `audio_queue_frames: 8`, the client holds at most about 160 ms of extra audio before dropping old chunks while reducing audio scheduling pressure.
 
 ---
 
