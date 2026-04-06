@@ -24,6 +24,7 @@ video:
 |--------|------|---------|-------------|
 | `ffmpeg_path` | string | `ffmpeg` | Path to the ffmpeg binary |
 | `input_driver` | string | `v4l2` | V4L2 driver name passed to `-f` |
+| `input_format` | string | `auto` | Force FFmpeg input format (for example `mjpeg`, `yuyv422`) or `auto` to let FFmpeg decide |
 | `thread_queue_size` | int | `2` | FFmpeg input queue size. Keep this small to avoid stale frames. |
 | `analyzeduration` | int | `0` | FFmpeg probe duration in microseconds. Lower keeps startup and buffering tight. |
 | `probesize` | int | `32` | FFmpeg probe size in bytes. Lower reduces startup buffering. |
@@ -105,6 +106,28 @@ dmesg | grep video
 - Use MJPG instead of YUYV
 - Reduce resolution: `width: 640, height: 480`
 - Lower FPS: `fps: 15`
+
+**Image has colored stripes / torn lines**
+
+This is usually a camera pixel-format mismatch (forced `MJPG`/`YUYV` not matching what the webcam currently delivers).
+
+Try auto format detection first:
+
+```yaml
+camera:
+  fourcc: null
+
+video:
+  type: "ffmpeg"
+  options:
+    input_format: "auto"
+```
+
+Then list camera-supported formats and lock one explicit format only if needed:
+
+```bash
+v4l2-ctl --device=/dev/video0 --list-formats-ext
+```
 
 **Stable FPS but 1-2 seconds behind real time**
 

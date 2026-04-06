@@ -19,8 +19,17 @@ class VideoProfile(BaseVideoProfile):
         return "ffmpeg"
 
     async def spawn_ffmpeg_process(self):
-        fourcc = (self.camera.fourcc or "mjpeg").strip().upper()
-        input_format = FFMPEG_INPUT_FORMAT_MAP.get(fourcc, fourcc.lower())
+        configured_input_format = str(self.options.get("input_format", "")).strip().lower()
+        fourcc = (self.camera.fourcc or "").strip().upper()
+
+        input_format: str | None = None
+        if configured_input_format and configured_input_format != "auto":
+            input_format = configured_input_format
+        else:
+            mapped_format = FFMPEG_INPUT_FORMAT_MAP.get(fourcc)
+            if mapped_format is not None:
+                input_format = mapped_format
+
         cmd = [
             self.options.get("ffmpeg_path", "ffmpeg"),
             "-nostdin",
@@ -43,8 +52,6 @@ class VideoProfile(BaseVideoProfile):
             self.options.get("input_driver", "v4l2"),
             "-thread_queue_size",
             str(self.options.get("thread_queue_size", 2)),
-            "-input_format",
-            input_format,
             "-video_size",
             f"{self.camera.width}x{self.camera.height}",
             "-framerate",
@@ -59,6 +66,10 @@ class VideoProfile(BaseVideoProfile):
             "rawvideo",
             "pipe:1",
         ]
+
+        if input_format:
+            cmd[cmd.index("-video_size"):cmd.index("-video_size")] = ["-input_format", input_format]
+
         return await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
