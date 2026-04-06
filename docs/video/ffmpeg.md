@@ -29,7 +29,7 @@ video:
 | `probesize` | int | `32` | FFmpeg probe size in bytes. Lower reduces startup buffering. |
 | `fpsprobesize` | int | `0` | Disable extra FPS probing to start reading frames immediately. |
 | `loglevel` | string | `error` | FFmpeg log level (`error`, `warning`, `info`) |
-| `target_bitrate_kbps` | int | `null` | Cap LiveKit video bitrate |
+| `target_bitrate_kbps` | int | `auto` | Cap LiveKit video bitrate. If unset, the client applies a conservative low-latency default based on resolution and FPS. |
 
 ---
 

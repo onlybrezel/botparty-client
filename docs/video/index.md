@@ -64,7 +64,7 @@ camera:
 
 ## LiveKit bitrate
 
-The client automatically lets LiveKit negotiate the video bitrate. You can cap it by setting `target_bitrate_kbps` in the video options:
+The client applies a conservative bitrate cap automatically for low latency. You can override it explicitly with `target_bitrate_kbps` in the video options:
 
 ```yaml
 video:

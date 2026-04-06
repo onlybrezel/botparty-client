@@ -63,7 +63,10 @@ class BotPartyClient:
         self._running = False
         self._room: Optional[rtc.Room] = None
         self._robot_id: Optional[str] = None
-        self._target_bitrate_kbps: Optional[int] = None
+        self._configured_target_bitrate_kbps = self._parse_target_bitrate_kbps(
+            self.config.video.options.get("target_bitrate_kbps")
+        )
+        self._remote_target_bitrate_kbps: Optional[int] = None
         self._livekit_connected = False
 
         self._camera = CameraManager(config, self.video_profile)
@@ -211,9 +214,29 @@ class BotPartyClient:
         """Return the camera coroutine with current state bound in."""
         return self._camera.run(
             self._room,
-            self._target_bitrate_kbps,
+            self._effective_target_bitrate_kbps(),
             lambda: self._running,
             lambda: self._livekit_connected,
+        )
+
+    def _parse_target_bitrate_kbps(self, value: Any) -> Optional[int]:
+        if isinstance(value, (int, float)) and 150 <= value <= 3000:
+            return int(value)
+        return None
+
+    def _default_target_bitrate_kbps(self) -> int:
+        pixels_per_second = self.config.camera.width * self.config.camera.height * max(self.config.camera.fps, 1)
+        if pixels_per_second <= 7_500_000:
+            return 800
+        if pixels_per_second <= 28_000_000:
+            return 1500
+        return 2200
+
+    def _effective_target_bitrate_kbps(self) -> int:
+        return (
+            self._remote_target_bitrate_kbps
+            or self._configured_target_bitrate_kbps
+            or self._default_target_bitrate_kbps()
         )
 
     async def _cancel_camera_task(self, timeout_sec: float = 6.5) -> None:
@@ -490,13 +513,22 @@ class BotPartyClient:
     async def _apply_remote_actions_payload(self, payload: dict[str, Any]) -> None:
         stream = payload.get("stream") if isinstance(payload, dict) else None
         if isinstance(stream, dict):
-            value = stream.get("targetBitrateKbps")
-            next_bitrate: Optional[int] = None
-            if isinstance(value, (int, float)) and 150 <= value <= 3000:
-                next_bitrate = int(value)
-            if next_bitrate != self._target_bitrate_kbps:
-                self._target_bitrate_kbps = next_bitrate
-                logger.info("Remote stream policy: targetBitrateKbps=%s", self._target_bitrate_kbps)
+            next_remote_bitrate = self._remote_target_bitrate_kbps
+            if "targetBitrateKbps" in stream:
+                next_remote_bitrate = self._parse_target_bitrate_kbps(stream.get("targetBitrateKbps"))
+
+            next_effective_bitrate = (
+                next_remote_bitrate
+                or self._configured_target_bitrate_kbps
+                or self._default_target_bitrate_kbps()
+            )
+            if next_effective_bitrate != self._effective_target_bitrate_kbps() or next_remote_bitrate != self._remote_target_bitrate_kbps:
+                self._remote_target_bitrate_kbps = next_remote_bitrate
+                logger.info(
+                    "Remote stream policy: remoteTargetBitrateKbps=%s effectiveTargetBitrateKbps=%d",
+                    self._remote_target_bitrate_kbps,
+                    self._effective_target_bitrate_kbps(),
+                )
                 if self._livekit_connected:
                     await self._restart_camera_pipeline("stream policy updated")
 
@@ -759,12 +791,19 @@ class BotPartyClient:
 
                 data = await resp.json()
                 stream = data.get("stream") if isinstance(data, dict) else None
-                target_kbps = None
                 if isinstance(stream, dict):
-                    v = stream.get("targetBitrateKbps")
-                    if isinstance(v, (int, float)) and 150 <= v <= 3000:
-                        target_kbps = int(v)
-                self._target_bitrate_kbps = target_kbps
+                    self._remote_target_bitrate_kbps = self._parse_target_bitrate_kbps(
+                        stream.get("targetBitrateKbps")
+                    )
+                else:
+                    self._remote_target_bitrate_kbps = None
+
+                logger.info(
+                    "Video target bitrate: remote=%s configured=%s effective=%d kbps",
+                    self._remote_target_bitrate_kbps,
+                    self._configured_target_bitrate_kbps,
+                    self._effective_target_bitrate_kbps(),
+                )
 
                 livekit_url = data.get("livekitUrl")
                 if not isinstance(livekit_url, str):
