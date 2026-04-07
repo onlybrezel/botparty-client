@@ -39,6 +39,9 @@ class GatewayConnection:
         self._connected = False
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._last_actions_pull_at = 0.0
+        self._retry_after_override_sec: float | None = None
+        self._shutdown_reason: str | None = None
+        self._shutdown_message: str | None = None
 
     @property
     def connected(self) -> bool:
@@ -69,6 +72,9 @@ class GatewayConnection:
                         self._ws = ws
                         attempt = 0
                         self._connected = True
+                        self._retry_after_override_sec = None
+                        self._shutdown_reason = None
+                        self._shutdown_message = None
                         logger.info("Control websocket connected")
                         await ws.send_json({
                             "event": "robot:claim",
@@ -88,10 +94,14 @@ class GatewayConnection:
                                 await self._handle_message(msg.data)
                             elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                                 break
+                if self._running_fn():
+                    delay = self._consume_reconnect_delay(default_delay=1)
+                    self._log_reconnect_delay(delay)
+                    await asyncio.sleep(delay)
             except Exception as e:
                 self._connected = False
-                delay = min(2 ** min(attempt, 6), 30)
-                logger.warning("Control websocket disconnected (%s); retrying in %ds", e, delay)
+                delay = self._consume_reconnect_delay(default_delay=min(2 ** min(attempt, 6), 30))
+                logger.warning("Control websocket disconnected (%s); retrying in %ds", e, int(delay))
                 await asyncio.sleep(delay)
             finally:
                 self._ws = None
@@ -118,6 +128,24 @@ class GatewayConnection:
             self._on_emergency_stop()
         elif event == "robot:actions":
             await self._on_actions(data)
+        elif event == "server:shutdown":
+            retry_after_ms = data.get("retryAfterMs")
+            try:
+                retry_after_sec = max(1.0, float(retry_after_ms) / 1000.0)
+            except (TypeError, ValueError):
+                retry_after_sec = 12.0
+
+            reason = str(data.get("reason") or "restart")
+            message = str(data.get("message") or "Server restart announced. Reconnecting soon...")
+            self._retry_after_override_sec = retry_after_sec
+            self._shutdown_reason = reason
+            self._shutdown_message = message
+            logger.warning(
+                "Gateway announced %s; reconnecting in %.0fs - %s",
+                reason,
+                retry_after_sec,
+                message,
+            )
 
     async def _pull_actions(self, ws: aiohttp.ClientWebSocketResponse, force: bool = False) -> None:
         now = time.time()
@@ -135,3 +163,21 @@ class GatewayConnection:
         if api_url.startswith("http://"):
             return f"ws://{api_url[len('http://'):]}/ws"
         return f"ws://{api_url}/ws"
+
+    def _consume_reconnect_delay(self, default_delay: float) -> float:
+        delay = self._retry_after_override_sec
+        self._retry_after_override_sec = None
+        return delay if delay is not None else default_delay
+
+    def _log_reconnect_delay(self, delay: float) -> None:
+        if self._shutdown_reason or self._shutdown_message:
+            logger.warning(
+                "Control websocket reconnect scheduled in %.0fs (%s)",
+                delay,
+                self._shutdown_reason or "restart",
+            )
+            self._shutdown_reason = None
+            self._shutdown_message = None
+            return
+
+        logger.warning("Control websocket disconnected; retrying in %.0fs", delay)
