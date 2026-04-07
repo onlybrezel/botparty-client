@@ -23,6 +23,7 @@ class BaseHardware(ABC):
         self.controls = config.controls
         self.safety = config.safety
         self.options = config.hardware.options
+        self.command_context: dict[str, Any] = {}
         self.log = logging.getLogger(f"botparty.hardware.{self.profile_name}")
 
     def setup(self) -> None:
@@ -42,6 +43,9 @@ class BaseHardware(ABC):
 
     def option_pins(self, key: str) -> list[int]:
         return get_pin_list(self.options.get(key))
+
+    def set_command_context(self, context: dict[str, Any] | None) -> None:
+        self.command_context = dict(context or {})
 
     @abstractmethod
     def on_command(self, command: str, value: Any = None) -> None:

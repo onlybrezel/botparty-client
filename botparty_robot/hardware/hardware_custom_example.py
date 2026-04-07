@@ -54,8 +54,35 @@ class HardwareAdapter(BaseHardware):
         """Handle a control command from the browser.
 
         Use self.matches(command, "name1", "name2") for case-insensitive matching.
+        Metadata from the gateway is available on self.command_context.
         """
-        if self.matches(command, "forward"):
+        user = self.command_context.get("user", {})
+        username = user.get("username") or "anonymous"
+        role = user.get("role") or "guest"
+        robot_id = self.command_context.get("robotId")
+
+        self.log.debug(
+            "Command from %s role=%s robot=%s: %s value=%s",
+            username,
+            role,
+            robot_id,
+            command,
+            value,
+        )
+
+        if self.matches(command, "chat"):
+            payload = value if isinstance(value, dict) else {}
+            message = payload.get("message") or ""
+            sender = payload.get("sender") or username
+            anonymous = bool(payload.get("anonymous"))
+            self.log.info(
+                "Chat from %s anonymous=%s: %s",
+                sender,
+                anonymous,
+                message,
+            )
+
+        elif self.matches(command, "forward"):
             self.log.info("Moving forward")
             # e.g. GPIO.output(FORWARD_PIN, GPIO.HIGH)
 

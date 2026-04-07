@@ -18,7 +18,7 @@ class GatewayConnection:
 
     Reconnects automatically with exponential backoff. The caller provides
     three callbacks:
-      on_command(command, value, timestamp) - called for each control:command event
+      on_command(command, value, timestamp, metadata) - called for each control:command event
       on_emergency_stop()                   - called for control:emergency-stop
       on_actions(data) -> coroutine         - called for robot:actions events (async)
     """
@@ -26,7 +26,7 @@ class GatewayConnection:
     def __init__(
         self,
         config: RobotConfig,
-        on_command: Callable[[str, Any, Any], None],
+        on_command: Callable[[str, Any, Any, dict[str, Any] | None], None],
         on_emergency_stop: Callable[[], None],
         on_actions: Callable[[dict], Coroutine],
         running_fn: Callable[[], bool],
@@ -111,6 +111,7 @@ class GatewayConnection:
                 str(data.get("command", "")),
                 data.get("value"),
                 data.get("timestamp"),
+                data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
             )
         elif event == "control:emergency-stop":
             logger.warning("Emergency stop received from gateway")

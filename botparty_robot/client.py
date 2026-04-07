@@ -705,14 +705,22 @@ class BotPartyClient:
                 payload.get("value"),
                 payload.get("timestamp", 0),
                 source="livekit",
+                metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None,
             )
         except Exception as e:
             logger.error("Data handling error: %s", e)
 
-    def _on_gateway_command(self, command: str, value: Any, timestamp: Any) -> None:
-        self._process_command(command, value, timestamp, source="gateway")
+    def _on_gateway_command(self, command: str, value: Any, timestamp: Any, metadata: dict[str, Any] | None) -> None:
+        self._process_command(command, value, timestamp, source="gateway", metadata=metadata)
 
-    def _process_command(self, command: str, value: Any, timestamp: Any, source: str) -> None:
+    def _process_command(
+        self,
+        command: str,
+        value: Any,
+        timestamp: Any,
+        source: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> None:
         if not command:
             return
 
@@ -734,10 +742,13 @@ class BotPartyClient:
         # Chat messages: speak them if TTS chat-to-TTS is enabled
         if command == "chat":
             if self.config.tts.chat_to_tts and self.tts.can_handle():
-                message, metadata = self._normalize_tts_payload(command, value)
+                message, tts_metadata = self._normalize_tts_payload(command, value)
+                merged_metadata = dict(metadata or {})
+                if tts_metadata:
+                    merged_metadata.update(tts_metadata)
                 if message:
                     try:
-                        self._tts_queue.put_nowait((message, metadata))
+                        self._tts_queue.put_nowait((message, merged_metadata or None))
                     except asyncio.QueueFull:
                         logger.debug("TTS queue full, dropping message")
             return
@@ -745,10 +756,10 @@ class BotPartyClient:
         if self._maybe_handle_tts_command(command, value):
             return
 
-        logger.debug("CMD[%s]: %s=%s (latency: %.0fms)", source, command, value, latency_ms)
-        asyncio.create_task(self._run_hardware_command(command, value))
+        logger.debug("CMD[%s]: %s=%s metadata=%s (latency: %.0fms)", source, command, value, metadata, latency_ms)
+        asyncio.create_task(self._run_hardware_command(command, value, metadata))
 
-    async def _run_hardware_command(self, command: str, value: Any) -> None:
+    async def _run_hardware_command(self, command: str, value: Any, metadata: dict[str, Any] | None) -> None:
         """Run a hardware command in a thread pool to avoid blocking the event loop.
 
         The lock serialises commands so GPIO adapters with time.sleep() don't
@@ -756,6 +767,7 @@ class BotPartyClient:
         """
         async with self._hardware_lock:
             try:
+                await asyncio.to_thread(self.handler.set_command_context, metadata)
                 await asyncio.to_thread(self.handler.on_command, command, value)
             except Exception as exc:
                 logger.warning("Hardware command error (cmd=%s): %s", command, exc)
