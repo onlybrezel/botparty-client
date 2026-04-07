@@ -37,7 +37,7 @@ Describes the physical camera device. These settings are passed to the active vi
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `device` | string | `/dev/video0` | V4L2 device path or integer index for OpenCV |
+| `device` | string/int | `/dev/video0` | V4L2 device path such as `/dev/video0`, or a numeric OpenCV device index such as `0` |
 | `width` | int | `1280` | Capture width in pixels |
 | `height` | int | `720` | Capture height in pixels |
 | `fps` | int | `30` | Target frames per second |
@@ -75,6 +75,10 @@ Selects the video capture and streaming pipeline.
 | `ffmpeg_arecord` | FFmpeg + microphone audio via ALSA `arecord` |
 | `ffmpeg_libcamera` | `libcamera-vid` piped into FFmpeg — for Raspberry Pi Camera Module |
 | `opencv` | Pure-Python OpenCV fallback — no FFmpeg needed |
+| `none` | Disable video publishing entirely |
+| `ffmpeg_hud` | FFmpeg capture with HUD overlay support |
+| `cozmo_vid` | Video from an attached Cozmo robot |
+| `vector_vid` | Video from an attached Vector robot |
 
 See [Video profiles](video/index.md) for full details on each profile and its options.
 
@@ -115,11 +119,15 @@ Selects the motor/servo driver.
 | `serial_board` | Arduino / any microcontroller over USB serial |
 | `mqtt_pub` | Publish commands to an MQTT broker (e.g. ROS2 bridge) |
 | `pololu` | Pololu DRV8835 dual motor driver |
+| `mc33926` | Pololu dual MC33926 motor driver |
 | `mdd10` | Cytron MDD10 10A PWM motor driver |
 | `motozero` | MotoZero 4-motor GPIO board |
 | `thunderborg` | PiBorg ThunderBorg I2C driver |
 | `gopigo2` | Dexter Industries GoPiGo 2 |
 | `gopigo3` | Dexter Industries GoPiGo 3 |
+| `megapi_board` | Makeblock MegaPi tracked robot |
+| `telly` | Telly serial controller preset |
+| `max7219` | MAX7219 LED matrix / face display |
 | `maestro_servo` | Pololu Maestro dual-servo drive |
 | `navq` | NXP NavQ / MAVSDK offboard control |
 | `cozmo` | Anki Cozmo |
@@ -155,7 +163,7 @@ Text-to-speech configuration. When enabled, chat messages from viewers are spoke
 | `playback_device` | string | `default` | ALSA device for audio output |
 | `volume` | int | `70` | Speaker volume 0–100 |
 | `chat_to_tts` | bool | `true` | Speak all chat messages |
-| `filter_urls` | bool | `false` | Strip URLs before speaking |
+| `filter_urls` | bool | `false` | Skip messages that contain URLs |
 | `allow_anonymous` | bool | `true` | Speak messages from guests |
 | `blocked_senders` | list | `[]` | Usernames to silence |
 | `delay_ms` | int | `0` | Delay before speaking (ms) |
@@ -171,6 +179,10 @@ Text-to-speech configuration. When enabled, chat messages from viewers are spoke
 | `festival` | Festival Speech Synthesis (offline) | `sudo apt install festival` |
 | `polly` | Amazon Polly (cloud) | `pip install boto3` + AWS credentials |
 | `google_cloud` | Google Cloud TTS (cloud) | `pip install google-cloud-texttospeech` + service account JSON |
+| `custom` | Load your own Python TTS class | Importable class path in `tts.options.class` |
+| `espeak_loop` | Legacy alias for `espeak` | Same as `espeak` |
+| `cozmo_tts` | Speak through an attached Cozmo robot | `cozmo[camera]` |
+| `vector_tts` | Speak through an attached Vector robot | `anki_vector` |
 
 Run `aplay -l` to list ALSA playback devices. `plughw:1,0` addresses card 1, device 0.
 

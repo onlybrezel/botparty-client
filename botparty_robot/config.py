@@ -15,7 +15,7 @@ class CameraConfig(BaseModel):
     width: int = 1280
     height: int = 720
     fps: int = 30
-    device: str = "/dev/video0"
+    device: str | int = "/dev/video0"
     backend: str = "v4l2"
     fourcc: str | None = "MJPG"
     buffer_size: int = Field(default=1, ge=1, le=8)

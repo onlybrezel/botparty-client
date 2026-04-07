@@ -13,10 +13,10 @@
 # -- Server connection ---------------------------------------------------------
 
 server:
-  # These must not be changed.
+  # Change this only if you self-host BotParty.
   api_url: "https://botparty.live"
 
-  # These must not be changed.
+  # Change this only if your server uses a different LiveKit URL.
   livekit_url: "wss://botparty.live/rtc"
 
   # Your robot's claim token from the BotParty dashboard.
@@ -89,11 +89,15 @@ video:
 #   serial_board  - Arduino / Parallax board over USB serial
 #   mqtt_pub      - publish commands to a local MQTT broker (e.g. ROS2 bridge)
 #   pololu        - Pololu DRV8835 / MC33926 dual motor driver
+#   mc33926       - Pololu dual MC33926 motor driver
 #   mdd10         - Cytron MDD10 10A motor driver
 #   motozero      - MotoZero 4-motor controller
 #   thunderborg   - PiBorg ThunderBorg
 #   gopigo2       - GoPiGo 2
 #   gopigo3       - GoPiGo 3
+#   megapi_board  - Makeblock MegaPi tracked robot
+#   telly         - Telly serial controller (serial_board preset)
+#   max7219       - MAX7219 LED matrix / face display
 #   cozmo         - Anki Cozmo
 #   vector        - Anki Vector
 #   owi_arm       - OWI 535 USB Robotic Arm
@@ -163,6 +167,10 @@ hardware:
 #                  install: sudo apt install festival
 #   polly        - Amazon Polly (cloud, requires AWS credentials)
 #   google_cloud - Google Cloud TTS (cloud, requires credentials JSON)
+#   custom       - import your own Python TTS class via tts.options.class
+#   espeak_loop  - legacy alias for espeak
+#   cozmo_tts    - speak via an attached Cozmo robot
+#   vector_tts   - speak via an attached Vector robot
 
 tts:
   # Set to true to activate text-to-speech.
@@ -182,8 +190,8 @@ tts:
   # Set to false to only speak explicit "say" commands sent by the controller UI.
   chat_to_tts: true
 
-  # Strip URLs from messages before reading them aloud (prevents spam).
-  filter_urls: true
+  # Skip messages that contain URLs (prevents link spam).
+  filter_urls: false
 
   # Allow viewers who are not logged in to trigger TTS.
   allow_anonymous: true

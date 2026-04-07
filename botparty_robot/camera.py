@@ -170,7 +170,12 @@ class CameraManager:
         return cap, frame_width, frame_height, camera_fps
 
     def _resolve_device(self):
-        device = self.config.camera.device.strip()
+        device = self.config.camera.device
+        if isinstance(device, int):
+            return device
+        device = str(device).strip()
+        if device.isdigit():
+            return int(device)
         match = re.fullmatch(r"/dev/video(\d+)", device)
         if match:
             return int(match.group(1))

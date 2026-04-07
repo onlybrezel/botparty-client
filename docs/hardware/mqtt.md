@@ -31,7 +31,7 @@ A simple string:
 
 ```
 forward
-left 50
+left:50
 stop
 ```
 

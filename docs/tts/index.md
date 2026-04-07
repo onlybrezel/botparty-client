@@ -27,6 +27,10 @@ tts:
 | [`festival`](festival.md) | Natural offline | `festival` package | No |
 | [`polly`](polly.md) | High quality cloud | `boto3` + AWS account | Yes |
 | [`google_cloud`](google-cloud.md) | High quality cloud | `google-cloud-texttospeech` + GCP account | Yes |
+| `custom` | Your own Python class | Importable class in `tts.options.class` | Depends |
+| `espeak_loop` | Legacy alias for `espeak` | Same as `espeak` | No |
+| `cozmo_tts` | Speak through an attached Cozmo robot | `cozmo[camera]` | No |
+| `vector_tts` | Speak through an attached Vector robot | `anki_vector` | No |
 
 ---
 
@@ -57,7 +61,7 @@ Common values:
 
 | Setting | Effect |
 |---------|--------|
-| `filter_urls: true` | Strip `http://...` links before speaking — prevents URL spam |
+| `filter_urls: true` | Skip messages that contain `http://...` links |
 | `allow_anonymous: false` | Only speak messages from logged-in users |
 | `blocked_senders: ["troll1", "spammer"]` | Silence specific usernames permanently |
 
@@ -65,7 +69,7 @@ Common values:
 
 ## Volume control
 
-The volume (0–100) is applied via `amixer` to the ALSA device at startup. You can also change volume at runtime from the controller UI using the `volume` command (if enabled in the dashboard).
+The volume (0–100) is applied via `amixer` to the ALSA device at startup. You can also change it at runtime via TTS control commands such as `tts:volume`.
 
 ---
 

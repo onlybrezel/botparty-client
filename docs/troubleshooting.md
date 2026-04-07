@@ -177,7 +177,7 @@ which espeak pico2wave
 
 ### TTS cuts off mid-sentence
 
-Increase `tts.delay_ms` to give audio more time to play:
+If messages are overlapping or starting too aggressively, add a small delay before playback starts:
 
 ```yaml
 tts:
@@ -218,4 +218,5 @@ Key log prefixes:
 | `botparty.gateway` | WebSocket connection, events received |
 | `botparty.camera` | Frame capture, publish to LiveKit |
 | `botparty.hardware` | Command dispatch, GPIO / I2C calls |
+| `botparty.client` | Authentication, supervisor, heartbeat, remote actions |
 | `botparty.tts` | TTS synthesis, audio playback |

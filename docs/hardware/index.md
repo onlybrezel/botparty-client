@@ -11,7 +11,8 @@ Set `hardware.type` in `config.yaml` to the adapter name. The `hardware.options`
 Every adapter implements `emergency_stop()`. The client calls it automatically when:
 
 - A `control:emergency-stop` WebSocket event is received
-- The connection is lost
+- The client shuts down
+- The local safety timeout expires without a fresh drive command
 
 Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. It should cut motor power without any network calls or blocking I/O.
 
@@ -28,11 +29,15 @@ Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. I
 | [`serial_board`](serial-board.md) | Arduino / any MCU | USB serial |
 | [`mqtt_pub`](mqtt.md) | Any MQTT broker | TCP |
 | [`pololu`](other.md#pololu-drv8835) | Pololu DRV8835 | GPIO |
+| [`mc33926`](other.md#pololu-dual-mc33926) | Pololu dual MC33926 | GPIO |
 | [`mdd10`](other.md#cytron-mdd10) | Cytron MDD10 | GPIO + PWM |
 | [`motozero`](other.md#motozero) | MotoZero | GPIO |
 | [`thunderborg`](other.md#piborg-thunderborg) | PiBorg ThunderBorg | I2C |
 | [`gopigo2`](other.md#gopigo-2--gopigo-3) | GoPiGo 2 | I2C |
 | [`gopigo3`](other.md#gopigo-2--gopigo-3) | GoPiGo 3 | I2C |
+| [`megapi_board`](other.md#makeblock-megapi-board) | Makeblock MegaPi | USB serial |
+| [`telly`](other.md#telly) | Telly | USB serial |
+| [`max7219`](other.md#max7219-led-matrix) | MAX7219 LED matrix | SPI |
 | [`maestro_servo`](other.md#pololu-maestro-servo-controller) | Pololu Maestro | USB |
 | [`navq`](other.md#nxp-navq--mavsdk) | NXP NavQ / MAVSDK | MAVLink serial |
 | [`cozmo`](other.md#anki-cozmo--vector) | Anki Cozmo | Wi-Fi SDK |
@@ -53,10 +58,11 @@ Controllers send these string commands. All adapters must handle at least the fi
 | `left` | Turn left |
 | `right` | Turn right |
 | `stop` | Stop all motors immediately |
-| `max_speed` | Toggle max speed mode (where supported) |
-| `up` | Raise arm / lift accessory |
-| `down` | Lower arm / drop accessory |
+| `max_speed` | Optional speed-mode command; some legacy adapters expect exact strings such as `MAXSPEED` |
+| `up` | Raise arm / lift accessory (`lift_up` aliases are also accepted by many adapters) |
+| `down` | Lower arm / drop accessory (`lift_down` aliases are also accepted by many adapters) |
 | `open` | Open gripper / claw |
 | `close` | Close gripper / claw |
+| `camera_up` / `camera_down` | Head/camera tilt commands for adapters that expose them |
 
 Custom hardware can define and handle any additional commands.

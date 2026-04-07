@@ -112,7 +112,7 @@ Common voices:
 | `Celine` | fr-FR | Female |
 | `Conchita` | es-ES | Female |
 
-Neural voices (higher quality, slightly higher cost) use the suffix `Neural` - set `engine: neural` in Polly, but note the client uses the standard engine by default.
+This client currently uses Polly's default synthesis engine. There is no separate `engine` option in `config.yaml`.
 
 ---
 
@@ -124,11 +124,12 @@ Neural voices (higher quality, slightly higher cost) use the suffix `Neural` - s
 
 ```bash
 # boto3 installed in the right env?
-/home/pi/botparty-client/venv/bin/python -c "import boto3; print('ok')"
+.venv/bin/python -c "import boto3; print('ok')"
 
 # mpg123 installed?
 which mpg123
 ```
+Use your actual virtualenv path if it differs.
 
 **`NoCredentialsError` or `InvalidClientTokenId`**
 

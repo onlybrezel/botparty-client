@@ -22,7 +22,7 @@ hardware:
 
 ## How it works
 
-The adapter sets PWM pulse widths (0–4095) on the specified channels. Each command pulse moves the drive motor to a target value, waits for `drive_seconds`, then returns to neutral. Steering is set at the same time and released after the move.
+The adapter sets PWM pulse widths (0–4095) on the specified channels. Drive timings are built into the adapter: `forward` and `backward` use short drive pulses, while `left` and `right` apply steering and drive together before returning to center/neutral.
 
 ---
 
@@ -57,8 +57,26 @@ Power your ESC and servos from the HAT's servo power rail. The HAT **does not** 
 | `steer_left` | int | `300` | PWM value for full left steering |
 | `steer_center` | int | `400` | PWM value for straight/center |
 | `steer_right` | int | `500` | PWM value for full right steering |
-| `aux_increment` | int | `300` | PWM step when `up` command received |
-| `aux_decrement` | int | `400` | PWM step when `down` command received |
+| `aux_increment` | int | `300` | PWM value used for the legacy `S2INC` command |
+| `aux_decrement` | int | `400` | PWM value used for the legacy `S2DEC` command |
+| `aux_pos60` | int | `490` | PWM value used for the legacy `POS60` command |
+| `aux_neg60` | int | `100` | PWM value used for the legacy `NEG60` command |
+
+### Commands
+
+The adapter handles the standard drive commands:
+
+- `forward`
+- `backward`
+- `left`
+- `right`
+- `stop`
+
+It also supports these legacy exact command strings for RC-style setups:
+
+- `BL` / `BR`
+- `S2INC` / `S2DEC`
+- `POS60` / `NEG60`
 
 ### Finding the right PWM values
 

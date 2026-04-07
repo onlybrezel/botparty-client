@@ -18,39 +18,30 @@ Then set the hardware type in `config.yaml`:
 hardware:
   type: "custom"
   options:
-    # Any keys here become self.options inside your adapter
     my_speed: 50
 ```
 
-The client looks for `hardware_custom.py` in the current working directory (next to `config.yaml`).
+The client looks for `hardware_custom.py` in the current working directory, next to `config.yaml`.
 
 ---
 
-## Adapter template
+## Minimal template
 
 ```python
-"""Custom hardware adapter for BotParty."""
-
 from __future__ import annotations
 
 from typing import Any
+
 from botparty_robot.hardware.base import BaseHardware
 
 
 class HardwareAdapter(BaseHardware):
     profile_name = "custom"
 
-    def __init__(self, config) -> None:
-        super().__init__(config)
-        # Read your config options like this:
-        self.speed = self.option_int("my_speed", 50)
-
     def setup(self) -> None:
-        """Called once at startup. Open serial ports, init I2C, etc."""
         self.log.info("Custom hardware ready")
 
     def on_command(self, command: str, value: Any = None) -> None:
-        """Called for every control event from the server."""
         if self.matches(command, "forward"):
             self._drive_forward()
         elif self.matches(command, "backward"):
@@ -65,14 +56,13 @@ class HardwareAdapter(BaseHardware):
             self.log.debug("unknown command: %s", command)
 
     def emergency_stop(self) -> None:
-        """MUST be implemented. Called on any unsafe condition."""
-        # Stop everything, immediately, no exceptions
-        self._stop_motors()
-
-    # ------- your implementation below -------
+        try:
+            self._stop_motors()
+        except Exception:
+            pass
 
     def _drive_forward(self) -> None:
-        pass   # your motor code here
+        pass
 
     def _drive_backward(self) -> None:
         pass
@@ -87,6 +77,8 @@ class HardwareAdapter(BaseHardware):
         pass
 ```
 
+The shipped template in [`botparty_robot/hardware/hardware_custom_example.py`](/home/julien/workspace/botparty-client/botparty_robot/hardware/hardware_custom_example.py) contains a fuller example including `self.command_context`.
+
 ---
 
 ## BaseHardware helpers
@@ -95,43 +87,22 @@ Your class inherits from `BaseHardware` which provides:
 
 | Helper | Description |
 |--------|-------------|
-| `self.log` | `logging.Logger` named `botparty.hardware` |
+| `self.log` | `logging.Logger` named `botparty.hardware.<profile_name>` |
 | `self.options` | `dict` of options from `config.yaml` |
+| `self.command_context` | Metadata from the gateway such as `user`, `role`, `robotId`, and chat payload fields |
 | `self.option_int(key, default)` | Read an integer option with fallback |
 | `self.option_float(key, default)` | Read a float option with fallback |
 | `self.option_str(key, default)` | Read a string option with fallback |
-| `self.option_pins(key)` | Read a list of integers (GPIO pins) |
-| `self.matches(command, name)` | Case-insensitive command name comparison |
-
----
-
-## Multiple custom adapters
-
-If you have several robots with different hardware, give each adapter a unique file name and reference it in `config.yaml`:
-
-```yaml
-hardware:
-  type: "my_tank"    # loads hardware_my_tank.py from cwd
-  options: {}
-```
-
-The client will look for `hardware_my_tank.py` in the current directory.
+| `self.option_pins(key)` | Read a list of integers |
+| `self.matches(command, name)` | Case-insensitive command and alias matching |
 
 ---
 
 ## Emergency stop requirements
 
-`emergency_stop()` is called in critical situations — loss of connection, excessive latency, or a server-initiated stop signal. It must:
+`emergency_stop()` is called in critical situations such as an explicit emergency stop, local shutdown, or a safety timeout. It must:
 
-- Execute **synchronously** (no `await`)
-- Return in **< 50 ms**
+- Execute synchronously
+- Return quickly
 - Never raise an exception
 - Cut all motor power even if other state is inconsistent
-
-```python
-def emergency_stop(self) -> None:
-    try:
-        self._stop_motors()
-    except Exception:
-        pass   # swallow everything - stopping is non-negotiable
-```

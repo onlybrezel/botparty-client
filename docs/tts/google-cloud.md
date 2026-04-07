@@ -96,9 +96,10 @@ Common voices:
 `can_handle()` returns `False` silently when the library is missing. Check:
 
 ```bash
-/home/pi/botparty-client/venv/bin/python -c "from google.cloud import texttospeech; print('ok')"
+.venv/bin/python -c "from google.cloud import texttospeech; print('ok')"
 which aplay
 ```
+Use your actual virtualenv path if it differs.
 
 **`DefaultCredentialsError`**
 

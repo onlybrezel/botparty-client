@@ -36,7 +36,7 @@ libcamera-hello --list-cameras
 libcamera-vid -t 5000 --width 1280 --height 720 --framerate 30 --codec yuv420 -o test.yuv
 ```
 
-If `libcamera-hello` shows no cameras, check the ribbon cable connection and ensure the kernel overlay is configured in `/boot/config.txt` (e.g. `dtoverlay=imx219` for Camera Module v2).
+If `libcamera-hello` shows no cameras, check the ribbon cable connection and ensure the kernel overlay is configured in `/boot/firmware/config.txt` on current Raspberry Pi OS releases (for example `dtoverlay=imx219` for Camera Module v2).
 
 ---
 

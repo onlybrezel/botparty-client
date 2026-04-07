@@ -14,6 +14,10 @@ Set `video.type` in `config.yaml`. All profiles share the camera settings from t
 | [`ffmpeg_arecord`](ffmpeg.md#with-microphone-audio) | FFmpeg + ALSA microphone | USB cameras with audio |
 | [`ffmpeg_libcamera`](libcamera.md) | libcamera-vid piped to FFmpeg | Raspberry Pi Camera Module |
 | [`opencv`](opencv.md) | OpenCV pure Python | Simple setups, no FFmpeg |
+| `none` | Disable video publishing | Audio-only or control-only setups |
+| `ffmpeg_hud` | FFmpeg capture with HUD overlay support | Specialized/custom setups |
+| `cozmo_vid` | Video from an attached Cozmo robot | Cozmo robots |
+| `vector_vid` | Video from an attached Vector robot | Vector robots |
 
 ---
 

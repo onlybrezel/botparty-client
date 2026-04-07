@@ -14,7 +14,7 @@ The README is intentionally short. Full documentation is in [docs/index.md](docs
 ## Requirements
 
 - Linux machine (Raspberry Pi, Jetson, or Ubuntu/Debian)
-- Python 3.11+
+- Python 3.10+
 - Camera device (`/dev/video0` or compatible)
 - Network connection
 

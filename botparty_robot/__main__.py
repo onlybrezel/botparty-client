@@ -2,6 +2,7 @@
 
 import asyncio
 import logging
+import os
 import signal
 import sys
 from pathlib import Path
@@ -13,8 +14,13 @@ from .client import BotPartyClient
 from .config import RobotConfig
 from . import __version__
 
+def _resolve_log_level() -> int:
+    configured = os.environ.get("BOTPARTY_LOG_LEVEL", "INFO").strip().upper()
+    return getattr(logging, configured, logging.INFO)
+
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=_resolve_log_level(),
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
     datefmt="%Y-%m-%d %H:%M:%S",
 )

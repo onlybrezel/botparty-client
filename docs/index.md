@@ -69,7 +69,7 @@ You should see output like:
 2025-01-01 12:00:00 [INFO] botparty: Hardware: l298n
 2025-01-01 12:00:00 [INFO] botparty: Video: ffmpeg
 2025-01-01 12:00:00 [INFO] botparty: TTS: espeak (enabled=True)
-2025-01-01 12:00:00 [INFO] botparty.gateway: connected
+2025-01-01 12:00:01 [INFO] botparty.gateway: Control websocket connected
 ```
 
 ---
