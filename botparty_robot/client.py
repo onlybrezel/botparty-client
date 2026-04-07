@@ -29,6 +29,7 @@ TTS_MUTE_COMMANDS = {"tts:mute", "tts.mute", "mute_tts", "tts_mute"}
 TTS_UNMUTE_COMMANDS = {"tts:unmute", "tts.unmute", "unmute_tts", "tts_unmute"}
 TTS_VOLUME_COMMANDS = {"tts:volume", "tts.volume", "tts_volume", "volume_tts"}
 TELEMETRY_INTERVAL_SEC = 30
+GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC = 25.0
 
 
 def suppress_livekit_reconnect_noise(duration_sec: float) -> None:
@@ -143,6 +144,9 @@ class BotPartyClient:
         self._planned_disconnect_notice_sent = False
         self._shutdown_disconnect_task: Optional[asyncio.Task] = None
         self._recovery_restart_task: Optional[asyncio.Task] = None
+        self._gateway_outage_started_at = 0.0
+        self._gateway_outage_scope: Optional[str] = None
+        self._livekit_disconnected_during_gateway_outage = False
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -264,6 +268,8 @@ class BotPartyClient:
 
         @self._room.on("disconnected")
         def on_disconnected():
+            if self._gateway_outage_started_at > 0:
+                self._livekit_disconnected_during_gateway_outage = True
             if self._planned_reconnect_at > time.time():
                 logger.info(
                     "Disconnected from LiveKit room for planned %s window",
@@ -457,6 +463,9 @@ class BotPartyClient:
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
         self._planned_reconnect_reason = reason
+        self._gateway_outage_started_at = time.time()
+        self._gateway_outage_scope = scope
+        self._livekit_disconnected_during_gateway_outage = False
 
         if scope != "full" or not self._livekit_connected or self._room is None:
             return
@@ -490,18 +499,42 @@ class BotPartyClient:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
-        if scope != "app":
+        outage_started_at = self._gateway_outage_started_at
+        outage_scope = self._gateway_outage_scope
+        livekit_disconnected = self._livekit_disconnected_during_gateway_outage
+        self._gateway_outage_started_at = 0.0
+        self._gateway_outage_scope = None
+        self._livekit_disconnected_during_gateway_outage = False
+
+        if scope != "app" or outage_scope != "app":
             return
 
         if not self._livekit_connected:
+            return
+
+        if livekit_disconnected:
+            logger.info(
+                "Control gateway recovered after %s; skipping camera recovery because LiveKit disconnected during the outage",
+                reason,
+            )
+            return
+
+        outage_duration_sec = time.time() - outage_started_at if outage_started_at > 0 else 0.0
+        if outage_duration_sec < GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC:
+            logger.info(
+                "Control gateway recovered after %s in %.1fs; keeping existing camera publish because the stream likely survived",
+                reason,
+                outage_duration_sec,
+            )
             return
 
         if self._recovery_restart_task and not self._recovery_restart_task.done():
             self._recovery_restart_task.cancel()
 
         logger.info(
-            "Control gateway recovered after %s; scheduling camera pipeline recovery",
+            "Control gateway recovered after %s in %.1fs; scheduling camera pipeline recovery",
             reason,
+            outage_duration_sec,
         )
         self._recovery_restart_task = asyncio.create_task(
             self._recover_camera_pipeline_after_gateway_reconnect(reason)
