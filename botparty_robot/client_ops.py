@@ -300,7 +300,9 @@ class ClientOpsMixin:
                 logger.debug("Diagnostics upload error (non-fatal): %s", e)
             await asyncio.sleep(2)
 
-    async def _authenticate(self) -> tuple[Optional[str], Optional[str], Optional[str]]:
+    async def _authenticate(
+        self,
+    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[dict[str, object]]]:
         try:
             session = self._get_session()
             async with session.post(
@@ -317,13 +319,13 @@ class ClientOpsMixin:
                         resp.status,
                         location,
                     )
-                    return None, None, None
+                    return None, None, None, None
                 if resp.status not in (200, 201):
                     text = await resp.text()
                     logger.error("Claim failed (%d): %s", resp.status, text)
                     if resp.status == 404 and self.config.server.api_url.startswith("http://"):
                         logger.error("Hint: try https:// if your server has SSL enabled")
-                    return None, None, None
+                    return None, None, None, None
 
                 data = await resp.json()
                 stream = data.get("stream") if isinstance(data, dict) else None
@@ -344,10 +346,13 @@ class ClientOpsMixin:
                 livekit_url = data.get("livekitUrl")
                 if not isinstance(livekit_url, str):
                     livekit_url = None
-                return data.get("token"), data.get("robotId"), livekit_url
+                ingress = data.get("ingress")
+                if not isinstance(ingress, dict):
+                    ingress = None
+                return data.get("token"), data.get("robotId"), livekit_url, ingress
         except Exception as e:
             logger.error("Authentication error: %s", e)
-            return None, None, None
+            return None, None, None, None
 
     def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
         if not (self._repo_root / ".git").exists():

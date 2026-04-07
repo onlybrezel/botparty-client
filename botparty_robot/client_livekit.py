@@ -16,9 +16,26 @@ from .client_state import (
 )
 from .config import normalize_cameras
 from .video import create_video_profile
+from .whip import WhipPublisherManager
 
 
 class ClientMediaMixin:
+    def _uses_whip_ingress(self) -> bool:
+        return bool(self._camera_runtimes) and all(
+            runtime.video_profile.publish_transport() == "whip"
+            for runtime in self._camera_runtimes
+        )
+
+    def _validate_media_mode(self) -> None:
+        uses_whip = [
+            runtime.video_profile.publish_transport() == "whip"
+            for runtime in self._camera_runtimes
+        ]
+        if any(uses_whip) and not all(uses_whip):
+            raise ValueError("WHIP and legacy LiveKit camera profiles cannot be mixed in one client config")
+        if self._uses_whip_ingress() and len(self._camera_runtimes) != 1:
+            raise ValueError("WHIP ingress is currently supported only for single-camera configurations")
+
     def _build_camera_runtimes(self) -> list[CameraRuntime]:
         normalized = normalize_cameras(self.config)
         runtimes: list[CameraRuntime] = []
@@ -35,15 +52,27 @@ class ClientMediaMixin:
                 },
             )
             video_profile = create_video_profile(derived_config)
-            include_audio = index == 0 and video_profile.has_audio()
-            track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
-            manager = CameraManager(
-                derived_config,
-                video_profile,
-                track_name=track_name,
-                audio_enabled=include_audio,
-                camera_id=entry.id,
+            include_audio = (
+                index == 0
+                and video_profile.has_audio()
+                and video_profile.publish_transport() != "whip"
             )
+            track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
+            if video_profile.publish_transport() == "whip":
+                manager = WhipPublisherManager(
+                    derived_config,
+                    video_profile,
+                    ingress_info_fn=lambda: self._ingress_info,
+                    camera_id=entry.id,
+                )
+            else:
+                manager = CameraManager(
+                    derived_config,
+                    video_profile,
+                    track_name=track_name,
+                    audio_enabled=include_audio,
+                    camera_id=entry.id,
+                )
             runtimes.append(
                 CameraRuntime(
                     camera_id=entry.id,
@@ -149,9 +178,9 @@ class ClientMediaMixin:
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
         async with self._camera_restart_lock:
-            if not self._livekit_connected or self._room is None:
+            if not self._livekit_connected or (not self._uses_whip_ingress() and self._room is None):
                 logger.info(
-                    "Skipping camera pipeline restart while LiveKit is not ready: %s%s",
+                    "Skipping camera pipeline restart while media transport is not ready: %s%s",
                     reason,
                     f" ({camera_id})" if camera_id else "",
                 )
@@ -189,6 +218,8 @@ class ClientMediaMixin:
         scope: str,
     ) -> None:
         suppress_livekit_reconnect_noise(retry_after_sec + 30.0)
+        if self._uses_whip_ingress():
+            return
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
         self._planned_reconnect_reason = reason
@@ -227,12 +258,16 @@ class ClientMediaMixin:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_disconnected(self, scope: str) -> None:
+        if self._uses_whip_ingress():
+            return
         if scope != "app":
             return
         if self._gateway_outage_started_at <= 0:
             self._gateway_outage_started_at = time.time()
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
+        if self._uses_whip_ingress():
+            return
         outage_started_at = self._gateway_outage_started_at
         outage_scope = self._gateway_outage_scope
         livekit_disconnected = self._livekit_disconnected_during_gateway_outage

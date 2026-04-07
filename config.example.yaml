@@ -46,8 +46,12 @@ camera:
 # Available types:
 #   ffmpeg            - best quality, lowest latency  [RECOMMENDED]
 #                       requires: sudo apt install ffmpeg
+#   ffmpeg_whip       - ffmpeg publishes directly to LiveKit WHIP ingress
+#                       removes the Python LiveKit video bridge
 #   ffmpeg_arecord    - same as ffmpeg + microphone audio
 #                       requires: sudo apt install ffmpeg alsa-utils
+#   ffmpeg_arecord_whip
+#                     - ffmpeg + microphone audio published directly to WHIP ingress
 #   ffmpeg_libcamera  - Raspberry Pi Camera Module v2/v3 (libcamera stack)
 #                       requires: libcamera-vid installed
 #   opencv            - pure Python fallback, no extra dependencies
@@ -58,6 +62,7 @@ video:
   options: {}
   # options:
   #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
+  #   whip_video_codec: "h264_v4l2m2m"  # good default on Raspberry Pi for *_whip profiles
 
 # -- Optional multi-camera setup ----------------------------------------------
 #

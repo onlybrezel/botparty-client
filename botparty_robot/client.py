@@ -56,6 +56,7 @@ class BotPartyClient(
         )
         self._remote_target_bitrate_kbps: Optional[int] = None
         self._livekit_connected = False
+        self._ingress_info: Optional[dict[str, object]] = None
         self._camera_runtimes = self._build_camera_runtimes()
         self._primary_camera_id = self._resolve_primary_camera_id()
         self._camera = (
@@ -107,6 +108,7 @@ class BotPartyClient(
         self._room_shutdown_task: Optional[asyncio.Task] = None
         self._room_reconnect_in_progress = False
         self._update_in_progress = False
+        self._validate_media_mode()
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0

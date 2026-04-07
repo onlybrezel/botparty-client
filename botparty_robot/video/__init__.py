@@ -11,8 +11,12 @@ from .base import BaseVideoProfile
 PROFILE_ALIASES: Final[dict[str, str]] = {
     "opencv": "opencv",
     "ffmpeg": "ffmpeg",
+    "ffmpeg-whip": "ffmpeg_whip",
+    "ffmpeg_whip": "ffmpeg_whip",
     "ffmpeg-arecord": "ffmpeg_arecord",
     "ffmpeg_arecord": "ffmpeg_arecord",
+    "ffmpeg-arecord-whip": "ffmpeg_arecord_whip",
+    "ffmpeg_arecord_whip": "ffmpeg_arecord_whip",
     "ffmpeg-hud": "ffmpeg_hud",
     "ffmpeg_hud": "ffmpeg_hud",
     "ffmpeg-libcamera": "ffmpeg_libcamera",

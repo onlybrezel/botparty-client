@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import subprocess
 from typing import Any, Callable
 
 from ..config import RobotConfig
@@ -10,6 +11,7 @@ from ..config import RobotConfig
 
 class BaseVideoProfile:
     profile_name = "base"
+    _ffmpeg_feature_cache: dict[tuple[str, str, str], bool] = {}
 
     def __init__(self, config: RobotConfig) -> None:
         self.config = config
@@ -18,6 +20,9 @@ class BaseVideoProfile:
 
     def capture_mode(self) -> str:
         return "opencv"
+
+    def publish_transport(self) -> str:
+        return "livekit"
 
     def frame_dimensions(self) -> tuple[int, int, float]:
         return self.camera.width, self.camera.height, float(self.camera.fps)
@@ -81,6 +86,9 @@ class BaseVideoProfile:
     async def spawn_ffmpeg_process(self):
         raise NotImplementedError
 
+    async def spawn_whip_process(self, publish_url: str, target_bitrate_kbps: int | None):
+        raise NotImplementedError
+
     async def capture_sdk_frames(self, rtc, source, running: Callable[[], bool], on_frame: Callable[[], None]) -> None:
         raise NotImplementedError
 
@@ -93,3 +101,50 @@ class BaseVideoProfile:
 
     async def start_audio(self, rtc, room, running: Callable[[], bool]) -> None:
         return
+
+    def ffmpeg_supports(self, kind: str, name: str) -> bool:
+        ffmpeg_path = str(self.options.get("ffmpeg_path", "ffmpeg"))
+        cache_key = (ffmpeg_path, kind, name)
+        cached = self._ffmpeg_feature_cache.get(cache_key)
+        if cached is not None:
+            return cached
+
+        flag = {
+            "encoder": "-encoders",
+            "muxer": "-muxers",
+        }.get(kind)
+        if flag is None:
+            return False
+
+        try:
+            result = subprocess.run(
+                [ffmpeg_path, "-hide_banner", flag],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            supported = result.returncode == 0 and name in result.stdout
+        except Exception:
+            supported = False
+
+        self._ffmpeg_feature_cache[cache_key] = supported
+        return supported
+
+    def detect_default_whip_video_codec(self) -> str:
+        explicit = self.options.get("whip_video_codec") or self.options.get("video_codec")
+        if isinstance(explicit, str) and explicit.strip():
+            return explicit.strip()
+
+        model = (self._read_platform_model() or "").lower()
+        if "raspberry pi" in model:
+            for candidate in ("h264_v4l2m2m", "h264_omx", "libx264"):
+                if candidate == "libx264" or self.ffmpeg_supports("encoder", candidate):
+                    return candidate
+        return "libx264"
+
+    def build_whip_publish_url(self, base_url: str, stream_key: str | None) -> str:
+        normalized_base = base_url.strip().rstrip("/")
+        normalized_key = (stream_key or "").strip().lstrip("/")
+        if not normalized_key or normalized_base.endswith(f"/{normalized_key}"):
+            return normalized_base
+        return f"{normalized_base}/{normalized_key}"

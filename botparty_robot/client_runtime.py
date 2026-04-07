@@ -23,19 +23,23 @@ class ClientLifecycleMixin:
     async def run(self) -> None:
         self._running = True
         while self._running:
-            token, robot_id, livekit_url = await self._authenticate()
-            if not token:
+            token, robot_id, livekit_url, ingress_info = await self._authenticate()
+            if not robot_id or (not token and not self._uses_whip_ingress()):
                 logger.error("Authentication failed. Retrying in 5s.")
                 await asyncio.sleep(5)
                 continue
 
             self._robot_id = robot_id
+            self._ingress_info = ingress_info
             if livekit_url and livekit_url != self.config.server.livekit_url:
                 logger.info("Using LiveKit URL from claim response: %s", livekit_url)
                 self.config.server.livekit_url = livekit_url
             logger.info("Authenticated as robot %s", robot_id)
 
-            await self._connect(token)
+            if self._uses_whip_ingress():
+                await self._connect_whip()
+            else:
+                await self._connect(token)
 
             if not self._running:
                 break
@@ -101,6 +105,30 @@ class ClientLifecycleMixin:
             if self._room is room and self._active_room_session_id == session_id:
                 self._room = None
                 self._active_room_disconnected_event = None
+
+    async def _connect_whip(self) -> None:
+        ingress_info = self._ingress_info or {}
+        publish_url = str(ingress_info.get("endpointUrl") or ingress_info.get("url") or "").strip()
+        if not publish_url:
+            logger.error("Claim response did not include WHIP ingress details")
+            await asyncio.sleep(5)
+            return
+
+        self._room = None
+        self._active_room_disconnected_event = None
+        self.stats.camera_task_restarts = 0
+        self._livekit_connected = True
+        logger.info("Connected to LiveKit ingress via WHIP: %s", publish_url)
+
+        try:
+            await self._start_all_cameras()
+            self._ensure_background_tasks()
+
+            while self._running and self._livekit_connected:
+                await asyncio.sleep(1)
+        finally:
+            self._livekit_connected = False
+            await self._stop_media_tasks()
 
     async def shutdown(self) -> None:
         logger.info("Shutting down...")
