@@ -441,7 +441,9 @@ class BotPartyClient:
         retry_after_sec: float,
         scope: str,
     ) -> None:
-        suppress_livekit_reconnect_noise(retry_after_sec + 10.0)
+        # Give the SDK enough quiet time for the announced outage window,
+        # the actual reconnect, and the noisy track republish callbacks after recovery.
+        suppress_livekit_reconnect_noise(retry_after_sec + 30.0)
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
         self._planned_reconnect_reason = reason
