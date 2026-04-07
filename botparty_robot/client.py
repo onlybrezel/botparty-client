@@ -837,7 +837,8 @@ class BotPartyClient:
             self.stats.last_command_at = time.time()
         self.stats.commands_received += 1
 
-        # Chat messages: speak them if TTS chat-to-TTS is enabled
+        # Chat messages should always reach the hardware adapter.
+        # If TTS chat-to-TTS is enabled we additionally enqueue speech.
         if command == "chat":
             if self.config.tts.chat_to_tts and self.tts.can_handle():
                 message, tts_metadata = self._normalize_tts_payload(command, value)
@@ -849,7 +850,6 @@ class BotPartyClient:
                         self._tts_queue.put_nowait((message, merged_metadata or None))
                     except asyncio.QueueFull:
                         logger.debug("TTS queue full, dropping message")
-            return
 
         if self._maybe_handle_tts_command(command, value):
             return
