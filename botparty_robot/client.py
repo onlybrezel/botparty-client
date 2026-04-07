@@ -22,12 +22,39 @@ from .tts import create_tts_profile
 from .video import create_video_profile
 
 logger = logging.getLogger("botparty.client")
+_SUPPRESS_LIVEKIT_NOISE_UNTIL = 0.0
 
 TTS_SAY_COMMANDS = {"say", "speak", "tts", "tts:say", "tts.say"}
 TTS_MUTE_COMMANDS = {"tts:mute", "tts.mute", "mute_tts", "tts_mute"}
 TTS_UNMUTE_COMMANDS = {"tts:unmute", "tts.unmute", "unmute_tts", "tts_unmute"}
 TTS_VOLUME_COMMANDS = {"tts:volume", "tts.volume", "tts_volume", "volume_tts"}
 TELEMETRY_INTERVAL_SEC = 30
+
+
+def suppress_livekit_reconnect_noise(duration_sec: float) -> None:
+    global _SUPPRESS_LIVEKIT_NOISE_UNTIL
+    _SUPPRESS_LIVEKIT_NOISE_UNTIL = max(
+        _SUPPRESS_LIVEKIT_NOISE_UNTIL,
+        time.time() + max(1.0, duration_sec),
+    )
+
+
+def should_emit_runtime_log(record: logging.LogRecord) -> bool:
+    if time.time() >= _SUPPRESS_LIVEKIT_NOISE_UNTIL:
+        return True
+
+    logger_name = record.name or ""
+    if logger_name.startswith("livekit"):
+        return False
+
+    message = record.getMessage()
+    if logger_name == "root" and (
+        "error running user callback for local_track_" in message
+        or "KeyError:" in message
+    ):
+        return False
+
+    return True
 
 
 class DiagnosticsBufferHandler(logging.Handler):
@@ -414,6 +441,7 @@ class BotPartyClient:
         retry_after_sec: float,
         scope: str,
     ) -> None:
+        suppress_livekit_reconnect_noise(retry_after_sec + 10.0)
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
         self._planned_reconnect_reason = reason

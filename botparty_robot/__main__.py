@@ -10,7 +10,7 @@ from typing import Any
 
 import yaml
 
-from .client import BotPartyClient
+from .client import BotPartyClient, should_emit_runtime_log
 from .config import RobotConfig, normalize_cameras
 from . import __version__
 
@@ -25,6 +25,15 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("botparty")
+
+
+class PlannedReconnectNoiseFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return should_emit_runtime_log(record)
+
+
+for handler in logging.getLogger().handlers:
+    handler.addFilter(PlannedReconnectNoiseFilter())
 
 
 def _apply_legacy_hardware_defaults(raw: dict[str, Any]) -> dict[str, Any]:
