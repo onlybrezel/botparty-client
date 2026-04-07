@@ -92,6 +92,7 @@ class BotPartyClient:
             on_command=self._on_gateway_command,
             on_emergency_stop=lambda: self.handler.emergency_stop(),
             on_actions=self._apply_remote_actions_payload,
+            on_shutdown=self._handle_gateway_shutdown,
             running_fn=lambda: self._running,
         )
 
@@ -109,6 +110,10 @@ class BotPartyClient:
         self._hardware_lock: asyncio.Lock = asyncio.Lock()
         # shared HTTP session – created lazily, reused across all REST calls
         self._http_session: Optional[aiohttp.ClientSession] = None
+        self._planned_reconnect_at = 0.0
+        self._planned_reconnect_reason: Optional[str] = None
+        self._planned_disconnect_notice_sent = False
+        self._shutdown_disconnect_task: Optional[asyncio.Task] = None
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -221,7 +226,7 @@ class BotPartyClient:
 
             if not self._running:
                 break
-            await asyncio.sleep(2)
+            await asyncio.sleep(self._consume_reconnect_delay(default_delay=2.0))
 
     async def _connect(self, token: str) -> None:
         self._room = rtc.Room()
@@ -230,7 +235,13 @@ class BotPartyClient:
 
         @self._room.on("disconnected")
         def on_disconnected():
-            logger.warning("Disconnected from LiveKit room")
+            if self._planned_reconnect_at > time.time():
+                logger.info(
+                    "Disconnected from LiveKit room for planned %s window",
+                    self._planned_reconnect_reason or "restart",
+                )
+            else:
+                logger.warning("Disconnected from LiveKit room")
             if self._running:
                 self._livekit_connected = False
                 asyncio.create_task(self._stop_media_tasks())
@@ -238,15 +249,11 @@ class BotPartyClient:
         try:
             await self._room.connect(self.config.server.livekit_url, token)
             self._livekit_connected = True
+            self._planned_disconnect_notice_sent = False
             logger.info("Connected to LiveKit room: robot-%s", self._robot_id)
 
             await self._start_all_cameras()
-            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
-            self._watchdog_task = asyncio.create_task(self._supervisor())
-            self._actions_task = asyncio.create_task(self._actions_loop())
-            self._diag_upload_task = asyncio.create_task(self._diagnostics_upload_loop())
-            self._tts_task = asyncio.create_task(self._tts_loop())
-            self._gateway_task = asyncio.create_task(self._gateway.run())
+            self._ensure_background_tasks()
 
             while self._running and self._livekit_connected:
                 await asyncio.sleep(1)
@@ -377,6 +384,70 @@ class BotPartyClient:
                 audio.cancel()
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await audio
+
+    def _ensure_background_tasks(self) -> None:
+        if self._heartbeat_task is None or self._heartbeat_task.done():
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+        if self._watchdog_task is None or self._watchdog_task.done():
+            self._watchdog_task = asyncio.create_task(self._supervisor())
+        if self._actions_task is None or self._actions_task.done():
+            self._actions_task = asyncio.create_task(self._actions_loop())
+        if self._diag_upload_task is None or self._diag_upload_task.done():
+            self._diag_upload_task = asyncio.create_task(self._diagnostics_upload_loop())
+        if self._tts_task is None or self._tts_task.done():
+            self._tts_task = asyncio.create_task(self._tts_loop())
+        if self._gateway_task is None or self._gateway_task.done():
+            self._gateway_task = asyncio.create_task(self._gateway.run())
+
+    def _consume_reconnect_delay(self, default_delay: float) -> float:
+        planned_reconnect_at = self._planned_reconnect_at
+        self._planned_reconnect_at = 0.0
+        self._planned_reconnect_reason = None
+        if planned_reconnect_at <= 0:
+            return default_delay
+        return max(default_delay, planned_reconnect_at - time.time())
+
+    async def _handle_gateway_shutdown(
+        self,
+        reason: str,
+        message: str,
+        retry_after_sec: float,
+        scope: str,
+    ) -> None:
+        reconnect_at = time.time() + retry_after_sec
+        self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
+        self._planned_reconnect_reason = reason
+
+        if scope != "full" or not self._livekit_connected or self._room is None:
+            return
+
+        if self._planned_disconnect_notice_sent:
+            return
+
+        self._planned_disconnect_notice_sent = True
+        logger.info(
+            "Planned %s across full stack; disconnecting LiveKit early to avoid noisy retries",
+            reason,
+        )
+
+        if self._shutdown_disconnect_task and not self._shutdown_disconnect_task.done():
+            return
+
+        self._shutdown_disconnect_task = asyncio.create_task(
+            self._disconnect_livekit_for_shutdown(message)
+        )
+
+    async def _disconnect_livekit_for_shutdown(self, message: str) -> None:
+        room = self._room
+        if room is None:
+            return
+
+        logger.info("%s", message)
+        self._livekit_connected = False
+        try:
+            await room.disconnect()
+        except Exception as exc:
+            logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
