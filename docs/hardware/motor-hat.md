@@ -7,6 +7,7 @@ hardware:
   type: "motor_hat"
   options:
     address: "0x60"
+    i2c_bus: 1
     left_motors: [1, 2]
     right_motors: [3, 4]
     drive_speed: 180
@@ -45,6 +46,7 @@ If you only have two motors use `left_motors: [1]` and `right_motors: [2]`.
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
 | `address` | string/int | `0x60` | I2C address of the Motor HAT |
+| `i2c_bus` | int | auto, usually `1` | Explicit I2C bus number. Set this to `1` on Raspberry Pi if the Adafruit library cannot detect the default bus automatically. |
 | `left_motors` | list[int] | `[1, 2]` | HAT channels (1–4) for the left side |
 | `right_motors` | list[int] | `[3, 4]` | HAT channels (1–4) for the right side |
 | `drive_speed` | int | `180` | Motor speed 0–255 for drive commands |
@@ -62,9 +64,17 @@ If you only have two motors use `left_motors: [1]` and `right_motors: [2]`.
 pip install Adafruit_MotorHAT
 ```
 
+On Raspberry Pi OS you will usually also want:
+
+```bash
+sudo apt install -y i2c-tools python3-smbus
+```
+
 Enable I2C:
 
 ```bash
 sudo raspi-config   # Interface Options → I2C → Enable
 i2cdetect -y 1      # should show 0x60
 ```
+
+If you still see `Could not determine default I2C bus for platform.`, set `i2c_bus: 1` explicitly in `config.yaml`.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
@@ -31,6 +32,12 @@ class HardwareAdapter(BaseHardware):
             return
         address = self.options.get("address", 0x60)
         address = int(str(address), 16) if isinstance(address, str) else int(address)
+        i2c_bus = self.options.get("i2c_bus")
+        if i2c_bus is None and os.path.exists("/dev/i2c-1"):
+            i2c_bus = 1
+        if i2c_bus is not None:
+            self.mh = self.module.Adafruit_MotorHAT(addr=address, i2c_bus=int(i2c_bus))
+            return
         self.mh = self.module.Adafruit_MotorHAT(addr=address)
 
     def _motor(self, channel: int):
