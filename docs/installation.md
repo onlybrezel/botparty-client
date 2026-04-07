@@ -57,7 +57,24 @@ All core dependencies (opencv, pyserial, paho-mqtt, etc.) are already in `requir
 | boto3 | `pip install boto3` | Amazon Polly TTS |
 | google-cloud-texttospeech | `pip install google-cloud-texttospeech` | Google Cloud TTS |
 
-### 4. Run as a service (optional)
+### 4. Create your config
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+At minimum, edit `config.yaml` and set:
+
+```yaml
+server:
+  api_url: https://botparty.live
+  livekit_url: wss://botparty.live/rtc
+  claim_token: PASTE_YOUR_CLAIM_TOKEN_HERE
+```
+
+Then choose your real `hardware.type` and `video.type`.
+
+### 5. Run as a service (optional)
 
 Create `/etc/systemd/system/botparty-robot.service`:
 
@@ -122,6 +139,12 @@ pip install -r requirements.txt
 ---
 
 ## Verifying the install
+
+```bash
+cp config.example.yaml config.yaml
+```
+
+Then edit `config.yaml` before the first run.
 
 ```bash
 source .venv/bin/activate
