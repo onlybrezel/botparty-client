@@ -44,16 +44,15 @@ cd botparty-client
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -e .
+pip install -r requirements.txt
 ```
 
 ### 3. Optional extras
 
+All core dependencies (opencv, pyserial, paho-mqtt, etc.) are already in `requirements.txt` and installed in the step above. The only extras you need to install manually are cloud TTS engines:
+
 | Extra | Command | Needed for |
 |-------|---------|-----------|
-| OpenCV | `pip install opencv-python-headless` | `opencv` video profile |
-| pyserial | `pip install pyserial` | `serial_board` hardware |
-| paho-mqtt | `pip install paho-mqtt` | `mqtt_pub` hardware |
 | boto3 | `pip install boto3` | Amazon Polly TTS |
 | google-cloud-texttospeech | `pip install google-cloud-texttospeech` | Google Cloud TTS |
 
@@ -99,7 +98,7 @@ JetPack includes Python 3.8 by default; you need 3.10+.
 sudo apt install -y python3.10 python3.10-venv
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 ```
 
 For camera capture use the `ffmpeg` video profile with `input_driver: v4l2`. The `ffmpeg_libcamera` profile is Raspberry Pi-specific.
@@ -116,22 +115,7 @@ git clone https://github.com/your-org/botparty-client.git
 cd botparty-client
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -e .
-```
-
----
-
-## Docker
-
-A `Dockerfile` is provided for containerised deployments. The container must have host network access for camera and audio devices:
-
-```bash
-docker build -t botparty-robot .
-docker run --rm --network host \
-  --device /dev/video0 \
-  --device /dev/snd \
-  -v $(pwd)/config.yaml:/app/config.yaml \
-  botparty-robot
+pip install -r requirements.txt
 ```
 
 ---
@@ -140,6 +124,5 @@ docker run --rm --network host \
 
 ```bash
 source .venv/bin/activate
-python -m botparty_robot --version   # prints version
-python -m botparty_robot             # starts with config.yaml in cwd
+python -m botparty_robot   # starts with config.yaml in cwd
 ```
