@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from xml.sax.saxutils import escape
+
 from .base import BaseTTSProfile
 from .common import command_exists, getenv_or_option, run_shell, shell_quote, write_bytes_file
 
@@ -22,6 +24,9 @@ class TTSProfile(BaseTTSProfile):
         self.credentials = service_account
         self.aplay_path = str(self.options.get("aplay_path", "aplay"))
         self.voice = str(self.options.get("voice", "en-US-Neural2-F"))
+        self.language_code = str(
+            self.options.get("language_code", self._infer_language_code(self.voice))
+        )
         self.pitch = float(self.options.get("voice_pitch", 0.0))
         self.speaking_rate = float(self.options.get("voice_speaking_rate", 1.0))
         self.ssml_enabled = bool(self.options.get("ssml_enabled", False))
@@ -44,11 +49,11 @@ class TTSProfile(BaseTTSProfile):
             return
         tts = self.texttospeech
         synthesis_input = (
-            tts.SynthesisInput(ssml=f"<speak>{message}</speak>")
+            tts.SynthesisInput(ssml=f"<speak>{escape(message)}</speak>")
             if self.ssml_enabled
             else tts.SynthesisInput(text=message)
         )
-        voice = tts.VoiceSelectionParams(name=self.voice, language_code=self.voice[:5])
+        voice = tts.VoiceSelectionParams(name=self.voice, language_code=self.language_code)
         audio_config = tts.AudioConfig(
             audio_encoding=tts.AudioEncoding.LINEAR16,
             pitch=self.pitch,
@@ -68,3 +73,9 @@ class TTSProfile(BaseTTSProfile):
             )
         finally:
             wav_path.unlink(missing_ok=True)
+
+    def _infer_language_code(self, voice_name: str) -> str:
+        parts = str(voice_name).split("-")
+        if len(parts) >= 2 and parts[0] and parts[1]:
+            return f"{parts[0]}-{parts[1]}"
+        return "en-US"

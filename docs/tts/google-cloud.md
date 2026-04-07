@@ -11,6 +11,7 @@ tts:
   options:
     key_file: "/home/pi/gcp-tts.json"
     voice: "en-US-Neural2-F"
+    language_code: "en-US"
 ```
 
 ---
@@ -62,6 +63,7 @@ When the environment variable is set you can omit `key_file` from `config.yaml`.
 |--------|------|---------|-------------|
 | `key_file` | string | — | Path to the GCP service account JSON file (or set `GOOGLE_APPLICATION_CREDENTIALS`) |
 | `voice` | string | `en-US-Neural2-F` | Voice name — see voice list below |
+| `language_code` | string | inferred from `voice` | Optional explicit BCP-47 language code |
 | `voice_pitch` | float | `0.0` | Pitch adjustment in semitones (-20.0 to +20.0) |
 | `voice_speaking_rate` | float | `1.0` | Speech rate (0.25 to 4.0; 1.0 = normal) |
 | `ssml_enabled` | bool | `false` | Wrap message in `<speak>` SSML tags before synthesis |

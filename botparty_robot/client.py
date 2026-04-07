@@ -72,7 +72,7 @@ class BotPartyClient:
         self._gateway = GatewayConnection(
             config,
             on_command=self._on_gateway_command,
-            on_emergency_stop=self.handler.emergency_stop,
+            on_emergency_stop=lambda: self.handler.emergency_stop(),
             on_actions=self._apply_remote_actions_payload,
             running_fn=lambda: self._running,
         )
@@ -709,6 +709,7 @@ class BotPartyClient:
             ts = float(timestamp)
         except (TypeError, ValueError):
             ts = time.time() * 1000
+        latency_ms = max(0.0, (time.time() * 1000) - ts)
 
         if command in {"forward", "backward", "left", "right"}:
             self.stats.last_command_at = time.time()
