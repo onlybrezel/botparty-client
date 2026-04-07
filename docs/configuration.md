@@ -198,12 +198,8 @@ Limits that protect the robot from runaway commands.
 |-----|------|---------|-------------|
 | `emergency_stop_pin` | int | — | Optional BCM GPIO pin number. A falling edge on this pin triggers an immediate emergency stop. |
 | `max_run_time_ms` | int | `2000` | Auto-stop motors after this many milliseconds with no new command |
-| `latency_threshold_ms` | int | `300` | Drop commands that arrive with more than this much latency |
 
 ```yaml
 safety:
   max_run_time_ms: 2000
-  latency_threshold_ms: 300
 ```
-
-`latency_threshold_ms` is especially important for robots operating in constrained environments. If a command was queued during a connection hiccup it may arrive 500 ms late — by then the physical situation may have changed. Setting a threshold of 300 ms means the robot ignores commands older than 300 ms and simply stops instead of acting on stale input.

@@ -11,7 +11,6 @@ Set `hardware.type` in `config.yaml` to the adapter name. The `hardware.options`
 Every adapter implements `emergency_stop()`. The client calls it automatically when:
 
 - A `control:emergency-stop` WebSocket event is received
-- The latency threshold is exceeded (`safety.latency_threshold_ms`)
 - The connection is lost
 
 Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. It should cut motor power without any network calls or blocking I/O.

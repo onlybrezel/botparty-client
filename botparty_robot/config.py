@@ -58,7 +58,6 @@ class TTSConfig(BaseModel):
 class SafetyConfig(BaseModel):
     emergency_stop_pin: int | None = None
     max_run_time_ms: int = Field(default=2000, ge=500, le=10000)
-    latency_threshold_ms: int = Field(default=300, ge=100, le=1000)
 
 
 class RobotConfig(BaseModel):

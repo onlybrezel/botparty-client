@@ -25,6 +25,9 @@ Dashboard ──► BotParty API ──► WebSocket gateway ──► botparty-
 ### 1. Install
 
 ```bash
+git clone https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
+
 # Python 3.10+ required
 python -m venv .venv
 source .venv/bin/activate
@@ -43,7 +46,7 @@ Open `config.yaml` and fill in at minimum:
 
 ```yaml
 server:
-  api_url: https://botparty.live      # or your self-hosted URL
+  api_url: https://botparty.live
   livekit_url: wss://botparty.live/rtc
   claim_token: PASTE_YOUR_CLAIM_TOKEN_HERE
 ```

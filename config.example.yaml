@@ -239,7 +239,3 @@ safety:
   # Auto-stop motors if no new drive command arrives within this time (ms).
   # Keeps the robot from driving off if the browser tab is closed mid-drive.
   max_run_time_ms: 2000
-
-  # Drop control commands that arrive with more latency than this (ms).
-  # Prevents stale inputs from executing after a connection hiccup.
-  latency_threshold_ms: 300

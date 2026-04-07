@@ -199,7 +199,6 @@ tts:
 ### Robot commands feel laggy
 
 - Check your internet connection speed from the Pi: `speedtest-cli`
-- Check `safety.latency_threshold_ms` — if too low, commands are being dropped
 - Control latency is primarily determined by network, not CPU
 
 ---

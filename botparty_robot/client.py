@@ -4,7 +4,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -142,10 +141,6 @@ class BotPartyClient:
         self._room = rtc.Room()
         # Reset per-session counters so a fresh connection starts clean.
         self.stats.camera_task_restarts = 0
-
-        @self._room.on("data_received")
-        def on_data(data: rtc.DataPacket):
-            self._handle_data(data)
 
         @self._room.on("disconnected")
         def on_disconnected():
@@ -696,20 +691,6 @@ class BotPartyClient:
     # Command dispatch
     # ------------------------------------------------------------------
 
-    def _handle_data(self, data: rtc.DataPacket) -> None:
-        """Handle incoming DataChannel commands from controllers."""
-        try:
-            payload = json.loads(data.data.decode("utf-8"))
-            self._process_command(
-                payload.get("command", ""),
-                payload.get("value"),
-                payload.get("timestamp", 0),
-                source="livekit",
-                metadata=payload.get("metadata") if isinstance(payload.get("metadata"), dict) else None,
-            )
-        except Exception as e:
-            logger.error("Data handling error: %s", e)
-
     def _on_gateway_command(self, command: str, value: Any, timestamp: Any, metadata: dict[str, Any] | None) -> None:
         self._process_command(command, value, timestamp, source="gateway", metadata=metadata)
 
@@ -728,12 +709,6 @@ class BotPartyClient:
             ts = float(timestamp)
         except (TypeError, ValueError):
             ts = time.time() * 1000
-
-        latency_ms = (time.time() * 1000) - ts
-        if source == "livekit" and latency_ms > self.config.safety.latency_threshold_ms:
-            logger.warning("High latency on %s: %.0fms - triggering E-STOP", source, latency_ms)
-            self.handler.emergency_stop()
-            return
 
         if command in {"forward", "backward", "left", "right"}:
             self.stats.last_command_at = time.time()
