@@ -32,10 +32,11 @@ camera:
   device: "/dev/video0"
 
   # Resolution. Lower values reduce encoding latency significantly on slower hardware.
-  # 640x480 is recommended for Raspberry Pi Zero / 3. Use 1280x720 only on Pi 4+.
+  # 640x480@15 is a good starting point for Raspberry Pi 3.
+  # 1280x720@25 is a good starting point for Raspberry Pi 4.
   width: 1280
   height: 720
-  fps: 30
+  fps: 25
 
 
 # -- Video pipeline ------------------------------------------------------------
@@ -55,6 +56,8 @@ camera:
 video:
   type: "ffmpeg"
   options: {}
+  # options:
+  #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
 
 # -- Optional multi-camera setup ----------------------------------------------
 #

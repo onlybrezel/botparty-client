@@ -17,6 +17,7 @@ class TTSProfile(BaseTTSProfile):
             return
         self.boto3 = boto3
         self.mpg123_path = str(self.options.get("mpg123_path", "mpg123"))
+        self.output_module = str(self.options.get("output_module", "")).strip().lower()
         self.voice = str(self.options.get("robot_voice", "Amy"))
         self.region_name = getenv_or_option(self.options, "region_name", "AWS_REGION", "eu-central-1")
         access_key = getenv_or_option(self.options, "access_key", "AWS_ACCESS_KEY_ID")
@@ -46,9 +47,23 @@ class TTSProfile(BaseTTSProfile):
             return
         mp3_path = write_bytes_file(response["AudioStream"].read(), ".mp3")
         try:
+            command = [shell_quote(self.mpg123_path)]
+            output_module = self.output_module
+            if not output_module:
+                if self.playback_device.strip().lower() in {"pulse", "default"}:
+                    output_module = "pulse"
+                else:
+                    output_module = "alsa"
+
+            if output_module in {"pulse", "alsa"}:
+                command.extend(["-o", shell_quote(output_module)])
+
+            if output_module != "pulse":
+                command.extend(["-a", shell_quote(self.playback_device)])
+
+            command.extend(["-q", shell_quote(str(mp3_path))])
             run_shell(
-                f"{shell_quote(self.mpg123_path)} -a {shell_quote(self.playback_device)} "
-                f"-q {shell_quote(str(mp3_path))}"
+                " ".join(command)
             )
         finally:
             mp3_path.unlink(missing_ok=True)

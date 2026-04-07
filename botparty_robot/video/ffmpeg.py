@@ -21,6 +21,7 @@ class VideoProfile(BaseVideoProfile):
     async def spawn_ffmpeg_process(self):
         configured_input_format = str(self.options.get("input_format", "")).strip().lower()
         fourcc = (self.camera.fourcc or "").strip().upper()
+        output_fps = max(1, int(round(self.output_fps())))
 
         input_format: str | None = None
         if configured_input_format and configured_input_format != "auto":
@@ -65,7 +66,7 @@ class VideoProfile(BaseVideoProfile):
             # fps filter caps output to the configured rate inside ffmpeg so Python
             # never receives more frames than it will publish (avoids decoding waste).
             "-vf",
-            f"scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,fps={int(round(self.camera.fps))},format=rgba",
+            f"scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,fps={output_fps},format=rgba",
             "-pix_fmt",
             "rgba",
             "-f",
@@ -81,4 +82,3 @@ class VideoProfile(BaseVideoProfile):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-

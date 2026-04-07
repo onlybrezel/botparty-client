@@ -227,15 +227,24 @@ class CameraManager:
         frames_since_report = 0
         report_started_at = time.monotonic()
         stderr_task = None
-        frame_queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=1)
         reader_task = None
         reader_error: Exception | None = None
         dropped_for_pacing = 0
+        latest_frame: bytes | None = None
+        latest_frame_seq = 0
+        consumed_frame_seq = 0
+        frame_ready = asyncio.Event()
+        stream_ended = False
+        frames_since_yield = 0
 
-        requested_publish_fps = float(self.video_profile.options.get("publish_fps", camera_fps))
+        requested_publish_fps = float(self.video_profile.output_fps())
         publish_fps = min(camera_fps, max(5.0, requested_publish_fps)) if camera_fps > 0 else max(5.0, requested_publish_fps)
-        publish_interval = 1.0 / publish_fps if publish_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
+        effective_publish_fps = publish_fps
+        publish_interval = 1.0 / effective_publish_fps if effective_publish_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
         next_publish_at = time.monotonic()
+        lag_overruns = 0
+        stable_since = next_publish_at
+        min_publish_fps = max(8.0, publish_fps * 0.6)
 
         try:
             proc = await self.video_profile.spawn_ffmpeg_process()
@@ -250,21 +259,28 @@ class CameraManager:
                 (self.config.camera.fourcc or "auto").upper(),
             )
 
+            if publish_fps < camera_fps:
+                logger.info(
+                    "Performance cap active: camera_fps=%.1f publish_fps=%.1f for %s",
+                    camera_fps,
+                    publish_fps,
+                    self.camera_id,
+                )
+
             if proc.stderr is not None:
                 stderr_task = asyncio.create_task(self._drain_stderr(proc.stderr))
             if proc.stdout is None:
                 raise RuntimeError("ffmpeg process has no stdout pipe")
 
             async def read_frames() -> None:
-                nonlocal reader_error
+                nonlocal latest_frame, latest_frame_seq, reader_error, stream_ended
 
                 try:
                     while True:
                         frame = await proc.stdout.readexactly(frame_bytes)
-                        if frame_queue.full():
-                            with contextlib.suppress(asyncio.QueueEmpty):
-                                frame_queue.get_nowait()
-                        frame_queue.put_nowait(frame)
+                        latest_frame = frame
+                        latest_frame_seq += 1
+                        frame_ready.set()
                 except asyncio.IncompleteReadError as exc:
                     if exc.partial:
                         reader_error = RuntimeError(
@@ -275,42 +291,87 @@ class CameraManager:
                 except Exception as exc:
                     reader_error = exc
                 finally:
-                    if frame_queue.full():
-                        with contextlib.suppress(asyncio.QueueEmpty):
-                            frame_queue.get_nowait()
-                    with contextlib.suppress(asyncio.QueueFull):
-                        frame_queue.put_nowait(None)
+                    stream_ended = True
+                    latest_frame = None
+                    frame_ready.set()
 
             reader_task = asyncio.create_task(read_frames())
 
             while running_fn() and connected_fn():
-                frame = await frame_queue.get()
-                if frame is None:
+                if consumed_frame_seq == latest_frame_seq:
+                    frame_ready.clear()
+                    if consumed_frame_seq == latest_frame_seq and not stream_ended:
+                        await frame_ready.wait()
+
+                if consumed_frame_seq == latest_frame_seq and stream_ended:
                     break
+
+                frame = latest_frame
+                consumed_frame_seq = latest_frame_seq
+                if frame is None:
+                    if stream_ended:
+                        break
+                    continue
 
                 now = time.monotonic()
                 if now < next_publish_at:
                     dropped_for_pacing += 1
                     continue
 
-                if now - next_publish_at > publish_interval * 2:
+                lag = now - next_publish_at
+                if lag > publish_interval * 1.5:
+                    lag_overruns += 1
+                elif lag_overruns > 0:
+                    lag_overruns -= 1
+
+                if lag_overruns >= 8 and effective_publish_fps > min_publish_fps:
+                    previous_fps = effective_publish_fps
+                    effective_publish_fps = max(min_publish_fps, effective_publish_fps - 2.0)
+                    publish_interval = 1.0 / effective_publish_fps
+                    lag_overruns = 0
+                    stable_since = now
+                    logger.info(
+                        "Adaptive performance cap: publish_fps %.1f -> %.1f for %s",
+                        previous_fps,
+                        effective_publish_fps,
+                        self.camera_id,
+                    )
+                elif (
+                    effective_publish_fps < publish_fps
+                    and now - stable_since >= 12.0
+                    and lag <= publish_interval * 0.5
+                ):
+                    previous_fps = effective_publish_fps
+                    effective_publish_fps = min(publish_fps, effective_publish_fps + 1.0)
+                    publish_interval = 1.0 / effective_publish_fps
+                    stable_since = now
+                    logger.info(
+                        "Adaptive performance recovery: publish_fps %.1f -> %.1f for %s",
+                        previous_fps,
+                        effective_publish_fps,
+                        self.camera_id,
+                    )
+
+                if lag > publish_interval * 2:
                     next_publish_at = now
 
                 lk_frame = rtc.VideoFrame(frame_width, frame_height, rtc.VideoBufferType.RGBA, frame)
                 source.capture_frame(lk_frame)
                 self._inc_frame()
                 frames_since_report += 1
+                frames_since_yield += 1
                 next_publish_at += publish_interval
 
-                # Keep the reader task moving so old frames are discarded instead of queued.
-                await asyncio.sleep(0)
+                if frames_since_yield >= 4:
+                    frames_since_yield = 0
+                    await asyncio.sleep(0)
 
                 elapsed = now - report_started_at
                 if elapsed >= 10:
                     logger.info(
                         "Camera runtime: sent_fps=%.1f target_fps=%.1f dropped_pacing=%d resolution=%dx%d",
                         frames_since_report / elapsed,
-                        publish_fps,
+                        effective_publish_fps,
                         dropped_for_pacing,
                         frame_width,
                         frame_height,
