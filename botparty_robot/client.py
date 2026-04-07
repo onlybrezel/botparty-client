@@ -122,6 +122,7 @@ class BotPartyClient:
             on_actions=self._apply_remote_actions_payload,
             on_shutdown=self._handle_gateway_shutdown,
             on_reconnected=self._handle_gateway_reconnected,
+            on_disconnected=self._handle_gateway_disconnected,
             running_fn=lambda: self._running,
         )
 
@@ -147,6 +148,7 @@ class BotPartyClient:
         self._gateway_outage_started_at = 0.0
         self._gateway_outage_scope: Optional[str] = None
         self._livekit_disconnected_during_gateway_outage = False
+        self._camera_restart_lock = asyncio.Lock()
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -396,28 +398,29 @@ class BotPartyClient:
         self._sync_primary_runtime_aliases()
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
-        if not self._livekit_connected or self._room is None:
-            logger.info(
-                "Skipping camera pipeline restart while LiveKit is not ready: %s%s",
-                reason,
-                f" ({camera_id})" if camera_id else "",
+        async with self._camera_restart_lock:
+            if not self._livekit_connected or self._room is None:
+                logger.info(
+                    "Skipping camera pipeline restart while LiveKit is not ready: %s%s",
+                    reason,
+                    f" ({camera_id})" if camera_id else "",
+                )
+                return
+
+            logger.info("Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else "")
+            targets = (
+                [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
+                if camera_id
+                else list(self._camera_runtimes)
             )
-            return
 
-        logger.info("Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else "")
-        targets = (
-            [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
-            if camera_id
-            else list(self._camera_runtimes)
-        )
+            for runtime in targets:
+                await self._cancel_camera_task(runtime)
+                runtime.video_profile = create_video_profile(runtime.config)
+                runtime.manager.video_profile = runtime.video_profile
+                runtime.task = asyncio.create_task(self._start_camera(runtime))
 
-        for runtime in targets:
-            await self._cancel_camera_task(runtime)
-            runtime.video_profile = create_video_profile(runtime.config)
-            runtime.manager.video_profile = runtime.video_profile
-            runtime.task = asyncio.create_task(self._start_camera(runtime))
-
-        self._sync_primary_runtime_aliases()
+            self._sync_primary_runtime_aliases()
 
     async def _stop_media_tasks(self) -> None:
         for runtime in self._camera_runtimes:
@@ -463,7 +466,6 @@ class BotPartyClient:
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
         self._planned_reconnect_reason = reason
-        self._gateway_outage_started_at = time.time()
         self._gateway_outage_scope = scope
         self._livekit_disconnected_during_gateway_outage = False
 
@@ -497,6 +499,12 @@ class BotPartyClient:
             await room.disconnect()
         except Exception as exc:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
+
+    async def _handle_gateway_disconnected(self, scope: str) -> None:
+        if scope != "app":
+            return
+        if self._gateway_outage_started_at <= 0:
+            self._gateway_outage_started_at = time.time()
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
         outage_started_at = self._gateway_outage_started_at

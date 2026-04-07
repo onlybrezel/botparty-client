@@ -32,6 +32,7 @@ class GatewayConnection:
         running_fn: Callable[[], bool],
         on_shutdown: Optional[Callable[[str, str, float, str], Coroutine[Any, Any, None]]] = None,
         on_reconnected: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
+        on_disconnected: Optional[Callable[[str], Coroutine[Any, Any, None]]] = None,
     ) -> None:
         self.config = config
         self._on_command = on_command
@@ -39,6 +40,7 @@ class GatewayConnection:
         self._on_actions = on_actions
         self._on_shutdown = on_shutdown
         self._on_reconnected = on_reconnected
+        self._on_disconnected = on_disconnected
         self._running_fn = running_fn
         self._connected = False
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
@@ -113,6 +115,11 @@ class GatewayConnection:
                                 await self._handle_message(msg.data)
                             elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                                 break
+                if self._running_fn() and self._pending_recovery_reason and self._on_disconnected is not None:
+                    try:
+                        await self._on_disconnected(self._pending_recovery_scope or "app")
+                    except Exception as exc:
+                        logger.warning("Disconnect callback failed: %s", exc)
                 if self._running_fn():
                     delay = self._consume_reconnect_delay(default_delay=1)
                     self._log_reconnect_delay(delay)
