@@ -145,6 +145,7 @@ class BotPartyClient:
         self._planned_disconnect_notice_sent = False
         self._shutdown_disconnect_task: Optional[asyncio.Task] = None
         self._recovery_restart_task: Optional[asyncio.Task] = None
+        self._livekit_reconnect_task: Optional[asyncio.Task] = None
         self._gateway_outage_started_at = 0.0
         self._gateway_outage_scope: Optional[str] = None
         self._livekit_disconnected_during_gateway_outage = False
@@ -312,6 +313,8 @@ class BotPartyClient:
             self._actions_task,
             self._diag_upload_task,
             self._gateway_task,
+            self._recovery_restart_task,
+            self._livekit_reconnect_task,
         ]:
             if task and not task.done():
                 task.cancel()
@@ -540,27 +543,55 @@ class BotPartyClient:
             self._recovery_restart_task.cancel()
 
         logger.info(
-            "Control gateway recovered after %s in %.1fs; scheduling camera pipeline recovery",
+            "Control gateway recovered after %s in %.1fs; scheduling LiveKit room recovery",
             reason,
             outage_duration_sec,
         )
         self._recovery_restart_task = asyncio.create_task(
-            self._recover_camera_pipeline_after_gateway_reconnect(reason)
+            self._recover_livekit_room_after_gateway_reconnect(reason)
         )
 
-    async def _recover_camera_pipeline_after_gateway_reconnect(self, reason: str) -> None:
+    async def _recover_livekit_room_after_gateway_reconnect(self, reason: str) -> None:
         try:
-            await asyncio.sleep(8)
+            await asyncio.sleep(5)
             if not self._running or not self._livekit_connected or self._room is None:
                 logger.info(
-                    "Skipping delayed camera recovery after %s because LiveKit is no longer ready",
+                    "Skipping delayed LiveKit recovery after %s because the room is no longer ready",
                     reason,
                 )
                 return
 
-            await self._restart_camera_pipeline(f"gateway recovered after {reason}")
+            if self._livekit_reconnect_task and not self._livekit_reconnect_task.done():
+                return
+
+            self._livekit_reconnect_task = asyncio.create_task(
+                self._force_livekit_reconnect_after_gateway_recovery(reason)
+            )
         except asyncio.CancelledError:
             pass
+
+    async def _force_livekit_reconnect_after_gateway_recovery(self, reason: str) -> None:
+        room = self._room
+        if room is None or not self._running or not self._livekit_connected:
+            return
+
+        logger.info(
+            "Forcing LiveKit room reconnect after %s so streams recover cleanly",
+            reason,
+        )
+
+        self._planned_reconnect_reason = reason
+        self._planned_reconnect_at = time.time() + 5
+        self._livekit_connected = False
+
+        await self._stop_media_tasks()
+
+        try:
+            await asyncio.wait_for(room.disconnect(), timeout=5)
+        except asyncio.TimeoutError:
+            logger.warning("Timed out while disconnecting LiveKit room during recovery")
+        except Exception as exc:
+            logger.debug("LiveKit disconnect during recovery failed: %s", exc)
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
