@@ -38,6 +38,8 @@ If `apt` wants to remove `python3-rpi-lgpio`, that is expected on Raspberry Pi O
 
 ### 2. Install the client
 
+Recommended default with `venv`:
+
 ```bash
 git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
@@ -47,6 +49,21 @@ source .venv/bin/activate
 
 pip install -r requirements.txt
 ```
+
+Alternative without `venv`:
+
+```bash
+git clone https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
+
+python3 -m pip install --break-system-packages -r requirements.txt
+```
+
+Notes:
+
+- `venv` is still the safer default for most users.
+- Running without `venv` can be practical on Raspberry Pi when you intentionally rely on system-installed packages such as `python3-rpi.gpio`.
+- If you use the no-`venv` path, later commands that mention `.venv/bin/python` should be replaced with `python3`.
 
 ### 3. Optional extras
 
@@ -75,6 +92,8 @@ server:
 Then choose your real `hardware.type` and `video.type`.
 
 ### 5. Run as a service (optional)
+
+If you installed without `venv`, use `ExecStart=/usr/bin/python3 -m botparty_robot` instead.
 
 Create `/etc/systemd/system/botparty-robot.service`:
 
@@ -149,6 +168,12 @@ Then edit `config.yaml` before the first run.
 ```bash
 source .venv/bin/activate
 python -m botparty_robot   # starts with config.yaml in cwd
+```
+
+Without `venv`:
+
+```bash
+python3 -m botparty_robot   # starts with config.yaml in cwd
 ```
 
 If you used the GPIO step above, log out and back in once before your first real hardware test so the `gpio` group membership is active.

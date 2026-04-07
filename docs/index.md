@@ -39,6 +39,8 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+If you prefer to run without `venv`, see [Installation](installation.md) for the system-Python variant as well.
+
 See [Installation](installation.md) for the full Raspberry Pi / Jetson / Ubuntu guide, GPIO packages, audio/TTS packages, and service setup.
 
 ### 2. Configure
@@ -64,6 +66,12 @@ See [Configuration](configuration.md) for the full reference.
 
 ```bash
 python -m botparty_robot
+```
+
+Without `venv`, run:
+
+```bash
+python3 -m botparty_robot
 ```
 
 You should see output like:

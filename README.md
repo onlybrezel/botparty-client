@@ -42,6 +42,16 @@ cp config.example.yaml config.yaml
 python -m botparty_robot
 ```
 
+Without `venv`, you can also install and run it directly with system Python:
+
+```bash
+git clone https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
+python3 -m pip install --break-system-packages -r requirements.txt
+cp config.example.yaml config.yaml
+python3 -m botparty_robot
+```
+
 ## Minimal config
 
 Edit `config.yaml` and set at least:
@@ -86,5 +96,6 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 - Keep your `claim_token` secret.
 - On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.
 - If `sudo apt install python3-rpi.gpio` wants to remove `python3-rpi-lgpio`, that is usually expected for BotParty's built-in GPIO adapters.
+- `venv` is the recommended default, but a no-`venv` system-Python install is also supported and can be convenient for GPIO-heavy Raspberry Pi setups.
 - For multi-camera robots, prefer stable camera device symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of `/dev/video0` and `/dev/video2`.
 - For optional adapter/profile dependencies, see the specific docs pages above.
