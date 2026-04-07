@@ -35,6 +35,12 @@ TTS_UNMUTE_COMMANDS = {"tts:unmute", "tts.unmute", "unmute_tts", "tts_unmute"}
 TTS_VOLUME_COMMANDS = {"tts:volume", "tts.volume", "tts_volume", "volume_tts"}
 TELEMETRY_INTERVAL_SEC = 30
 GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC = 25.0
+LOCAL_GIT_STATUS_IGNORE_PATHS = (
+    "config.yaml",
+    "hardware_custom.py",
+    ".venv/",
+    "__pycache__/",
+)
 
 
 def suppress_livekit_reconnect_noise(duration_sec: float) -> None:
@@ -1231,8 +1237,24 @@ class BotPartyClient:
 
         branch = read_git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
         commit = read_git_output(["git", "rev-parse", "--short", "HEAD"])
-        dirty_output = read_git_output(["git", "status", "--porcelain"])
-        return branch, commit, bool(dirty_output)
+        dirty_output = read_git_output(["git", "status", "--porcelain", "--untracked-files=all"])
+        if not dirty_output:
+            return branch, commit, False
+
+        relevant_changes = []
+        for line in dirty_output.splitlines():
+            candidate = line[3:] if len(line) > 3 else line
+            normalized = candidate.strip()
+            if " -> " in normalized:
+                normalized = normalized.split(" -> ", 1)[1].strip()
+            if any(
+                normalized == ignored or normalized.startswith(ignored)
+                for ignored in LOCAL_GIT_STATUS_IGNORE_PATHS
+            ):
+                continue
+            relevant_changes.append(normalized)
+
+        return branch, commit, bool(relevant_changes)
 
     async def _run_update_command(self, argv: list[str], label: str) -> None:
         process = await asyncio.create_subprocess_exec(
