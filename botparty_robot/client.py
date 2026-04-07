@@ -1091,6 +1091,9 @@ class BotPartyClient:
 
         return message, metadata
 
+    def _should_skip_tts_for_chat_message(self, message: str) -> bool:
+        return message.lstrip().startswith(".")
+
     def _coerce_tts_volume(self, value: Any) -> Optional[int]:
         raw = value
         if isinstance(value, dict):
@@ -1136,7 +1139,7 @@ class BotPartyClient:
                 merged_metadata = dict(metadata or {})
                 if tts_metadata:
                     merged_metadata.update(tts_metadata)
-                if message:
+                if message and not self._should_skip_tts_for_chat_message(message):
                     try:
                         self._tts_queue.put_nowait((message, merged_metadata or None))
                     except asyncio.QueueFull:

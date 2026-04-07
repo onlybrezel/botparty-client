@@ -181,7 +181,8 @@ hardware:
 #      to hardware_custom.py
 #   2. Open hardware_custom.py and fill in your motor logic
 #   3. Optional: read self.command_context for metadata from BotParty
-#      Example keys: user.username, user.role, user.isGuest, robotId
+#      Example keys: user.username, user.role, user.isGuest,
+#      user.isRobotOwner, user.isSiteAdmin, user.isSiteModerator, robotId
 #      Chat commands also include message/sender in the command value
 #   4. Run as usual - the client finds hardware_custom.py automatically
 #

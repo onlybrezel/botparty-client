@@ -89,7 +89,7 @@ Your class inherits from `BaseHardware` which provides:
 |--------|-------------|
 | `self.log` | `logging.Logger` named `botparty.hardware.<profile_name>` |
 | `self.options` | `dict` of options from `config.yaml` |
-| `self.command_context` | Metadata from the gateway such as `user`, `role`, `robotId`, and chat payload fields |
+| `self.command_context` | Metadata from the gateway such as `user.role`, `user.isRobotOwner`, `user.isSiteAdmin`, `user.isSiteModerator`, `robotId`, and chat payload fields |
 | `self.option_int(key, default)` | Read an integer option with fallback |
 | `self.option_float(key, default)` | Read a float option with fallback |
 | `self.option_str(key, default)` | Read a string option with fallback |

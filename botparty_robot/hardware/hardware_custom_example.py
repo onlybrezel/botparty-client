@@ -59,12 +59,18 @@ class HardwareAdapter(BaseHardware):
         user = self.command_context.get("user", {})
         username = user.get("username") or "anonymous"
         role = user.get("role") or "guest"
+        is_robot_owner = bool(user.get("isRobotOwner"))
+        is_site_admin = bool(user.get("isSiteAdmin"))
+        is_site_moderator = bool(user.get("isSiteModerator"))
         robot_id = self.command_context.get("robotId")
 
         self.log.debug(
-            "Command from %s role=%s robot=%s: %s value=%s",
+            "Command from %s role=%s owner=%s site_admin=%s site_moderator=%s robot=%s: %s value=%s",
             username,
             role,
+            is_robot_owner,
+            is_site_admin,
+            is_site_moderator,
             robot_id,
             command,
             value,
@@ -106,4 +112,3 @@ class HardwareAdapter(BaseHardware):
         self.log.info("Emergency stop")
         # e.g. GPIO.output(FORWARD_PIN, GPIO.LOW)
         # e.g. GPIO.output(BACKWARD_PIN, GPIO.LOW)
-
