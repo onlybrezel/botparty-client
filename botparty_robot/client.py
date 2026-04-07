@@ -150,6 +150,11 @@ class BotPartyClient:
         self._gateway_outage_scope: Optional[str] = None
         self._livekit_disconnected_during_gateway_outage = False
         self._camera_restart_lock = asyncio.Lock()
+        self._room_session_seq = 0
+        self._active_room_session_id = 0
+        self._active_room_disconnected_event: Optional[asyncio.Event] = None
+        self._room_shutdown_task: Optional[asyncio.Task] = None
+        self._room_reconnect_in_progress = False
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -265,12 +270,23 @@ class BotPartyClient:
             await asyncio.sleep(self._consume_reconnect_delay(default_delay=2.0))
 
     async def _connect(self, token: str) -> None:
-        self._room = rtc.Room()
+        self._room_session_seq += 1
+        session_id = self._room_session_seq
+        room = rtc.Room()
+        room_disconnected_event = asyncio.Event()
+        self._room = room
+        self._active_room_session_id = session_id
+        self._active_room_disconnected_event = room_disconnected_event
         # Reset per-session counters so a fresh connection starts clean.
         self.stats.camera_task_restarts = 0
 
-        @self._room.on("disconnected")
+        @room.on("disconnected")
         def on_disconnected():
+            room_disconnected_event.set()
+            is_current_room = self._room is room and self._active_room_session_id == session_id
+            if not is_current_room:
+                logger.debug("Ignoring disconnect callback from stale LiveKit room session %s", session_id)
+                return
             if self._gateway_outage_started_at > 0:
                 self._livekit_disconnected_during_gateway_outage = True
             if self._planned_reconnect_at > time.time():
@@ -282,10 +298,11 @@ class BotPartyClient:
                 logger.warning("Disconnected from LiveKit room")
             if self._running:
                 self._livekit_connected = False
-                asyncio.create_task(self._stop_media_tasks())
+                if self._room_shutdown_task is None or self._room_shutdown_task.done():
+                    self._room_shutdown_task = asyncio.create_task(self._stop_media_tasks())
 
         try:
-            await self._room.connect(self.config.server.livekit_url, token)
+            await room.connect(self.config.server.livekit_url, token)
             self._livekit_connected = True
             self._planned_disconnect_notice_sent = False
             logger.info("Connected to LiveKit room: robot-%s", self._robot_id)
@@ -298,6 +315,18 @@ class BotPartyClient:
         except Exception as e:
             logger.error("LiveKit connection error: %s", e)
             self._livekit_connected = False
+        finally:
+            with contextlib.suppress(asyncio.TimeoutError):
+                await asyncio.wait_for(room_disconnected_event.wait(), timeout=6)
+
+            shutdown_task = self._room_shutdown_task
+            if shutdown_task and not shutdown_task.done():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await shutdown_task
+
+            if self._room is room and self._active_room_session_id == session_id:
+                self._room = None
+                self._active_room_disconnected_event = None
 
     async def shutdown(self) -> None:
         logger.info("Shutting down...")
@@ -315,6 +344,7 @@ class BotPartyClient:
             self._gateway_task,
             self._recovery_restart_task,
             self._livekit_reconnect_task,
+            self._room_shutdown_task,
         ]:
             if task and not task.done():
                 task.cancel()
@@ -572,26 +602,44 @@ class BotPartyClient:
 
     async def _force_livekit_reconnect_after_gateway_recovery(self, reason: str) -> None:
         room = self._room
+        session_id = self._active_room_session_id
+        room_disconnected_event = self._active_room_disconnected_event
         if room is None or not self._running or not self._livekit_connected:
             return
 
-        logger.info(
-            "Forcing LiveKit room reconnect after %s so streams recover cleanly",
-            reason,
-        )
-
-        self._planned_reconnect_reason = reason
-        self._planned_reconnect_at = time.time() + 5
-        self._livekit_connected = False
-
-        await self._stop_media_tasks()
+        if self._room_reconnect_in_progress:
+            return
 
         try:
-            await asyncio.wait_for(room.disconnect(), timeout=5)
-        except asyncio.TimeoutError:
-            logger.warning("Timed out while disconnecting LiveKit room during recovery")
-        except Exception as exc:
-            logger.debug("LiveKit disconnect during recovery failed: %s", exc)
+            self._room_reconnect_in_progress = True
+            logger.info(
+                "Forcing LiveKit room reconnect after %s so streams recover cleanly",
+                reason,
+            )
+
+            self._planned_reconnect_reason = reason
+            self._planned_reconnect_at = time.time() + 5
+            self._livekit_connected = False
+
+            await self._stop_media_tasks()
+
+            try:
+                await asyncio.wait_for(room.disconnect(), timeout=5)
+            except asyncio.TimeoutError:
+                logger.warning("Timed out while disconnecting LiveKit room during recovery")
+            except Exception as exc:
+                logger.debug("LiveKit disconnect during recovery failed: %s", exc)
+
+            if room_disconnected_event is not None and self._active_room_session_id == session_id:
+                with contextlib.suppress(asyncio.TimeoutError):
+                    await asyncio.wait_for(room_disconnected_event.wait(), timeout=6)
+
+            shutdown_task = self._room_shutdown_task
+            if shutdown_task and not shutdown_task.done():
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await shutdown_task
+        finally:
+            self._room_reconnect_in_progress = False
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
