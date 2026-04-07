@@ -27,16 +27,19 @@ Dashboard ──► BotParty API ──► WebSocket gateway ──► botparty-
 ### 1. Install
 
 ```bash
+sudo apt update
+sudo apt install -y git python3-pip python3-venv ffmpeg
+
 git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 
 # Python 3.10+ required
-python -m venv .venv
+python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-See [Installation](installation.md) for platform-specific steps (Raspberry Pi, Jetson Nano, Ubuntu x86).
+See [Installation](installation.md) for the full Raspberry Pi / Jetson / Ubuntu guide, GPIO packages, audio/TTS packages, and service setup.
 
 ### 2. Configure
 

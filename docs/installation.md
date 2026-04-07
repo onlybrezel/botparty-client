@@ -18,15 +18,7 @@ Tested on Raspberry Pi 4B and Pi 5 running Raspberry Pi OS Bookworm (64-bit).
 
 ```bash
 sudo apt update
-sudo apt install -y python3-pip python3-venv ffmpeg \
-    libatlas-base-dev libopenblas-dev   # needed for opencv
-```
-
-For GPIO access (L298N, MDD10, MotoZero adapters):
-
-```bash
-sudo apt install -y python3-rpi.gpio
-sudo usermod -aG gpio $USER   # log out and back in after this
+sudo apt install -y git python3-pip python3-venv ffmpeg
 ```
 
 For audio / TTS:
@@ -34,6 +26,15 @@ For audio / TTS:
 ```bash
 sudo apt install -y alsa-utils espeak mpg123
 ```
+
+For GPIO access (L298N, MDD10, MotoZero and other `RPi.GPIO`-based adapters):
+
+```bash
+sudo apt install -y python3-rpi.gpio
+sudo usermod -aG gpio $USER   # log out and back in after this
+```
+
+If `apt` wants to remove `python3-rpi-lgpio`, that is expected on Raspberry Pi OS. The two packages provide overlapping GPIO compatibility layers and conflict with each other. For the built-in BotParty GPIO adapters, `python3-rpi.gpio` is the documented and supported choice.
 
 ### 2. Install the client
 
@@ -126,3 +127,5 @@ pip install -r requirements.txt
 source .venv/bin/activate
 python -m botparty_robot   # starts with config.yaml in cwd
 ```
+
+If you used the GPIO step above, log out and back in once before your first real hardware test so the `gpio` group membership is active.

@@ -80,6 +80,8 @@ The adapter enables `max_speed_percent` when it receives the legacy exact comman
 sudo apt install python3-rpi.gpio
 ```
 
+If Raspberry Pi OS proposes removing `python3-rpi-lgpio`, that is normal. The packages conflict because they provide overlapping GPIO compatibility layers.
+
 ---
 
 ## MotoZero
@@ -100,6 +102,8 @@ hardware:
 ```bash
 sudo apt install python3-rpi.gpio
 ```
+
+If Raspberry Pi OS proposes removing `python3-rpi-lgpio`, that is normal. The packages conflict because they provide overlapping GPIO compatibility layers.
 
 ---
 

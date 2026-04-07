@@ -21,7 +21,14 @@ The README is intentionally short. Full documentation is in [docs/index.md](docs
 ## Quick Start
 
 ```bash
-# 1) Create and activate a virtual environment
+# 0) Install base packages first
+sudo apt update
+sudo apt install -y git python3-pip python3-venv ffmpeg
+
+# 1) Clone the repo and create a virtual environment
+git clone https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
+
 python3 -m venv .venv
 source .venv/bin/activate
 
@@ -77,5 +84,7 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 ## Notes
 
 - Keep your `claim_token` secret.
+- On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.
+- If `sudo apt install python3-rpi.gpio` wants to remove `python3-rpi-lgpio`, that is usually expected for BotParty's built-in GPIO adapters.
 - For multi-camera robots, prefer stable camera device symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of `/dev/video0` and `/dev/video2`.
 - For optional adapter/profile dependencies, see the specific docs pages above.
