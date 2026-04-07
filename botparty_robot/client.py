@@ -142,6 +142,7 @@ class BotPartyClient:
         self._planned_reconnect_reason: Optional[str] = None
         self._planned_disconnect_notice_sent = False
         self._shutdown_disconnect_task: Optional[asyncio.Task] = None
+        self._recovery_restart_task: Optional[asyncio.Task] = None
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -389,6 +390,14 @@ class BotPartyClient:
         self._sync_primary_runtime_aliases()
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
+        if not self._livekit_connected or self._room is None:
+            logger.info(
+                "Skipping camera pipeline restart while LiveKit is not ready: %s%s",
+                reason,
+                f" ({camera_id})" if camera_id else "",
+            )
+            return
+
         logger.info("Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else "")
         targets = (
             [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
@@ -487,11 +496,30 @@ class BotPartyClient:
         if not self._livekit_connected:
             return
 
+        if self._recovery_restart_task and not self._recovery_restart_task.done():
+            self._recovery_restart_task.cancel()
+
         logger.info(
-            "Control gateway recovered after %s; restarting camera pipeline to restore published tracks",
+            "Control gateway recovered after %s; scheduling camera pipeline recovery",
             reason,
         )
-        await self._restart_camera_pipeline(f"gateway recovered after {reason}")
+        self._recovery_restart_task = asyncio.create_task(
+            self._recover_camera_pipeline_after_gateway_reconnect(reason)
+        )
+
+    async def _recover_camera_pipeline_after_gateway_reconnect(self, reason: str) -> None:
+        try:
+            await asyncio.sleep(8)
+            if not self._running or not self._livekit_connected or self._room is None:
+                logger.info(
+                    "Skipping delayed camera recovery after %s because LiveKit is no longer ready",
+                    reason,
+                )
+                return
+
+            await self._restart_camera_pipeline(f"gateway recovered after {reason}")
+        except asyncio.CancelledError:
+            pass
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
