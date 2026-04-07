@@ -61,6 +61,7 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 - [Docs home](docs/index.md)
 - [Installation](docs/installation.md)
 - [Configuration reference](docs/configuration.md)
+- [Multi-camera](docs/multi-camera.md)
 - [Hardware adapters](docs/hardware/index.md)
 - [Video profiles](docs/video/index.md)
 - [TTS profiles](docs/tts/index.md)

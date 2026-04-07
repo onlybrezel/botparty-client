@@ -4,6 +4,8 @@ The video profile controls how camera frames are captured and published to the L
 
 Set `video.type` in `config.yaml`. All profiles share the camera settings from the `camera` block.
 
+For multi-camera robots, the same profile types can be applied per camera through a `cameras[].video` block. The recommended architecture for that is documented in [Multi-camera design](../multi-camera.md).
+
 ---
 
 ## Available profiles
@@ -52,6 +54,13 @@ video:
   type: "ffmpeg"
   options: {}
 ```
+
+For a front + rear setup, do not treat both cameras equally by default. A good starting point is:
+
+- front camera: 720p at 20-30 fps
+- rear camera: 360p or 480p at 10-15 fps
+
+That keeps the driving view sharp while preserving CPU headroom and low latency.
 
 For lower CPU usage on Raspberry Pi 3 or older hardware:
 

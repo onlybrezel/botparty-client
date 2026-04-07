@@ -15,7 +15,7 @@ from livekit import rtc
 from . import __version__
 
 from .camera import CameraManager
-from .config import RobotConfig
+from .config import RobotConfig, normalize_cameras
 from .gateway import GatewayConnection
 from .hardware import create_hardware
 from .tts import create_tts_profile
@@ -53,11 +53,24 @@ class WatchdogStats:
     camera_task_restarts: int = 0
 
 
+@dataclass
+class CameraRuntime:
+    camera_id: str
+    label: str
+    role: str
+    publish_mode: str
+    config: RobotConfig
+    video_profile: Any
+    manager: CameraManager
+    include_audio: bool = False
+    task: Optional[asyncio.Task] = None
+    restart_count: int = 0
+
+
 class BotPartyClient:
     def __init__(self, config: RobotConfig) -> None:
         self.config = config
         self.handler = create_hardware(config)
-        self.video_profile = create_video_profile(config)
         self.tts = create_tts_profile(config)
         self._running = False
         self._room: Optional[rtc.Room] = None
@@ -67,8 +80,13 @@ class BotPartyClient:
         )
         self._remote_target_bitrate_kbps: Optional[int] = None
         self._livekit_connected = False
-
-        self._camera = CameraManager(config, self.video_profile)
+        self._camera_runtimes = self._build_camera_runtimes()
+        self._primary_camera_id = self._resolve_primary_camera_id()
+        self._camera = self._camera_runtimes[0].manager if self._camera_runtimes else CameraManager(
+            config,
+            create_video_profile(config),
+        )
+        self.video_profile = self._camera_runtimes[0].video_profile if self._camera_runtimes else create_video_profile(config)
         self._gateway = GatewayConnection(
             config,
             on_command=self._on_gateway_command,
@@ -116,6 +134,74 @@ class BotPartyClient:
             self._http_session = aiohttp.ClientSession()
         return self._http_session
 
+    def _build_camera_runtimes(self) -> list[CameraRuntime]:
+        normalized = normalize_cameras(self.config)
+        runtimes: list[CameraRuntime] = []
+
+        for index, entry in enumerate(normalized):
+            if not entry.enabled:
+                continue
+
+            derived_config = self.config.model_copy(
+                deep=True,
+                update={
+                    "camera": entry.camera,
+                    "video": entry.video,
+                },
+            )
+            video_profile = create_video_profile(derived_config)
+            include_audio = index == 0 and video_profile.has_audio()
+            track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
+            manager = CameraManager(
+                derived_config,
+                video_profile,
+                track_name=track_name,
+                audio_enabled=include_audio,
+                camera_id=entry.id,
+            )
+            runtimes.append(
+                CameraRuntime(
+                    camera_id=entry.id,
+                    label=entry.label,
+                    role=entry.role,
+                    publish_mode=entry.publish_mode,
+                    config=derived_config,
+                    video_profile=video_profile,
+                    manager=manager,
+                    include_audio=include_audio,
+                )
+            )
+
+        return runtimes
+
+    def _resolve_primary_camera_id(self) -> str:
+        for runtime in self._camera_runtimes:
+            if runtime.role.strip().lower() == "primary":
+                return runtime.camera_id
+        if self._camera_runtimes:
+            return self._camera_runtimes[0].camera_id
+        return "front"
+
+    def _sync_primary_runtime_aliases(self) -> None:
+        primary = self._get_primary_runtime()
+        if primary is None:
+            return
+        self._primary_camera_id = primary.camera_id
+        self._camera = primary.manager
+        self.video_profile = primary.video_profile
+        self._camera_task = primary.task
+
+    def _get_primary_runtime(self) -> Optional[CameraRuntime]:
+        if not self._camera_runtimes:
+            return None
+        for runtime in self._camera_runtimes:
+            if runtime.camera_id == self._primary_camera_id:
+                return runtime
+        return self._camera_runtimes[0]
+
+    def _total_camera_frames(self) -> int:
+        return sum(runtime.manager.frame_count for runtime in self._camera_runtimes)
+
     async def run(self) -> None:
         self._running = True
         while self._running:
@@ -154,7 +240,7 @@ class BotPartyClient:
             self._livekit_connected = True
             logger.info("Connected to LiveKit room: robot-%s", self._robot_id)
 
-            self._camera_task = asyncio.create_task(self._start_camera())
+            await self._start_all_cameras()
             self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
             self._watchdog_task = asyncio.create_task(self._supervisor())
             self._actions_task = asyncio.create_task(self._actions_loop())
@@ -175,7 +261,7 @@ class BotPartyClient:
         self.handler.emergency_stop()
 
         for task in [
-            self._camera_task,
+            *(runtime.task for runtime in self._camera_runtimes),
             self._tts_task,
             self._heartbeat_task,
             self._watchdog_task,
@@ -197,7 +283,7 @@ class BotPartyClient:
         logger.info(
             "Goodbye! Stats: commands=%d frames=%d reconnects=%d",
             self.stats.commands_received,
-            self._camera.frame_count,
+            self._total_camera_frames(),
             self.stats.reconnect_attempts,
         )
 
@@ -205,11 +291,11 @@ class BotPartyClient:
     # Camera helpers
     # ------------------------------------------------------------------
 
-    def _start_camera(self) -> Any:
+    def _start_camera(self, runtime: CameraRuntime) -> Any:
         """Return the camera coroutine with current state bound in."""
-        return self._camera.run(
+        return runtime.manager.run(
             self._room,
-            self._effective_target_bitrate_kbps(),
+            self._target_bitrate_for_runtime(runtime),
             lambda: self._running,
             lambda: self._livekit_connected,
         )
@@ -219,8 +305,9 @@ class BotPartyClient:
             return int(value)
         return None
 
-    def _default_target_bitrate_kbps(self) -> int:
-        pixels_per_second = self.config.camera.width * self.config.camera.height * max(self.config.camera.fps, 1)
+    def _default_target_bitrate_kbps(self, runtime: CameraRuntime | None = None) -> int:
+        active_config = runtime.config if runtime is not None else self.config
+        pixels_per_second = active_config.camera.width * active_config.camera.height * max(active_config.camera.fps, 1)
         if pixels_per_second <= 7_500_000:
             return 800
         if pixels_per_second <= 28_000_000:
@@ -234,8 +321,19 @@ class BotPartyClient:
             or self._default_target_bitrate_kbps()
         )
 
-    async def _cancel_camera_task(self, timeout_sec: float = 6.5) -> None:
-        task = self._camera_task
+    def _target_bitrate_for_runtime(self, runtime: CameraRuntime) -> int | None:
+        configured = self._parse_target_bitrate_kbps(runtime.config.video.options.get("target_bitrate_kbps"))
+        if len(self._camera_runtimes) <= 1 or runtime.camera_id == self._primary_camera_id:
+            return self._remote_target_bitrate_kbps or configured or self._default_target_bitrate_kbps(runtime)
+        return configured
+
+    async def _start_all_cameras(self) -> None:
+        for runtime in self._camera_runtimes:
+            runtime.task = asyncio.create_task(self._start_camera(runtime))
+        self._sync_primary_runtime_aliases()
+
+    async def _cancel_camera_task(self, runtime: CameraRuntime, timeout_sec: float = 6.5) -> None:
+        task = runtime.task
         if not task or task.done():
             return
 
@@ -252,21 +350,33 @@ class BotPartyClient:
 
         # Give the OS and ffmpeg a short moment to release /dev/video* cleanly.
         await asyncio.sleep(0.5)
+        runtime.task = None
+        self._sync_primary_runtime_aliases()
 
-    async def _restart_camera_pipeline(self, reason: str) -> None:
-        logger.info("Restarting camera pipeline: %s", reason)
-        await self._cancel_camera_task()
-        self.video_profile = create_video_profile(self.config)
-        self._camera.video_profile = self.video_profile
-        self._camera_task = asyncio.create_task(self._start_camera())
+    async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
+        logger.info("Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else "")
+        targets = (
+            [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
+            if camera_id
+            else list(self._camera_runtimes)
+        )
+
+        for runtime in targets:
+            await self._cancel_camera_task(runtime)
+            runtime.video_profile = create_video_profile(runtime.config)
+            runtime.manager.video_profile = runtime.video_profile
+            runtime.task = asyncio.create_task(self._start_camera(runtime))
+
+        self._sync_primary_runtime_aliases()
 
     async def _stop_media_tasks(self) -> None:
-        audio = self._camera.audio_task
-        await self._cancel_camera_task()
-        if audio and not audio.done():
-            audio.cancel()
-            with contextlib.suppress(asyncio.CancelledError, Exception):
-                await audio
+        for runtime in self._camera_runtimes:
+            audio = runtime.manager.audio_task
+            await self._cancel_camera_task(runtime)
+            if audio and not audio.done():
+                audio.cancel()
+                with contextlib.suppress(asyncio.CancelledError, Exception):
+                    await audio
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)
@@ -279,36 +389,41 @@ class BotPartyClient:
         while self._running:
             await asyncio.sleep(5)
 
-            # Camera
-            if self._camera_task and self._camera_task.done():
-                exc = self._camera_task.exception() if not self._camera_task.cancelled() else None
-                if exc:
-                    logger.error("Camera task died: %s", exc)
-                if self._livekit_connected:
-                    self.stats.camera_task_restarts += 1
-                    if self.stats.camera_task_restarts <= 5:
-                        logger.info(
-                            "Restarting camera pipeline (attempt %d/5)",
-                            self.stats.camera_task_restarts,
-                        )
-                        await self._restart_camera_pipeline(
-                            f"supervisor attempt {self.stats.camera_task_restarts}/5"
-                        )
-                    else:
-                        logger.error("Camera restarted 5 times - giving up")
+            # Cameras + per-camera audio
+            for runtime in self._camera_runtimes:
+                task = runtime.task
+                if task and task.done():
+                    exc = task.exception() if not task.cancelled() else None
+                    if exc:
+                        logger.error("Camera task died (%s): %s", runtime.camera_id, exc)
+                    if self._livekit_connected:
+                        runtime.restart_count += 1
+                        self.stats.camera_task_restarts += 1
+                        if runtime.restart_count <= 5:
+                            logger.info(
+                                "Restarting camera pipeline %s (attempt %d/5)",
+                                runtime.camera_id,
+                                runtime.restart_count,
+                            )
+                            await self._restart_camera_pipeline(
+                                f"supervisor attempt {runtime.restart_count}/5",
+                                camera_id=runtime.camera_id,
+                            )
+                        else:
+                            logger.error("Camera %s restarted 5 times - giving up", runtime.camera_id)
 
-            # Audio
-            audio = self._camera.audio_task
-            if (
-                self._livekit_connected
-                and audio
-                and audio.done()
-                and self.video_profile.has_audio()
-            ):
-                exc = audio.exception() if not audio.cancelled() else None
-                if exc:
-                    logger.warning("Audio task died - restarting: %s", exc)
-                self._camera.restart_audio(self._room, lambda: self._running)
+                audio = runtime.manager.audio_task
+                if (
+                    self._livekit_connected
+                    and runtime.include_audio
+                    and audio
+                    and audio.done()
+                    and runtime.video_profile.has_audio()
+                ):
+                    exc = audio.exception() if not audio.cancelled() else None
+                    if exc:
+                        logger.warning("Audio task died - restarting (%s): %s", runtime.camera_id, exc)
+                    runtime.manager.restart_audio(self._room, lambda: self._running)
 
             # TTS
             if self._tts_task and self._tts_task.done():
@@ -388,7 +503,7 @@ class BotPartyClient:
             "controlConnected": self._gateway.connected,
             "livekitConnected": self._livekit_connected,
             "commandsReceived": self.stats.commands_received,
-            "cameraFrames": self._camera.frame_count,
+            "cameraFrames": self._total_camera_frames(),
         }
         try:
             import psutil  # type: ignore
@@ -511,6 +626,10 @@ class BotPartyClient:
             next_remote_bitrate = self._remote_target_bitrate_kbps
             if "targetBitrateKbps" in stream:
                 next_remote_bitrate = self._parse_target_bitrate_kbps(stream.get("targetBitrateKbps"))
+            active_camera = stream.get("activeCameraId")
+            if isinstance(active_camera, str) and active_camera.strip():
+                self._primary_camera_id = active_camera.strip()
+                self._sync_primary_runtime_aliases()
 
             next_effective_bitrate = (
                 next_remote_bitrate
@@ -549,13 +668,16 @@ class BotPartyClient:
 
         elif action_type == "restart_audio":
             logger.info("Remote action: restart_audio")
-            audio = self._camera.audio_task
-            if audio and not audio.done():
-                audio.cancel()
-                with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
-                    await asyncio.wait_for(audio, timeout=2.0)
-            if self.video_profile.has_audio() and self._room:
-                self._camera.restart_audio(self._room, lambda: self._running)
+            for runtime in self._camera_runtimes:
+                if not runtime.include_audio:
+                    continue
+                audio = runtime.manager.audio_task
+                if audio and not audio.done():
+                    audio.cancel()
+                    with contextlib.suppress(asyncio.CancelledError, asyncio.TimeoutError):
+                        await asyncio.wait_for(audio, timeout=2.0)
+                if runtime.video_profile.has_audio() and self._room:
+                    runtime.manager.restart_audio(self._room, lambda: self._running)
 
         elif action_type == "restart_chat":
             logger.info("Remote action: restart_chat (no-op on hardware client)")

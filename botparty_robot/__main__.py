@@ -11,7 +11,7 @@ from typing import Any
 import yaml
 
 from .client import BotPartyClient
-from .config import RobotConfig
+from .config import RobotConfig, normalize_cameras
 from . import __version__
 
 def _resolve_log_level() -> int:
@@ -160,6 +160,19 @@ async def main() -> None:
     logger.info(f"   Hardware: {config.hardware.type}")
     logger.info(f"   Video: {config.video.type}")
     logger.info(f"   TTS: {config.tts.type} (enabled={config.tts.enabled})")
+    normalized_cameras = normalize_cameras(config)
+    logger.info(f"   Cameras: {len(normalized_cameras)} configured")
+    for camera in normalized_cameras:
+        logger.info(
+            "     - %s (%s) device=%s %dx%d@%dfps profile=%s",
+            camera.label,
+            camera.id,
+            camera.camera.device,
+            camera.camera.width,
+            camera.camera.height,
+            camera.camera.fps,
+            camera.video.type,
+        )
 
     client = BotPartyClient(config)
 

@@ -56,6 +56,43 @@ video:
   type: "ffmpeg"
   options: {}
 
+# -- Optional multi-camera setup ----------------------------------------------
+#
+# Keep the top-level "camera" + "video" blocks for simple single-camera robots.
+# If you add "cameras", each enabled entry becomes its own video track in the
+# same BotParty room. A front + rear pair is the recommended starting point.
+#
+# cameras:
+#   - id: "front"
+#     label: "Front"
+#     role: "primary"
+#     enabled: true
+#     publish_mode: "always_on"
+#     device: "/dev/video0"
+#     width: 1280
+#     height: 720
+#     fps: 24
+#     fourcc: "MJPG"
+#     video:
+#       type: "ffmpeg"
+#       options:
+#         target_bitrate_kbps: 1200
+#
+#   - id: "rear"
+#     label: "Rear"
+#     role: "secondary"
+#     enabled: true
+#     publish_mode: "preview_only"
+#     device: "/dev/video2"
+#     width: 640
+#     height: 360
+#     fps: 12
+#     fourcc: "MJPG"
+#     video:
+#       type: "ffmpeg"
+#       options:
+#         target_bitrate_kbps: 350
+
 # -- With microphone audio (USB mic or Pi audio hat): -------------------------
 # video:
 #   type: "ffmpeg_arecord"

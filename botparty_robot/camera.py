@@ -25,9 +25,20 @@ CAMERA_BACKEND_MAP = {
 class CameraManager:
     """Manages camera capture and publishing to a LiveKit room."""
 
-    def __init__(self, config: RobotConfig, video_profile) -> None:
+    def __init__(
+        self,
+        config: RobotConfig,
+        video_profile,
+        *,
+        track_name: str = "camera",
+        audio_enabled: bool = True,
+        camera_id: str = "front",
+    ) -> None:
         self.config = config
         self.video_profile = video_profile
+        self.track_name = track_name
+        self.audio_enabled = audio_enabled
+        self.camera_id = camera_id
         self._frame_count = 0
         self._audio_task: Optional[asyncio.Task] = None
 
@@ -63,7 +74,7 @@ class CameraManager:
                 cap, frame_width, frame_height, camera_fps = self._open_camera()
 
             source = rtc.VideoSource(frame_width, frame_height)
-            track = rtc.LocalVideoTrack.create_video_track("camera", source)
+            track = rtc.LocalVideoTrack.create_video_track(self.track_name, source)
             publish_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_CAMERA)
 
             if target_bitrate_kbps:
@@ -80,9 +91,9 @@ class CameraManager:
                     )
 
             await room.local_participant.publish_track(track, publish_options)
-            logger.info("Camera track published")
+            logger.info("Camera track published: id=%s track=%s", self.camera_id, self.track_name)
 
-            if self.video_profile.has_audio():
+            if self.audio_enabled and self.video_profile.has_audio():
                 self._audio_task = asyncio.create_task(
                     self.video_profile.start_audio(rtc, room, running_fn)
                 )

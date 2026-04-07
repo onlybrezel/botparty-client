@@ -56,6 +56,77 @@ camera:
 
 Run `ls /dev/video*` to find your camera's device path.
 
+> For most robots, one camera is enough. If you want a front + rear setup or another extra view, use the optional [`cameras`](#cameras-optional) block below and read [Multi-camera](multi-camera.md).
+
+---
+
+## `cameras` (optional)
+
+Optional block for robots with more than one camera.
+
+How it behaves:
+
+- if `cameras` is omitted, the client uses the legacy `camera` + `video` blocks
+- if `cameras` contains one entry, the robot should still behave like a single-camera robot
+- if `cameras` contains multiple entries, each camera is published as its own track in the same room
+
+Suggested shape:
+
+| Key | Type | Description |
+|-----|------|-------------|
+| `id` | string | Stable machine-readable ID such as `front` or `rear` |
+| `label` | string | Human-friendly display name |
+| `role` | string | Suggested values: `primary`, `secondary`, `rear`, `arm`, `dock` |
+| `enabled` | bool | Enables or disables this camera without deleting the config |
+| `device` | string/int | Video device path or index |
+| `width` / `height` / `fps` | int | Per-camera capture settings |
+| `fourcc` / `backend` / `buffer_size` / `warmup_frames` | mixed | Same meaning as the top-level `camera` block |
+| `publish_mode` | string | Suggested values: `always_on`, `preview_only`, `on_demand` |
+| `video` | object | Per-camera video profile and options |
+
+Example:
+
+```yaml
+cameras:
+  - id: "front"
+    label: "Front"
+    role: "primary"
+    enabled: true
+    device: "/dev/video0"
+    width: 1280
+    height: 720
+    fps: 24
+    fourcc: "MJPG"
+    publish_mode: "always_on"
+    video:
+      type: "ffmpeg"
+      options:
+        target_bitrate_kbps: 1200
+
+  - id: "rear"
+    label: "Rear"
+    role: "secondary"
+    enabled: true
+    device: "/dev/video2"
+    width: 640
+    height: 360
+    fps: 12
+    fourcc: "MJPG"
+    publish_mode: "preview_only"
+    video:
+      type: "ffmpeg"
+      options:
+        target_bitrate_kbps: 350
+```
+
+Typical uses:
+
+- front + rear driving cameras
+- arm/gripper close-up camera
+- docking or parking assist camera
+
+See [Multi-camera](multi-camera.md) for recommended settings and practical notes.
+
 ---
 
 ## `video`
@@ -81,6 +152,8 @@ Selects the video capture and streaming pipeline.
 | `vector_vid` | Video from an attached Vector robot |
 
 See [Video profiles](video/index.md) for full details on each profile and its options.
+
+In a multi-camera setup, each camera may have its own `video` block with its own `type` and `options`.
 
 ```yaml
 # Minimal — ffmpeg on /dev/video0

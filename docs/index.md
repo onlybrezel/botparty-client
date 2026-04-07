@@ -2,6 +2,8 @@
 
 The BotParty Robot Client is the software that runs on your robot and connects it to the BotParty platform. It handles the WebSocket control channel, publishes live video via LiveKit, and drives your motors, servos, or any other hardware you have attached.
 
+Single-camera robots remain the default, but the client is designed to grow into multi-camera setups such as front + rear streaming without forcing a separate deployment model.
+
 ---
 
 ## How it works
@@ -80,6 +82,7 @@ You should see output like:
 |---------|-------------|
 | [Installation](installation.md) | OS-specific install guide |
 | [Configuration](configuration.md) | Full `config.yaml` reference |
+| [Multi-camera](multi-camera.md) | Front/rear camera setups, good defaults, and practical tips |
 | [Hardware adapters](hardware/index.md) | Motor drivers, servo boards, serial, MQTT, custom |
 | [Video profiles](video/index.md) | Camera capture and streaming to LiveKit |
 | [TTS profiles](tts/index.md) | Text-to-speech engines |
