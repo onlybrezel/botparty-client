@@ -27,7 +27,7 @@ server:
 # -- Camera --------------------------------------------------------------------
 
 camera:
-  # Video device.  /dev/video0 is the first USB or Raspberry Pi camera.
+  # Video device. /dev/video0 is fine for simple single-camera setups.
   # Run "ls /dev/video*" to list available cameras.
   device: "/dev/video0"
 
@@ -61,6 +61,9 @@ video:
 # Keep the top-level "camera" + "video" blocks for simple single-camera robots.
 # If you add "cameras", each enabled entry becomes its own video track in the
 # same BotParty room. A front + rear pair is the recommended starting point.
+# For multi-camera robots, prefer stable symlinks from /dev/v4l/by-id/ or
+# /dev/v4l/by-path/ because /dev/video0 and /dev/video2 can swap after reboots.
+# Run "ls -l /dev/v4l/by-id /dev/v4l/by-path" to list stable camera paths.
 #
 # cameras:
 #   - id: "front"
@@ -68,7 +71,7 @@ video:
 #     role: "primary"
 #     enabled: true
 #     publish_mode: "always_on"
-#     device: "/dev/video0"
+#     device: "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e-video-index0"
 #     width: 1280
 #     height: 720
 #     fps: 24
@@ -83,7 +86,7 @@ video:
 #     role: "secondary"
 #     enabled: true
 #     publish_mode: "preview_only"
-#     device: "/dev/video2"
+#     device: "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C270-video-index0"
 #     width: 640
 #     height: 360
 #     fps: 12

@@ -77,4 +77,5 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 ## Notes
 
 - Keep your `claim_token` secret.
+- For multi-camera robots, prefer stable camera device symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of `/dev/video0` and `/dev/video2`.
 - For optional adapter/profile dependencies, see the specific docs pages above.
