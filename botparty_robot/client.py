@@ -4,9 +4,14 @@ import asyncio
 import contextlib
 import json
 import logging
+import os
+import platform
+import subprocess
+import sys
 import time
 from collections import deque
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Optional
 
 import aiohttp
@@ -100,6 +105,13 @@ class BotPartyClient:
         self.config = config
         self.handler = create_hardware(config)
         self.tts = create_tts_profile(config)
+        self._repo_root = Path(__file__).resolve().parents[1]
+        (
+            self._client_git_branch,
+            self._client_git_commit,
+            self._client_git_dirty,
+        ) = self._read_git_metadata()
+        self._python_version = platform.python_version()
         self._running = False
         self._room: Optional[rtc.Room] = None
         self._robot_id: Optional[str] = None
@@ -155,6 +167,7 @@ class BotPartyClient:
         self._active_room_disconnected_event: Optional[asyncio.Event] = None
         self._room_shutdown_task: Optional[asyncio.Task] = None
         self._room_reconnect_in_progress = False
+        self._update_in_progress = False
 
         self.stats = WatchdogStats()
         self._diag_enabled_until = 0.0
@@ -759,6 +772,11 @@ class BotPartyClient:
     async def _send_telemetry(self) -> None:
         payload: dict[str, Any] = {
             "claimToken": self.config.server.claim_token,
+            "clientVersion": __version__,
+            "gitBranch": self._client_git_branch,
+            "gitCommit": self._client_git_commit,
+            "gitDirty": self._client_git_dirty,
+            "pythonVersion": self._python_version,
             "cpuPercent": self._read_cpu_percent(),
             "memoryPercent": self._read_memory_percent(),
             "temperatureC": self._read_temperature_c(),
@@ -944,6 +962,10 @@ class BotPartyClient:
 
         elif action_type == "restart_chat":
             logger.info("Remote action: restart_chat (no-op on hardware client)")
+
+        elif action_type == "update_client":
+            logger.info("Remote action: update_client")
+            await self._perform_client_update()
 
         elif action_type == "set_log_stream":
             duration = action.get("durationSec", 120)
@@ -1185,3 +1207,97 @@ class BotPartyClient:
         except Exception as e:
             logger.error("Authentication error: %s", e)
             return None, None, None
+
+    def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
+        if not (self._repo_root / ".git").exists():
+            return None, None, False
+
+        def read_git_output(args: list[str]) -> Optional[str]:
+            try:
+                result = subprocess.run(
+                    args,
+                    cwd=self._repo_root,
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                )
+            except Exception:
+                return None
+
+            if result.returncode != 0:
+                return None
+            value = result.stdout.strip()
+            return value or None
+
+        branch = read_git_output(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+        commit = read_git_output(["git", "rev-parse", "--short", "HEAD"])
+        dirty_output = read_git_output(["git", "status", "--porcelain"])
+        return branch, commit, bool(dirty_output)
+
+    async def _run_update_command(self, argv: list[str], label: str) -> None:
+        process = await asyncio.create_subprocess_exec(
+            *argv,
+            cwd=str(self._repo_root),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await process.communicate()
+        output = stdout.decode("utf-8", errors="replace").strip() if stdout else ""
+        if output:
+            for line in output.splitlines()[-20:]:
+                logger.info("%s: %s", label, line)
+        if process.returncode != 0:
+            raise RuntimeError(f"{label} failed with exit code {process.returncode}")
+
+    async def _perform_client_update(self) -> None:
+        if self._update_in_progress:
+            logger.info("Client update already in progress - ignoring duplicate action")
+            return
+
+        if not (self._repo_root / ".git").exists():
+            logger.warning("Skipping update_client: repository is not a git checkout at %s", self._repo_root)
+            return
+
+        self._update_in_progress = True
+        try:
+            await self._run_update_command(["git", "pull", "--ff-only"], "git pull --ff-only")
+            await self._run_update_command(
+                [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
+                "pip install -r requirements.txt",
+            )
+            (
+                self._client_git_branch,
+                self._client_git_commit,
+                self._client_git_dirty,
+            ) = self._read_git_metadata()
+            logger.info(
+                "Client update complete: version=%s branch=%s commit=%s dirty=%s",
+                __version__,
+                self._client_git_branch or "-",
+                self._client_git_commit or "-",
+                self._client_git_dirty,
+            )
+            await self._restart_process_after_update()
+        except Exception as exc:
+            logger.error("Client update failed: %s", exc)
+        finally:
+            self._update_in_progress = False
+
+    async def _restart_process_after_update(self) -> None:
+        logger.info("Restarting client process after successful update")
+        self._planned_disconnect_notice_sent = True
+        self._livekit_connected = False
+
+        await self._stop_media_tasks()
+
+        room = self._room
+        if room is not None:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(room.disconnect(), timeout=5)
+
+        if self._http_session and not self._http_session.closed:
+            with contextlib.suppress(Exception):
+                await self._http_session.close()
+
+        self.handler.emergency_stop()
+        os.execv(sys.executable, [sys.executable, "-m", "botparty_robot"])
