@@ -38,7 +38,7 @@ sudo apt install -y alsa-utils espeak mpg123
 ### 2. Install the client
 
 ```bash
-git clone https://github.com/your-org/botparty-client.git
+git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 
 python3 -m venv .venv
@@ -111,7 +111,7 @@ Same steps as Raspberry Pi but skip GPIO packages:
 
 ```bash
 sudo apt install -y python3-pip python3-venv ffmpeg alsa-utils espeak mpg123
-git clone https://github.com/your-org/botparty-client.git
+git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 python3 -m venv .venv
 source .venv/bin/activate
