@@ -22,23 +22,23 @@ Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. I
 
 | Adapter | Board / Platform | Interface |
 |---------|-----------------|-----------|
-| [`none`](none.md) | No movement | — |
+| [`none`](other.md#none) | No movement | — |
 | [`l298n`](l298n.md) | L298N dual H-bridge | GPIO |
 | [`adafruit_pwm`](adafruit-pwm.md) | Adafruit PCA9685 PWM HAT | I2C |
 | [`motor_hat`](motor-hat.md) | Adafruit Motor HAT | I2C |
 | [`serial_board`](serial-board.md) | Arduino / any MCU | USB serial |
 | [`mqtt_pub`](mqtt.md) | Any MQTT broker | TCP |
-| [`pololu`](pololu.md) | Pololu DRV8835 | GPIO |
-| [`mdd10`](mdd10.md) | Cytron MDD10 | GPIO + PWM |
-| [`motozero`](motozero.md) | MotoZero | GPIO |
-| [`thunderborg`](thunderborg.md) | PiBorg ThunderBorg | I2C |
-| [`gopigo2`](gopigo.md) | GoPiGo 2 | I2C |
-| [`gopigo3`](gopigo.md) | GoPiGo 3 | I2C |
-| [`maestro_servo`](maestro-servo.md) | Pololu Maestro | USB |
-| [`navq`](navq.md) | NXP NavQ / MAVSDK | MAVLink serial |
-| [`cozmo`](cozmo-vector.md) | Anki Cozmo | Wi-Fi SDK |
-| [`vector`](cozmo-vector.md) | Anki Vector | Wi-Fi SDK |
-| [`owi_arm`](owi-arm.md) | OWI 535 Robotic Arm | USB HID |
+| [`pololu`](other.md#pololu-drv8835) | Pololu DRV8835 | GPIO |
+| [`mdd10`](other.md#cytron-mdd10) | Cytron MDD10 | GPIO + PWM |
+| [`motozero`](other.md#motozero) | MotoZero | GPIO |
+| [`thunderborg`](other.md#piborg-thunderborg) | PiBorg ThunderBorg | I2C |
+| [`gopigo2`](other.md#gopigo-2--gopigo-3) | GoPiGo 2 | I2C |
+| [`gopigo3`](other.md#gopigo-2--gopigo-3) | GoPiGo 3 | I2C |
+| [`maestro_servo`](other.md#pololu-maestro-servo-controller) | Pololu Maestro | USB |
+| [`navq`](other.md#nxp-navq--mavsdk) | NXP NavQ / MAVSDK | MAVLink serial |
+| [`cozmo`](other.md#anki-cozmo--vector) | Anki Cozmo | Wi-Fi SDK |
+| [`vector`](other.md#anki-cozmo--vector) | Anki Vector | Wi-Fi SDK |
+| [`owi_arm`](other.md#owi-535-usb-robotic-arm) | OWI 535 Robotic Arm | USB HID |
 | [`custom`](custom.md) | Your own hardware | Anything |
 
 ---

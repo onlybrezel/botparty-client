@@ -42,7 +42,9 @@ Describes the physical camera device. These settings are passed to the active vi
 | `height` | int | `720` | Capture height in pixels |
 | `fps` | int | `30` | Target frames per second |
 | `fourcc` | string | `MJPG` | Pixel format passed to ffmpeg (`MJPG` or `YUYV`) |
-| `backend` | string | `auto` | OpenCV backend hint (`v4l2`, `gstreamer`, `ffmpeg`, `auto`) |
+| `backend` | string | `v4l2` | V4L2/OpenCV backend hint (`v4l2`, `gstreamer`, `ffmpeg`, `auto`) |
+| `buffer_size` | int | `1` | V4L2 capture buffer size (1–8). Keep at 1 for minimum latency. |
+| `warmup_frames` | int | `4` | Frames to discard after opening the camera to flush stale frames. |
 
 ```yaml
 camera:
@@ -153,7 +155,7 @@ Text-to-speech configuration. When enabled, chat messages from viewers are spoke
 | `playback_device` | string | `default` | ALSA device for audio output |
 | `volume` | int | `70` | Speaker volume 0–100 |
 | `chat_to_tts` | bool | `true` | Speak all chat messages |
-| `filter_urls` | bool | `true` | Strip URLs before speaking |
+| `filter_urls` | bool | `false` | Strip URLs before speaking |
 | `allow_anonymous` | bool | `true` | Speak messages from guests |
 | `blocked_senders` | list | `[]` | Usernames to silence |
 | `delay_ms` | int | `0` | Delay before speaking (ms) |
@@ -194,6 +196,7 @@ Limits that protect the robot from runaway commands.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
+| `emergency_stop_pin` | int | — | Optional BCM GPIO pin number. A falling edge on this pin triggers an immediate emergency stop. |
 | `max_run_time_ms` | int | `2000` | Auto-stop motors after this many milliseconds with no new command |
 | `latency_threshold_ms` | int | `300` | Drop commands that arrive with more than this much latency |
 

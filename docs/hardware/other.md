@@ -2,6 +2,20 @@
 
 ---
 
+## None
+
+The `none` adapter is a no-op stub that logs every command and does nothing else. Use it when you want to test video and TTS without any physical hardware connected, or as a placeholder while writing a custom adapter.
+
+```yaml
+hardware:
+  type: "none"
+  options: {}
+```
+
+No additional dependencies required.
+
+---
+
 ## Pololu DRV8835
 
 The Pololu DRV8835 Dual Motor Driver Kit for Raspberry Pi plugs directly onto the Pi GPIO header.
@@ -228,4 +242,27 @@ The `owi_arm` adapter requires write access to the USB device. Add a udev rule t
 echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="1267", ATTR{idProduct}=="0000", MODE="0666"' | \
   sudo tee /etc/udev/rules.d/99-owi-arm.rules
 sudo udevadm control --reload-rules
+
+### Options
+
+| Option | Type | Default | Description |
+|--------|------|---------|-------------|
+| `step_seconds` | float | `0.15` | Duration of each movement pulse |
+| `vendor_id` | int | `0x1267` | USB vendor ID (only change if you have a clone with a different ID) |
+| `product_id` | int | `0x0000` | USB product ID |
+
+### Commands
+
+| Command | Effect |
+|---------|--------|
+| `forward` | Elbow up |
+| `backward` | Elbow down |
+| `left` | Rotate base left |
+| `right` | Rotate base right |
+| `lift_up` | Wrist up |
+| `lift_down` | Wrist down |
+| `head_up` | Shoulder up |
+| `head_down` | Shoulder down |
+| `open` | Open gripper |
+| `close` | Close gripper |
 ```

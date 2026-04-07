@@ -62,7 +62,7 @@ tts:
   playback_device: "default"
   volume: 75
   options:
-    voice: "voice_kal_diphone"
+    {}
 ```
 
 ---
@@ -70,13 +70,13 @@ tts:
 ## Install
 
 ```bash
-sudo apt install festival festvox-kallpc16k alsa-utils
+sudo apt install festival alsa-utils
 ```
 
 Test it:
 
 ```bash
-echo "Hello from BotParty" | festival --tts
+echo "Hello from BotParty" | text2wave -o /tmp/test.wav && aplay /tmp/test.wav
 ```
 
 ---
@@ -85,15 +85,10 @@ echo "Hello from BotParty" | festival --tts
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `festival_path` | string | `festival` | Path to the festival binary |
+| `text2wave_path` | string | `text2wave` | Path to the text2wave binary (included with festival) |
 | `aplay_path` | string | `aplay` | Path to the aplay binary |
-| `voice` | string | `voice_kal_diphone` | Festival voice name |
 
-List installed voices:
-
-```bash
-festival --pipe <<< "(voice.list)"
-```
+> Voice selection is not supported via config options. Festival uses the system default voice.
 
 ---
 

@@ -28,7 +28,7 @@ Dashboard ──► BotParty API ──► WebSocket gateway ──► botparty-
 # Python 3.10+ required
 python -m venv .venv
 source .venv/bin/activate
-pip install -e .
+pip install -r requirements.txt
 ```
 
 See [Installation](installation.md) for platform-specific steps (Raspberry Pi, Jetson Nano, Ubuntu x86).
