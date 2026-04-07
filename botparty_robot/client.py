@@ -120,6 +120,7 @@ class BotPartyClient:
             on_emergency_stop=lambda: self.handler.emergency_stop(),
             on_actions=self._apply_remote_actions_payload,
             on_shutdown=self._handle_gateway_shutdown,
+            on_reconnected=self._handle_gateway_reconnected,
             running_fn=lambda: self._running,
         )
 
@@ -478,6 +479,19 @@ class BotPartyClient:
             await room.disconnect()
         except Exception as exc:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
+
+    async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
+        if scope != "app":
+            return
+
+        if not self._livekit_connected:
+            return
+
+        logger.info(
+            "Control gateway recovered after %s; restarting camera pipeline to restore published tracks",
+            reason,
+        )
+        await self._restart_camera_pipeline(f"gateway recovered after {reason}")
 
     # ------------------------------------------------------------------
     # Supervisor (inspired by remotv watchdog.py)

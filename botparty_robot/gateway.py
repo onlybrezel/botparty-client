@@ -31,12 +31,14 @@ class GatewayConnection:
         on_actions: Callable[[dict], Coroutine],
         running_fn: Callable[[], bool],
         on_shutdown: Optional[Callable[[str, str, float, str], Coroutine[Any, Any, None]]] = None,
+        on_reconnected: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
     ) -> None:
         self.config = config
         self._on_command = on_command
         self._on_emergency_stop = on_emergency_stop
         self._on_actions = on_actions
         self._on_shutdown = on_shutdown
+        self._on_reconnected = on_reconnected
         self._running_fn = running_fn
         self._connected = False
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
@@ -45,6 +47,8 @@ class GatewayConnection:
         self._shutdown_reason: str | None = None
         self._shutdown_message: str | None = None
         self._shutdown_scope: str | None = None
+        self._pending_recovery_reason: str | None = None
+        self._pending_recovery_scope: str | None = None
 
     @property
     def connected(self) -> bool:
@@ -85,6 +89,17 @@ class GatewayConnection:
                             "data": {"claimToken": self.config.server.claim_token},
                         })
                         await self._pull_actions(ws, force=True)
+                        if self._pending_recovery_reason and self._on_reconnected is not None:
+                            try:
+                                await self._on_reconnected(
+                                    self._pending_recovery_reason,
+                                    self._pending_recovery_scope or "app",
+                                )
+                            except Exception as exc:
+                                logger.warning("Reconnect callback failed: %s", exc)
+                            finally:
+                                self._pending_recovery_reason = None
+                                self._pending_recovery_scope = None
 
                         while self._running_fn():
                             try:
@@ -146,6 +161,8 @@ class GatewayConnection:
             self._shutdown_reason = reason
             self._shutdown_message = message
             self._shutdown_scope = scope
+            self._pending_recovery_reason = reason
+            self._pending_recovery_scope = scope
             logger.warning(
                 "Gateway announced %s (%s); reconnecting in %.0fs - %s",
                 reason,
