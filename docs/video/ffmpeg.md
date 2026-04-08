@@ -1,6 +1,8 @@
 # FFmpeg Video Profile
 
-The `ffmpeg` profile uses FFmpeg to capture frames from a V4L2 camera device and publish them via LiveKit. It produces the lowest latency and highest quality of all available profiles.
+The `ffmpeg` profile uses FFmpeg to capture frames from a V4L2 camera device and stream them through the built-in Python video path.
+
+This is the normal default profile and the easiest place to start.
 
 ```yaml
 video:
@@ -91,6 +93,25 @@ For low-latency teleoperation, keep `audio_queue_frames` small. With the default
 ---
 
 ## Troubleshooting
+
+**I want the optional low-latency Raspberry Pi mode**
+
+Use:
+
+```yaml
+video:
+  type: "gstreamer"
+  options:
+    publisher_path: "/home/pi/bin/gstreamer-publisher"
+    video_codec: "h264_v4l2m2m"
+    publish_backend: "ffmpeg"
+```
+
+Then install the BotParty-tested publisher binary:
+
+```bash
+./scripts/install-gstreamer-publisher.sh
+```
 
 **"No such file or directory: /dev/video0"**
 

@@ -14,7 +14,7 @@ from livekit import rtc
 
 from .camera import CameraManager
 from .client_commands import ClientCommandsMixin
-from .client_livekit import ClientMediaMixin
+from .client_media import ClientMediaMixin
 from .client_ops import ClientOpsMixin
 from .client_runtime import ClientLifecycleMixin
 from .client_state import (
@@ -56,7 +56,7 @@ class BotPartyClient(
         )
         self._remote_target_bitrate_kbps: Optional[int] = None
         self._livekit_connected = False
-        self._ingress_info: Optional[dict[str, object]] = None
+        self._livekit_publish_token: Optional[str] = None
         self._camera_runtimes = self._build_camera_runtimes()
         self._primary_camera_id = self._resolve_primary_camera_id()
         self._camera = (

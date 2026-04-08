@@ -91,6 +91,33 @@ server:
 
 Then choose your real `hardware.type` and `video.type`.
 
+For the normal default path, start with:
+
+```yaml
+video:
+  type: ffmpeg
+  options: {}
+```
+
+If you want the optional Raspberry Pi low-latency path with H.264 hardware encoding, first install the extra helper:
+
+```bash
+sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base \
+  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
+./scripts/install-gstreamer-publisher.sh
+```
+
+Then use:
+
+```yaml
+video:
+  type: gstreamer
+  options:
+    publisher_path: /home/pi/bin/gstreamer-publisher
+    video_codec: h264_v4l2m2m
+    publish_backend: ffmpeg
+```
+
 ### 5. Run as a service (optional)
 
 If you installed without `venv`, use `ExecStart=/usr/bin/python3 -m botparty_robot` instead.
@@ -177,3 +204,13 @@ python3 -m botparty_robot   # starts with config.yaml in cwd
 ```
 
 If you used the GPIO step above, log out and back in once before your first real hardware test so the `gpio` group membership is active.
+
+## GStreamer publisher download
+
+The installer script downloads the BotParty-tested video helper from:
+
+```text
+http://dl.botparty.live/botparty-gstreamer-publisher-v0.1.0-linux-arm64
+```
+
+On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for H.264 hardware encoding.

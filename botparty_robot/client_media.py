@@ -15,26 +15,26 @@ from .client_state import (
     suppress_livekit_reconnect_noise,
 )
 from .config import normalize_cameras
+from .publisher import LiveKitPublisherManager
 from .video import create_video_profile
-from .whip import WhipPublisherManager
 
 
 class ClientMediaMixin:
-    def _uses_whip_ingress(self) -> bool:
+    def _uses_direct_livekit_publisher(self) -> bool:
         return bool(self._camera_runtimes) and all(
-            runtime.video_profile.publish_transport() == "whip"
+            runtime.video_profile.publish_transport() == "livekit_direct"
             for runtime in self._camera_runtimes
         )
 
+    def _uses_external_media_transport(self) -> bool:
+        return self._uses_direct_livekit_publisher()
+
     def _validate_media_mode(self) -> None:
-        uses_whip = [
-            runtime.video_profile.publish_transport() == "whip"
-            for runtime in self._camera_runtimes
-        ]
-        if any(uses_whip) and not all(uses_whip):
-            raise ValueError("WHIP and legacy LiveKit camera profiles cannot be mixed in one client config")
-        if self._uses_whip_ingress() and len(self._camera_runtimes) != 1:
-            raise ValueError("WHIP ingress is currently supported only for single-camera configurations")
+        transports = {runtime.video_profile.publish_transport() for runtime in self._camera_runtimes}
+        if len(transports) > 1:
+            raise ValueError("External and legacy LiveKit camera profiles cannot be mixed in one client config")
+        if self._uses_direct_livekit_publisher() and len(self._camera_runtimes) != 1:
+            raise ValueError("gstreamer-publisher mode is currently supported only for single-camera configurations")
 
     def _build_camera_runtimes(self) -> list[CameraRuntime]:
         normalized = normalize_cameras(self.config)
@@ -55,14 +55,14 @@ class ClientMediaMixin:
             include_audio = (
                 index == 0
                 and video_profile.has_audio()
-                and video_profile.publish_transport() != "whip"
             )
             track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
-            if video_profile.publish_transport() == "whip":
-                manager = WhipPublisherManager(
+            if video_profile.publish_transport() == "livekit_direct":
+                manager = LiveKitPublisherManager(
                     derived_config,
                     video_profile,
-                    ingress_info_fn=lambda: self._ingress_info,
+                    token_fn=lambda: self._livekit_publish_token,
+                    livekit_url_fn=lambda: self.config.server.livekit_url,
                     camera_id=entry.id,
                 )
             else:
@@ -178,7 +178,7 @@ class ClientMediaMixin:
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
         async with self._camera_restart_lock:
-            if not self._livekit_connected or (not self._uses_whip_ingress() and self._room is None):
+            if not self._livekit_connected or (not self._uses_external_media_transport() and self._room is None):
                 logger.info(
                     "Skipping camera pipeline restart while media transport is not ready: %s%s",
                     reason,
@@ -218,7 +218,7 @@ class ClientMediaMixin:
         scope: str,
     ) -> None:
         suppress_livekit_reconnect_noise(retry_after_sec + 30.0)
-        if self._uses_whip_ingress():
+        if self._uses_external_media_transport():
             return
         reconnect_at = time.time() + retry_after_sec
         self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
@@ -258,7 +258,7 @@ class ClientMediaMixin:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_disconnected(self, scope: str) -> None:
-        if self._uses_whip_ingress():
+        if self._uses_external_media_transport():
             return
         if scope != "app":
             return
@@ -266,7 +266,7 @@ class ClientMediaMixin:
             self._gateway_outage_started_at = time.time()
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
-        if self._uses_whip_ingress():
+        if self._uses_external_media_transport():
             return
         outage_started_at = self._gateway_outage_started_at
         outage_scope = self._gateway_outage_scope

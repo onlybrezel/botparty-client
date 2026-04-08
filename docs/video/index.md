@@ -1,6 +1,6 @@
 # Video Profiles
 
-The video profile controls how camera frames are captured and published to the LiveKit room.
+The video profile controls how camera frames are captured and streamed.
 
 Set `video.type` in `config.yaml`. All profiles share the camera settings from the `camera` block.
 
@@ -12,8 +12,10 @@ For multi-camera robots, the same profile types can be applied per camera throug
 
 | Type | Description | Best for |
 |------|-------------|---------|
-| [`ffmpeg`](ffmpeg.md) | FFmpeg V4L2 capture | USB cameras on Linux |
+| [`ffmpeg`](ffmpeg.md) | FFmpeg V4L2 capture | Default choice for most USB cameras |
 | [`ffmpeg_arecord`](ffmpeg.md#with-microphone-audio) | FFmpeg + ALSA microphone | USB cameras with audio |
+| `gstreamer` | Optional low-latency H.264 mode | Raspberry Pi 4/5 with extra helper installed |
+| `gstreamer_arecord` | Same as above plus ALSA microphone | Raspberry Pi robots with mic audio |
 | [`ffmpeg_libcamera`](libcamera.md) | libcamera-vid piped to FFmpeg | Raspberry Pi Camera Module |
 | [`opencv`](opencv.md) | OpenCV pure Python | Simple setups, no FFmpeg |
 | `none` | Disable video publishing | Audio-only or control-only setups |
@@ -40,19 +42,37 @@ Choose a resolution and format that your camera supports natively. Requesting an
 
 ## Recommended settings
 
-For a USB webcam at 720p:
+For a simple default setup:
 
 ```yaml
 camera:
   device: "/dev/video0"
   width: 1280
   height: 720
-  fps: 30
-  fourcc: "MJPG"      # most USB cameras support MJPG at higher resolutions
+  fps: 25
+  fourcc: "MJPG"
 
 video:
   type: "ffmpeg"
   options: {}
+```
+
+If you want the optional Raspberry Pi 4/5 low-latency mode with hardware H.264:
+
+```yaml
+camera:
+  device: "/dev/video0"
+  width: 1280
+  height: 720
+  fps: 20
+  fourcc: "MJPG"
+
+video:
+  type: "gstreamer"
+  options:
+    publisher_path: "/home/pi/bin/gstreamer-publisher"
+    video_codec: "h264_v4l2m2m"
+    publish_backend: "ffmpeg"
 ```
 
 For a front + rear setup, do not treat both cameras equally by default. A good starting point is:
