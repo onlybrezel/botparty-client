@@ -156,21 +156,9 @@ class VideoProfile(BaseVideoProfile):
         )
         return cmd
 
-    def _low_latency_queue(self) -> str:
-        max_buffers = int(self.options.get("queue_max_buffers", 3))
-        if max_buffers < 1:
-            max_buffers = 1
-        leaky = str(self.options.get("queue_leaky", "downstream")).strip() or "downstream"
-        return (
-            "queue "
-            f"leaky={shlex.quote(leaky)} "
-            f"max-size-buffers={max_buffers} "
-            "max-size-bytes=0 max-size-time=0"
-        )
-
     def _build_video_upload_branch(self) -> str:
         return (
-            f"fdsrc fd=0 do-timestamp=true ! {self._low_latency_queue()} "
+            "fdsrc fd=0 do-timestamp=true ! queue "
             "! h264parse config-interval=-1 disable-passthrough=true "
             "! video/x-h264,stream-format=byte-stream,alignment=au"
         )
@@ -178,7 +166,7 @@ class VideoProfile(BaseVideoProfile):
     def _build_fifo_video_upload_branch(self, fifo_path: str) -> str:
         quoted_fifo = shlex.quote(fifo_path)
         return (
-            f"filesrc location={quoted_fifo} ! {self._low_latency_queue()} "
+            f"filesrc location={quoted_fifo} ! queue "
             "! h264parse config-interval=-1 disable-passthrough=true"
         )
 
