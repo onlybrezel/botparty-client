@@ -36,6 +36,7 @@ class LiveKitPublisherManager:
         self._started_at = 0.0
         self._published_tracks: list[str] = []
         self._source_mime_types: list[str] = []
+        self._ffmpeg_progress: dict[str, str] = {}
 
     @property
     def frame_count(self) -> int:
@@ -124,6 +125,17 @@ class LiveKitPublisherManager:
                 self._handle_log_line(message)
 
     def _handle_log_line(self, message: str) -> None:
+        progress_pair = self._parse_ffmpeg_progress_pair(message)
+        if progress_pair is not None:
+            key, value = progress_pair
+            self._ffmpeg_progress[key] = value
+            if key == "frame":
+                with contextlib.suppress(ValueError):
+                    self._frame_count = max(self._frame_count, int(value))
+            if key == "progress":
+                self._log_ffmpeg_progress(value)
+            return
+
         parsed_frame = self._parse_ffmpeg_progress_int(message, "frame")
         if parsed_frame is not None:
             self._frame_count = max(self._frame_count, parsed_frame)
@@ -160,6 +172,32 @@ class LiveKitPublisherManager:
 
         logger.warning("video: %s", message)
 
+    def _parse_ffmpeg_progress_pair(self, message: str) -> tuple[str, str] | None:
+        if "=" not in message:
+            return None
+        key, value = message.split("=", 1)
+        key = key.strip()
+        value = value.strip()
+        if not key:
+            return None
+        progress_keys = {
+            "frame",
+            "fps",
+            "stream_0_0_q",
+            "bitrate",
+            "total_size",
+            "out_time_us",
+            "out_time_ms",
+            "out_time",
+            "dup_frames",
+            "drop_frames",
+            "speed",
+            "progress",
+        }
+        if key not in progress_keys:
+            return None
+        return key, value
+
     def _parse_ffmpeg_progress_int(self, message: str, key: str) -> int | None:
         match = re.fullmatch(rf"{re.escape(key)}=(\d+)", message)
         if not match:
@@ -171,6 +209,34 @@ class LiveKitPublisherManager:
         if not match:
             return None
         return float(match.group(1))
+
+    def _log_ffmpeg_progress(self, progress_value: str) -> None:
+        frame_value = self._ffmpeg_progress.get("frame")
+        fps_value = self._ffmpeg_progress.get("fps")
+        bitrate_value = self._ffmpeg_progress.get("bitrate")
+        speed_value = self._ffmpeg_progress.get("speed")
+        out_time_value = self._ffmpeg_progress.get("out_time")
+        drop_value = self._ffmpeg_progress.get("drop_frames")
+        dup_value = self._ffmpeg_progress.get("dup_frames")
+
+        parts = [f"camera={self.camera_id}"]
+        if fps_value:
+            parts.append(f"ffmpeg_fps={fps_value}")
+        if frame_value:
+            parts.append(f"frames={frame_value}")
+        if bitrate_value:
+            parts.append(f"bitrate={bitrate_value}")
+        if speed_value:
+            parts.append(f"speed={speed_value}")
+        if out_time_value:
+            parts.append(f"media_time={out_time_value}")
+        if drop_value and drop_value != "0":
+            parts.append(f"dropped={drop_value}")
+        if dup_value and dup_value != "0":
+            parts.append(f"dup={dup_value}")
+
+        label = "Direct ffmpeg final" if progress_value == "end" else "Direct ffmpeg"
+        logger.info("%s: %s", label, " ".join(parts))
 
     def _log_runtime_stats_if_due(self) -> None:
         now = time.monotonic()
