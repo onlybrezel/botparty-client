@@ -116,7 +116,16 @@ video:
     publisher_path: /home/pi/bin/gstreamer-publisher
     video_codec: h264_v4l2m2m
     publish_backend: ffmpeg
+    target_bitrate_kbps: 1200
 ```
+
+This is the BotParty-tested Raspberry Pi path:
+
+- `ffmpeg` captures from `/dev/video0`
+- `h264_v4l2m2m` does the Raspberry Pi H.264 encoding
+- `gstreamer-publisher` publishes the stream directly to LiveKit
+
+If you only want the easiest setup, stay on `video.type: ffmpeg`. The `gstreamer` path is optional.
 
 ### 5. Run as a service (optional)
 
@@ -213,4 +222,4 @@ The installer script downloads the BotParty-tested video helper from:
 http://dl.botparty.live/botparty-gstreamer-publisher-v0.1.0-linux-arm64
 ```
 
-On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for H.264 hardware encoding.
+On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for H.264 hardware encoding with `ffmpeg + h264_v4l2m2m + gstreamer-publisher`.

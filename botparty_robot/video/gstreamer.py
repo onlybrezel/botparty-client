@@ -81,6 +81,7 @@ class VideoProfile(BaseVideoProfile):
 
         cmd = [
             str(self.options.get("ffmpeg_path", "ffmpeg")),
+            "-y",
             "-nostdin",
             "-hide_banner",
             "-loglevel",
@@ -153,6 +154,13 @@ class VideoProfile(BaseVideoProfile):
             "! video/x-h264,stream-format=byte-stream,alignment=au"
         )
 
+    def _build_fifo_video_upload_branch(self, fifo_path: str) -> str:
+        quoted_fifo = shlex.quote(fifo_path)
+        return (
+            f"filesrc location={quoted_fifo} ! queue "
+            "! h264parse config-interval=-1 disable-passthrough=true"
+        )
+
     def _build_audio_branch(self) -> str | None:
         return None
 
@@ -202,9 +210,41 @@ class VideoProfile(BaseVideoProfile):
 
         if self._use_ffmpeg_pipe():
             ffmpeg_cmd = self._build_ffmpeg_video_command(target_bitrate_kbps)
+            fifo_option = self.options.get("video_fifo_path")
+            fifo_path = (
+                str(fifo_option).strip()
+                if fifo_option is not None and str(fifo_option).strip()
+                else "/tmp/botparty-gstreamer-video.h264"
+            )
+            fifo_pipeline = self._build_fifo_video_upload_branch(fifo_path)
+            fifo_publisher_cmd = [
+                publisher_path,
+                "--url",
+                livekit_url,
+                "--token",
+                token,
+                "--",
+                *shlex.split(fifo_pipeline),
+            ]
+            ffmpeg_fifo_cmd = [*ffmpeg_cmd[:-1], fifo_path]
             shell_cmd = (
-                f"{shlex.join(ffmpeg_cmd)} | "
-                f"{shlex.join(publisher_cmd)}"
+                "set -euo pipefail; "
+                f"fifo={shlex.quote(fifo_path)}; "
+                'rm -f "$fifo"; mkfifo "$fifo"; '
+                'cleanup() { '
+                'status=$?; '
+                '[[ -n "${ffmpeg_pid:-}" ]] && kill "$ffmpeg_pid" 2>/dev/null || true; '
+                '[[ -n "${publisher_pid:-}" ]] && kill "$publisher_pid" 2>/dev/null || true; '
+                'rm -f "$fifo"; '
+                'exit "$status"; '
+                '}; '
+                "trap cleanup EXIT INT TERM; "
+                f"{shlex.join(fifo_publisher_cmd)} & "
+                'publisher_pid=$!; '
+                "sleep 1; "
+                f"{shlex.join(ffmpeg_fifo_cmd)} & "
+                'ffmpeg_pid=$!; '
+                'wait -n "$publisher_pid" "$ffmpeg_pid"'
             )
             return await asyncio.create_subprocess_shell(
                 shell_cmd,

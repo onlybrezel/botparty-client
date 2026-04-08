@@ -48,7 +48,8 @@ camera:
 #                       requires: sudo apt install ffmpeg
 #   ffmpeg_arecord    - same as ffmpeg + microphone audio
 #                       requires: sudo apt install ffmpeg alsa-utils
-#   gstreamer         - optional low-latency mode with H.264 hardware encoding
+#   gstreamer         - optional low-latency Raspberry Pi mode
+#                       tested with ffmpeg + h264_v4l2m2m + gstreamer-publisher
 #                       recommended on Raspberry Pi 4/5 only if you install the
 #                       extra BotParty video helper
 #   gstreamer_arecord - gstreamer + microphone audio
@@ -64,7 +65,9 @@ video:
   #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
 
 # -- Optional low-latency Raspberry Pi mode -----------------------------------
-# Uncomment this block only if you want the extra direct-publish path:
+# Uncomment this block if you want the tested Raspberry Pi H.264 path.
+# This uses ffmpeg for camera capture + h264_v4l2m2m, then publishes directly
+# with gstreamer-publisher.
 #
 # video:
 #   type: "gstreamer"
@@ -72,6 +75,7 @@ video:
 #     publisher_path: "/home/pi/bin/gstreamer-publisher"
 #     video_codec: "h264_v4l2m2m"
 #     publish_backend: "ffmpeg"
+#     target_bitrate_kbps: 1200
 
 # -- Optional multi-camera setup ----------------------------------------------
 #

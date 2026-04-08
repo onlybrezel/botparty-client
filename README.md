@@ -94,7 +94,7 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 ## Notes
 
 - Keep your `claim_token` secret.
-- If you want the optional low-latency Raspberry Pi mode, install the extra helper with `./scripts/install-gstreamer-publisher.sh` and then switch `video.type` to `gstreamer`.
+- If you want the optional low-latency Raspberry Pi mode, install the extra helper with `./scripts/install-gstreamer-publisher.sh` and switch `video.type` to `gstreamer`. The BotParty-tested path is `publish_backend: "ffmpeg"` with `video_codec: "h264_v4l2m2m"`.
 - On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.
 - If `sudo apt install python3-rpi.gpio` wants to remove `python3-rpi-lgpio`, that is usually expected for BotParty's built-in GPIO adapters.
 - `venv` is the recommended default, but a no-`venv` system-Python install is also supported and can be convenient for GPIO-heavy Raspberry Pi setups.

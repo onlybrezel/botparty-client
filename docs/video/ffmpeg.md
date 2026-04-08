@@ -105,6 +105,7 @@ video:
     publisher_path: "/home/pi/bin/gstreamer-publisher"
     video_codec: "h264_v4l2m2m"
     publish_backend: "ffmpeg"
+    target_bitrate_kbps: 1200
 ```
 
 Then install the BotParty-tested publisher binary:
@@ -112,6 +113,8 @@ Then install the BotParty-tested publisher binary:
 ```bash
 ./scripts/install-gstreamer-publisher.sh
 ```
+
+That Raspberry Pi mode uses `ffmpeg` for capture plus `h264_v4l2m2m` for hardware H.264 encoding, then hands the stream to `gstreamer-publisher` for direct LiveKit publishing.
 
 **"No such file or directory: /dev/video0"**
 

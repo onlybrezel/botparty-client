@@ -73,7 +73,16 @@ video:
     publisher_path: "/home/pi/bin/gstreamer-publisher"
     video_codec: "h264_v4l2m2m"
     publish_backend: "ffmpeg"
+    target_bitrate_kbps: 1200
 ```
+
+That tested path is:
+
+- `ffmpeg` reads the camera
+- `h264_v4l2m2m` does the Raspberry Pi H.264 encoding
+- `gstreamer-publisher` sends the already encoded stream to LiveKit
+
+Use the normal `ffmpeg` profile if you want the simplest setup. Use `gstreamer` only when you specifically want the lower-latency Raspberry Pi path.
 
 For a front + rear setup, do not treat both cameras equally by default. A good starting point is:
 
