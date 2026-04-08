@@ -222,10 +222,17 @@ If you used the GPIO step above, log out and back in once before your first real
 
 ## GStreamer publisher download
 
-The installer script downloads the BotParty-tested video helper from:
+The installer script chooses the correct BotParty-tested `gstreamer-publisher` binary for the current machine architecture.
+
+Today the main supported helper builds are:
+
+- `linux-arm64` for Raspberry Pi 4/5 with 64-bit Raspberry Pi OS
+- `linux-amd64` for x86_64 Ubuntu/Debian systems
+
+Example asset URL:
 
 ```text
 http://dl.botparty.live/botparty-gstreamer-publisher-v0.1.0-linux-arm64
 ```
 
-On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for H.264 hardware encoding with `ffmpeg + h264_v4l2m2m + gstreamer-publisher`.
+On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for `ffmpeg + h264_v4l2m2m + gstreamer-publisher`.
