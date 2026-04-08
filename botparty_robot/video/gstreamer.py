@@ -93,7 +93,7 @@ class VideoProfile(BaseVideoProfile):
             "-avioflags",
             "direct",
             "-fflags",
-            "nobuffer",
+            "nobuffer+discardcorrupt",
             "-flags",
             "low_delay",
             "-analyzeduration",
@@ -120,6 +120,13 @@ class VideoProfile(BaseVideoProfile):
                 "-i",
                 str(self.camera.device),
                 "-an",
+                "-fps_mode",
+                "passthrough",
+                "-vf",
+                (
+                    f"scale={width}:{height}:flags=fast_bilinear,"
+                    f"fps={fps},setpts=N/({fps}*TB),format=yuv420p"
+                ),
                 "-c:v",
                 codec,
             ]
@@ -127,8 +134,6 @@ class VideoProfile(BaseVideoProfile):
 
         if codec == "libx264":
             cmd.extend(["-preset", "ultrafast", "-tune", "zerolatency"])
-        else:
-            cmd.extend(["-pix_fmt", "yuv420p"])
 
         cmd.extend(
             [
@@ -151,9 +156,21 @@ class VideoProfile(BaseVideoProfile):
         )
         return cmd
 
+    def _low_latency_queue(self) -> str:
+        max_buffers = int(self.options.get("queue_max_buffers", 3))
+        if max_buffers < 1:
+            max_buffers = 1
+        leaky = str(self.options.get("queue_leaky", "downstream")).strip() or "downstream"
+        return (
+            "queue "
+            f"leaky={shlex.quote(leaky)} "
+            f"max-size-buffers={max_buffers} "
+            "max-size-bytes=0 max-size-time=0"
+        )
+
     def _build_video_upload_branch(self) -> str:
         return (
-            "fdsrc fd=0 do-timestamp=true ! queue "
+            f"fdsrc fd=0 do-timestamp=true ! {self._low_latency_queue()} "
             "! h264parse config-interval=-1 disable-passthrough=true "
             "! video/x-h264,stream-format=byte-stream,alignment=au"
         )
@@ -161,7 +178,7 @@ class VideoProfile(BaseVideoProfile):
     def _build_fifo_video_upload_branch(self, fifo_path: str) -> str:
         quoted_fifo = shlex.quote(fifo_path)
         return (
-            f"filesrc location={quoted_fifo} ! queue "
+            f"filesrc location={quoted_fifo} ! {self._low_latency_queue()} "
             "! h264parse config-interval=-1 disable-passthrough=true"
         )
 
