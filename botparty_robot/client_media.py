@@ -33,8 +33,6 @@ class ClientMediaMixin:
         transports = {runtime.video_profile.publish_transport() for runtime in self._camera_runtimes}
         if len(transports) > 1:
             raise ValueError("External and legacy LiveKit camera profiles cannot be mixed in one client config")
-        if self._uses_direct_livekit_publisher() and len(self._camera_runtimes) != 1:
-            raise ValueError("gstreamer-publisher mode is currently supported only for single-camera configurations")
 
     def _build_camera_runtimes(self) -> list[CameraRuntime]:
         normalized = normalize_cameras(self.config)
@@ -61,7 +59,9 @@ class ClientMediaMixin:
                 manager = LiveKitPublisherManager(
                     derived_config,
                     video_profile,
-                    token_fn=lambda: self._livekit_publish_token,
+                    token_fn=lambda camera_id=entry.id: (
+                        self._livekit_publish_tokens.get(camera_id) or self._livekit_publish_token
+                    ),
                     livekit_url_fn=lambda: self.config.server.livekit_url,
                     camera_id=entry.id,
                 )

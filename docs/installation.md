@@ -107,6 +107,12 @@ sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base \
 ./scripts/install-gstreamer-publisher.sh
 ```
 
+If you also want microphone audio with `gstreamer_arecord`, add:
+
+```bash
+sudo apt install -y gstreamer1.0-alsa
+```
+
 Then use:
 
 ```yaml

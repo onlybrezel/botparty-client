@@ -211,12 +211,17 @@ class VideoProfile(BaseVideoProfile):
         if self._use_ffmpeg_pipe():
             ffmpeg_cmd = self._build_ffmpeg_video_command(target_bitrate_kbps)
             fifo_option = self.options.get("video_fifo_path")
+            camera_id = str(self.options.get("camera_id", "front")).strip() or "front"
             fifo_path = (
                 str(fifo_option).strip()
                 if fifo_option is not None and str(fifo_option).strip()
-                else "/tmp/botparty-gstreamer-video.h264"
+                else f"/tmp/botparty-gstreamer-video-{camera_id}.h264"
             )
-            fifo_pipeline = self._build_fifo_video_upload_branch(fifo_path)
+            fifo_pipeline_parts = [self._build_fifo_video_upload_branch(fifo_path)]
+            audio_branch = self._build_audio_branch()
+            if audio_branch:
+                fifo_pipeline_parts.append(audio_branch)
+            fifo_pipeline = " ".join(fifo_pipeline_parts)
             fifo_publisher_cmd = [
                 publisher_path,
                 "--url",

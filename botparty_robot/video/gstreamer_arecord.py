@@ -12,6 +12,15 @@ class VideoProfile(GStreamerVideoProfile):
     profile_name = "gstreamer_arecord"
 
     def _build_audio_branch(self) -> str | None:
+        if not self.gst_element_exists("alsasrc"):
+            raise RuntimeError(
+                "gstreamer_arecord requires the GStreamer ALSA plugin. Install gstreamer1.0-alsa."
+            )
+        if not self.gst_element_exists("opusenc"):
+            raise RuntimeError(
+                "gstreamer_arecord requires the GStreamer Opus encoder. Install gstreamer1.0-plugins-good."
+            )
+
         sample_rate = int(self.options.get("audio_sample_rate", 48000))
         channels = int(self.options.get("audio_channels", 1))
         audio_device = resolve_alsa_device(

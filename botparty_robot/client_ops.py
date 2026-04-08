@@ -302,12 +302,26 @@ class ClientOpsMixin:
 
     async def _authenticate(
         self,
-    ) -> tuple[Optional[str], Optional[str], Optional[str], Optional[dict[str, object]]]:
+    ) -> tuple[
+        Optional[str],
+        Optional[str],
+        Optional[str],
+        Optional[dict[str, object]],
+        dict[str, str],
+    ]:
         try:
+            publish_camera_ids = (
+                [runtime.camera_id for runtime in self._camera_runtimes]
+                if self._uses_direct_livekit_publisher()
+                else []
+            )
             session = self._get_session()
             async with session.post(
                 f"{self.config.server.api_url}/api/v1/robots/claim",
-                json={"claimToken": self.config.server.claim_token},
+                json={
+                    "claimToken": self.config.server.claim_token,
+                    "publishCameraIds": publish_camera_ids,
+                },
                 headers={"Content-Type": "application/json"},
                 timeout=aiohttp.ClientTimeout(total=10),
                 allow_redirects=False,
@@ -319,13 +333,13 @@ class ClientOpsMixin:
                         resp.status,
                         location,
                     )
-                    return None, None, None, None
+                    return None, None, None, None, {}
                 if resp.status not in (200, 201):
                     text = await resp.text()
                     logger.error("Claim failed (%d): %s", resp.status, text)
                     if resp.status == 404 and self.config.server.api_url.startswith("http://"):
                         logger.error("Hint: try https:// if your server has SSL enabled")
-                    return None, None, None, None
+                    return None, None, None, None, {}
 
                 data = await resp.json()
                 stream = data.get("stream") if isinstance(data, dict) else None
@@ -349,10 +363,20 @@ class ClientOpsMixin:
                 ingress = data.get("ingress")
                 if not isinstance(ingress, dict):
                     ingress = None
-                return data.get("token"), data.get("robotId"), livekit_url, ingress
+                publish_tokens_raw = data.get("publishTokens")
+                publish_tokens = (
+                    {
+                        str(key).strip(): str(value).strip()
+                        for key, value in publish_tokens_raw.items()
+                        if str(key).strip() and isinstance(value, str) and value.strip()
+                    }
+                    if isinstance(publish_tokens_raw, dict)
+                    else {}
+                )
+                return data.get("token"), data.get("robotId"), livekit_url, ingress, publish_tokens
         except Exception as e:
             logger.error("Authentication error: %s", e)
-            return None, None, None, None
+            return None, None, None, None, {}
 
     def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
         if not (self._repo_root / ".git").exists():

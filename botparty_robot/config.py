@@ -145,6 +145,11 @@ def normalize_cameras(config: RobotConfig) -> list[NormalizedCameraConfig]:
                     **dict(video_override.options),
                 }
 
+        video_data["options"] = {
+            **dict(video_data.get("options", {})),
+            "camera_id": camera_id,
+        }
+
         normalized.append(
             NormalizedCameraConfig(
                 id=camera_id,

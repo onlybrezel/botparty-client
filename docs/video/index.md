@@ -82,6 +82,8 @@ That tested path is:
 - `h264_v4l2m2m` does the Raspberry Pi H.264 encoding
 - `gstreamer-publisher` sends the already encoded stream to LiveKit
 
+If you want microphone audio with `gstreamer_arecord`, install `gstreamer1.0-alsa` as well.
+
 Use the normal `ffmpeg` profile if you want the simplest setup. Use `gstreamer` only when you specifically want the lower-latency Raspberry Pi path.
 
 For a front + rear setup, do not treat both cameras equally by default. A good starting point is:
