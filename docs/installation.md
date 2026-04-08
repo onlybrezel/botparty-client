@@ -133,6 +133,8 @@ This is the BotParty-tested Raspberry Pi path:
 
 If you only want the easiest setup, stay on `video.type: ffmpeg`. The `gstreamer` path is optional.
 
+For the full Raspberry Pi GStreamer guide, see [Video Profiles / GStreamer](video/gstreamer.md).
+
 ### 5. Run as a service (optional)
 
 If you installed without `venv`, use `ExecStart=/usr/bin/python3 -m botparty_robot` instead.

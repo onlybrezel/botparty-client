@@ -14,8 +14,8 @@ For multi-camera robots, the same profile types can be applied per camera throug
 |------|-------------|---------|
 | [`ffmpeg`](ffmpeg.md) | FFmpeg V4L2 capture | Default choice for most USB cameras |
 | [`ffmpeg_arecord`](ffmpeg.md#with-microphone-audio) | FFmpeg + ALSA microphone | USB cameras with audio |
-| `gstreamer` | Optional low-latency H.264 mode | Raspberry Pi 4/5 with extra helper installed |
-| `gstreamer_arecord` | Same as above plus ALSA microphone | Raspberry Pi robots with mic audio |
+| [`gstreamer`](gstreamer.md) | Optional low-latency H.264 mode | Raspberry Pi 4/5 with extra helper installed |
+| [`gstreamer_arecord`](gstreamer.md) | Same as above plus ALSA microphone | Raspberry Pi robots with mic audio |
 | [`ffmpeg_libcamera`](libcamera.md) | libcamera-vid piped to FFmpeg | Raspberry Pi Camera Module |
 | [`opencv`](opencv.md) | OpenCV pure Python | Simple setups, no FFmpeg |
 | `none` | Disable video publishing | Audio-only or control-only setups |
@@ -83,6 +83,8 @@ That tested path is:
 - `gstreamer-publisher` sends the already encoded stream to LiveKit
 
 If you want microphone audio with `gstreamer_arecord`, install `gstreamer1.0-alsa` as well.
+
+For the full setup and troubleshooting page, see [`gstreamer.md`](gstreamer.md).
 
 Use the normal `ffmpeg` profile if you want the simplest setup. Use `gstreamer` only when you specifically want the lower-latency Raspberry Pi path.
 
