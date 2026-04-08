@@ -11,9 +11,6 @@ case "$ARCH" in
   aarch64|arm64)
     ASSET_ARCH="linux-arm64"
     ;;
-  armv7l|armv7|armhf)
-    ASSET_ARCH="linux-armv7"
-    ;;
   x86_64|amd64)
     ASSET_ARCH="linux-amd64"
     ;;
