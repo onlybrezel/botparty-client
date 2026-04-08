@@ -85,17 +85,33 @@ class VideoProfile(BaseVideoProfile):
             "-hide_banner",
             "-loglevel",
             "warning",
+            "-avioflags",
+            "direct",
+            "-fflags",
+            "nobuffer",
+            "-flags",
+            "low_delay",
+            "-analyzeduration",
+            str(self.options.get("analyzeduration", 0)),
+            "-probesize",
+            str(self.options.get("probesize", 32)),
+            "-fpsprobesize",
+            str(self.options.get("fpsprobesize", 0)),
             "-f",
             "v4l2",
+            "-thread_queue_size",
+            str(self.options.get("thread_queue_size", 2)),
         ]
         if is_mjpeg:
             cmd.extend(["-input_format", "mjpeg"])
         cmd.extend(
             [
-                "-framerate",
-                str(fps),
                 "-video_size",
                 f"{width}x{height}",
+                "-framerate",
+                str(fps),
+                "-use_wallclock_as_timestamps",
+                "1",
                 "-i",
                 str(self.camera.device),
                 "-an",
@@ -121,6 +137,8 @@ class VideoProfile(BaseVideoProfile):
                 str(fps),
                 "-bf",
                 "0",
+                "-bsf:v",
+                "dump_extra",
                 "-f",
                 "h264",
                 "-",
@@ -131,8 +149,8 @@ class VideoProfile(BaseVideoProfile):
     def _build_video_upload_branch(self) -> str:
         return (
             "fdsrc fd=0 do-timestamp=true ! queue "
-            "! video/x-h264,stream-format=byte-stream,alignment=au "
-            "! h264parse config-interval=-1"
+            "! h264parse config-interval=-1 disable-passthrough=true "
+            "! video/x-h264,stream-format=byte-stream,alignment=au"
         )
 
     def _build_audio_branch(self) -> str | None:
