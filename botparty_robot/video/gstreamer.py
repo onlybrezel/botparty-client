@@ -89,7 +89,7 @@ class VideoProfile(BaseVideoProfile):
             "-progress",
             "pipe:2",
             "-stats_period",
-            str(self.options.get("stats_period_sec", 10)),
+            str(self.options.get("stats_period_sec", 5)),
             "-avioflags",
             "direct",
             "-fflags",

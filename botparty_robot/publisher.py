@@ -243,24 +243,33 @@ class LiveKitPublisherManager:
         elapsed = now - self._last_reported_at
         if elapsed < 10:
             return
+        progress_fps = self._ffmpeg_progress.get("fps")
+        progress_bitrate = self._ffmpeg_progress.get("bitrate")
         if self._frame_count > 0:
             delta_frames = self._frame_count - self._last_reported_frame_count
             sent_fps = (delta_frames / elapsed) if elapsed > 0 else 0.0
-            logger.info(
-                "Direct runtime: camera=%s sent_fps=%.1f frames=%d uptime=%.1fs",
-                self.camera_id,
-                sent_fps,
-                self._frame_count,
-                now - self._started_at,
+            message = (
+                f"Direct runtime: camera={self.camera_id} sent_fps={sent_fps:.1f} "
+                f"frames={self._frame_count} uptime={now - self._started_at:.1f}s"
             )
+            if progress_fps:
+                message += f" ffmpeg_fps={progress_fps}"
+            if progress_bitrate:
+                message += f" bitrate={progress_bitrate}"
+            logger.info(message)
         else:
-            logger.info(
-                "Direct runtime: camera=%s uptime=%.1fs tracks=%s sources=%s",
-                self.camera_id,
-                now - self._started_at,
-                ",".join(self._published_tracks) if self._published_tracks else "none",
-                ",".join(self._source_mime_types) if self._source_mime_types else "none",
+            message = (
+                f"Direct runtime: camera={self.camera_id} uptime={now - self._started_at:.1f}s "
+                f"tracks={','.join(self._published_tracks) if self._published_tracks else 'none'} "
+                f"sources={','.join(self._source_mime_types) if self._source_mime_types else 'none'}"
             )
+            if progress_fps:
+                message += f" ffmpeg_fps={progress_fps}"
+            if progress_bitrate:
+                message += f" bitrate={progress_bitrate}"
+            if not progress_fps and not progress_bitrate:
+                message += " ffmpeg=warming_up"
+            logger.info(message)
         self._last_reported_at = now
         self._last_reported_frame_count = self._frame_count
 
