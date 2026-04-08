@@ -258,16 +258,12 @@ class ClientMediaMixin:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_disconnected(self, scope: str) -> None:
-        if self._uses_external_media_transport():
-            return
         if scope != "app":
             return
         if self._gateway_outage_started_at <= 0:
             self._gateway_outage_started_at = time.time()
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
-        if self._uses_external_media_transport():
-            return
         outage_started_at = self._gateway_outage_started_at
         outage_scope = self._gateway_outage_scope
         livekit_disconnected = self._livekit_disconnected_during_gateway_outage
@@ -281,6 +277,29 @@ class ClientMediaMixin:
         if not self._livekit_connected:
             return
 
+        outage_duration_sec = time.time() - outage_started_at if outage_started_at > 0 else 0.0
+        if self._uses_external_media_transport():
+            if outage_duration_sec < GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC:
+                logger.info(
+                    "Control gateway recovered after %s in %.1fs; keeping direct publishers running",
+                    reason,
+                    outage_duration_sec,
+                )
+                return
+
+            if self._recovery_restart_task and not self._recovery_restart_task.done():
+                self._recovery_restart_task.cancel()
+
+            logger.info(
+                "Control gateway recovered after %s in %.1fs; scheduling direct publisher recovery",
+                reason,
+                outage_duration_sec,
+            )
+            self._recovery_restart_task = asyncio.create_task(
+                self._recover_direct_publish_after_gateway_reconnect(reason)
+            )
+            return
+
         if livekit_disconnected:
             logger.info(
                 "Control gateway recovered after %s; skipping camera recovery because LiveKit disconnected during the outage",
@@ -288,7 +307,6 @@ class ClientMediaMixin:
             )
             return
 
-        outage_duration_sec = time.time() - outage_started_at if outage_started_at > 0 else 0.0
         if outage_duration_sec < GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC:
             logger.info(
                 "Control gateway recovered after %s in %.1fs; keeping existing camera publish because the stream likely survived",
@@ -308,6 +326,20 @@ class ClientMediaMixin:
         self._recovery_restart_task = asyncio.create_task(
             self._recover_livekit_room_after_gateway_reconnect(reason)
         )
+
+    async def _recover_direct_publish_after_gateway_reconnect(self, reason: str) -> None:
+        try:
+            await asyncio.sleep(3)
+            if not self._running or not self._livekit_connected or not self._uses_external_media_transport():
+                logger.info(
+                    "Skipping delayed direct publisher recovery after %s because direct publishing is no longer ready",
+                    reason,
+                )
+                return
+
+            await self._restart_camera_pipeline(f"gateway recovered after {reason}")
+        except asyncio.CancelledError:
+            pass
 
     async def _recover_livekit_room_after_gateway_reconnect(self, reason: str) -> None:
         try:
