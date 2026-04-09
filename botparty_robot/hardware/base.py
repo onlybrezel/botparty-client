@@ -47,6 +47,44 @@ class BaseHardware(ABC):
     def set_command_context(self, context: dict[str, Any] | None) -> None:
         self.command_context = dict(context or {})
 
+    def value_float(self, value: Any, default: float = 0.0) -> float:
+        if isinstance(value, (int, float)):
+            return float(value)
+        if isinstance(value, str):
+            try:
+                return float(value.strip())
+            except ValueError:
+                return default
+        if isinstance(value, dict):
+            for key in ("value", "v", "speed"):
+                raw = value.get(key)
+                if isinstance(raw, (int, float)):
+                    return float(raw)
+                if isinstance(raw, str):
+                    try:
+                        return float(raw.strip())
+                    except ValueError:
+                        continue
+        return default
+
+    def value_xy(
+        self,
+        value: Any,
+        default: tuple[float, float] = (0.0, 0.0),
+    ) -> tuple[float, float]:
+        if not isinstance(value, dict):
+            return default
+
+        x_raw = value.get("x")
+        y_raw = value.get("y")
+        if x_raw is None or y_raw is None:
+            return default
+
+        try:
+            return float(x_raw), float(y_raw)
+        except (TypeError, ValueError):
+            return default
+
     @abstractmethod
     def on_command(self, command: str, value: Any = None) -> None:
         """Handle a control command from the browser."""

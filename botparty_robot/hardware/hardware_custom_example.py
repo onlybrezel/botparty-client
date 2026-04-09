@@ -26,6 +26,16 @@ The BotParty web controller sends these string commands:
 
 Custom buttons defined in the dashboard can send any arbitrary string.
 
+WIDGET VALUES (SLIDER / XY)
+---------------------------
+Buttons with a widget spec in the dashboard send values in `value`:
+    - slider: number (for example 35 or -80)
+    - xy pad: dict with x and y (for example {"x": 42, "y": -15})
+
+Use helper methods from BaseHardware:
+    - self.value_float(value, default=0.0)
+    - self.value_xy(value, default=(0.0, 0.0))
+
 SELF.OPTIONS
 ------------
 Everything under hardware.options in config.yaml is available as self.options.
@@ -100,6 +110,16 @@ class HardwareAdapter(BaseHardware):
 
         elif self.matches(command, "right"):
             self.log.info("Turning right")
+
+        elif self.matches(command, "set_speed", "speed"):
+            speed = self.value_float(value, default=0.0)
+            self.log.info("Speed slider value: %.2f", speed)
+            # Example: set motor PWM scale from slider value.
+
+        elif self.matches(command, "arm_xy", "ptz_xy"):
+            x, y = self.value_xy(value, default=(0.0, 0.0))
+            self.log.info("XY pad value x=%.2f y=%.2f", x, y)
+            # Example: map x/y to pan/tilt servo target angles.
 
         elif self.matches(command, "stop"):
             self.emergency_stop()
