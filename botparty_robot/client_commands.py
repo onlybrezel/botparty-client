@@ -19,6 +19,12 @@ from .tts import create_tts_profile
 
 
 class ClientCommandsMixin:
+    def _is_motion_command(self, command: str) -> bool:
+        return command in {"forward", "backward", "left", "right"}
+
+    def _on_gateway_emergency_stop(self) -> None:
+        asyncio.create_task(self._trigger_hardware_stop("gateway_emergency_stop"))
+
     async def _tts_loop(self) -> None:
         while self._running:
             try:
@@ -146,15 +152,57 @@ class ClientCommandsMixin:
             return
 
         logger.debug("CMD[%s]: %s=%s metadata=%s (latency: %.0fms)", source, command, value, metadata, latency_ms)
-        asyncio.create_task(self._run_hardware_command(command, value, metadata))
+        normalized_command = command.strip().lower()
+        if normalized_command == "stop":
+            asyncio.create_task(self._trigger_hardware_stop("stop_command"))
+            return
 
-    async def _run_hardware_command(self, command: str, value: Any, metadata: dict[str, Any] | None) -> None:
+        motion_command_id: int | None = None
+        if self._is_motion_command(normalized_command):
+            self._latest_motion_command_id += 1
+            motion_command_id = self._latest_motion_command_id
+
+        asyncio.create_task(
+            self._run_hardware_command(
+                command,
+                value,
+                metadata,
+                motion_command_id=motion_command_id,
+                safety_epoch=self._hardware_safety_epoch,
+            )
+        )
+
+    async def _run_hardware_command(
+        self,
+        command: str,
+        value: Any,
+        metadata: dict[str, Any] | None,
+        motion_command_id: int | None = None,
+        safety_epoch: int = 0,
+    ) -> None:
+        if motion_command_id is not None and motion_command_id < self._latest_motion_command_id:
+            return
+
         async with self._hardware_lock:
+            if safety_epoch != self._hardware_safety_epoch:
+                return
+            if motion_command_id is not None and motion_command_id < self._latest_motion_command_id:
+                return
             try:
                 await asyncio.to_thread(self.handler.set_command_context, metadata)
                 await asyncio.to_thread(self.handler.on_command, command, value)
             except Exception as exc:
                 logger.warning("Hardware command error (cmd=%s): %s", command, exc)
+
+    async def _trigger_hardware_stop(self, reason: str) -> None:
+        self._hardware_safety_epoch += 1
+        self._latest_motion_command_id += 1
+        self.stats.last_command_at = 0
+        try:
+            await asyncio.to_thread(self.handler.emergency_stop)
+            logger.debug("Hardware stop applied (%s)", reason)
+        except Exception as exc:
+            logger.warning("Hardware stop failed (%s): %s", reason, exc)
 
     async def _execute_action(self, action: dict) -> None:
         action_type = action.get("type")

@@ -73,7 +73,7 @@ class BotPartyClient(
         self._gateway = GatewayConnection(
             config,
             on_command=self._on_gateway_command,
-            on_emergency_stop=lambda: self.handler.emergency_stop(),
+            on_emergency_stop=self._on_gateway_emergency_stop,
             on_actions=self._apply_remote_actions_payload,
             on_shutdown=self._handle_gateway_shutdown,
             on_reconnected=self._handle_gateway_reconnected,
@@ -92,6 +92,8 @@ class BotPartyClient(
             maxsize=20
         )
         self._hardware_lock = asyncio.Lock()
+        self._hardware_safety_epoch = 0
+        self._latest_motion_command_id = 0
         self._http_session: Optional[aiohttp.ClientSession] = None
         self._planned_reconnect_at = 0.0
         self._planned_reconnect_reason: Optional[str] = None

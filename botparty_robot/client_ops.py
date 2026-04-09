@@ -80,7 +80,7 @@ class ClientOpsMixin:
                 elapsed = time.time() - self.stats.last_command_at
                 if elapsed > timeout_sec:
                     logger.info("Command timeout (%.0fs) - auto-stopping motors", elapsed)
-                    self.handler.emergency_stop()
+                    await self._trigger_hardware_stop("command_timeout")
                     self.stats.last_command_at = 0
 
             age = time.time() - self.stats.last_heartbeat_at
@@ -485,5 +485,5 @@ class ClientOpsMixin:
             with contextlib.suppress(Exception):
                 await self._http_session.close()
 
-        self.handler.emergency_stop()
+        await self._trigger_hardware_stop("process_restart")
         os.execv(sys.executable, [sys.executable, "-m", "botparty_robot"])

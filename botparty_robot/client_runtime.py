@@ -133,7 +133,7 @@ class ClientLifecycleMixin:
         logger.info("Shutting down...")
         self._running = False
         self._livekit_connected = False
-        self.handler.emergency_stop()
+        await self._trigger_hardware_stop("shutdown")
 
         for task in [
             *(runtime.task for runtime in self._camera_runtimes),
