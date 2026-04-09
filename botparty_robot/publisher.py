@@ -7,6 +7,7 @@ import contextlib
 import logging
 import re
 import time
+from collections import deque
 from typing import Callable, Optional
 
 from .config import RobotConfig
@@ -37,6 +38,7 @@ class LiveKitPublisherManager:
         self._published_tracks: list[str] = []
         self._source_mime_types: list[str] = []
         self._ffmpeg_progress: dict[str, str] = {}
+        self._recent_log_lines: deque[str] = deque(maxlen=40)
 
     @property
     def frame_count(self) -> int:
@@ -63,6 +65,10 @@ class LiveKitPublisherManager:
 
         proc = None
         log_task = None
+        self._published_tracks.clear()
+        self._source_mime_types.clear()
+        self._ffmpeg_progress.clear()
+        self._recent_log_lines.clear()
         self._started_at = time.monotonic()
         self._last_reported_at = self._started_at
         self._last_reported_frame_count = self._frame_count
@@ -92,7 +98,7 @@ class LiveKitPublisherManager:
                 if return_code is not None:
                     if return_code == 0:
                         return
-                    raise RuntimeError(f"publisher exited with code {return_code}")
+                    raise RuntimeError(self._format_nonzero_exit(return_code))
                 self._log_runtime_stats_if_due()
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
@@ -100,9 +106,13 @@ class LiveKitPublisherManager:
         finally:
             self._log_exit_summary()
             if log_task is not None:
-                log_task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await log_task
+                if proc is not None and proc.returncode is not None:
+                    with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
+                        await asyncio.wait_for(log_task, timeout=0.5)
+                if not log_task.done():
+                    log_task.cancel()
+                    with contextlib.suppress(asyncio.CancelledError):
+                        await log_task
             if proc is not None:
                 with contextlib.suppress(ProcessLookupError):
                     proc.terminate()
@@ -125,6 +135,7 @@ class LiveKitPublisherManager:
                 self._handle_log_line(message)
 
     def _handle_log_line(self, message: str) -> None:
+        self._recent_log_lines.append(message)
         progress_pair = self._parse_ffmpeg_progress_pair(message)
         if progress_pair is not None:
             key, value = progress_pair
@@ -171,6 +182,21 @@ class LiveKitPublisherManager:
             return
 
         logger.warning("video: %s", message)
+
+    def _format_nonzero_exit(self, return_code: int) -> str:
+        if not self._recent_log_lines:
+            return f"publisher exited with code {return_code}"
+
+        detail_lines = [
+            line
+            for line in self._recent_log_lines
+            if re.search(r"error|failed|fatal|panic|exited", line, flags=re.IGNORECASE)
+        ]
+        if not detail_lines:
+            detail_lines = list(self._recent_log_lines)[-2:]
+
+        details = " | ".join(detail_lines[-3:])
+        return f"publisher exited with code {return_code}: {details}"
 
     def _parse_ffmpeg_progress_pair(self, message: str) -> tuple[str, str] | None:
         if "=" not in message:

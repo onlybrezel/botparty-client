@@ -242,7 +242,7 @@ class VideoProfile(BaseVideoProfile):
             ]
             ffmpeg_fifo_cmd = [*ffmpeg_cmd[:-1], fifo_path]
             shell_cmd = (
-                "set -euo pipefail; "
+                "set -uo pipefail; "
                 f"fifo={shlex.quote(fifo_path)}; "
                 'rm -f "$fifo"; mkfifo "$fifo"; '
                 'cleanup() { '
@@ -259,7 +259,23 @@ class VideoProfile(BaseVideoProfile):
                 "sleep 1; "
                 f"{shlex.join(ffmpeg_fifo_cmd)} & "
                 'ffmpeg_pid=$!; '
-                'wait -n "$publisher_pid" "$ffmpeg_pid"'
+                'while true; do '
+                'if ! kill -0 "$publisher_pid" 2>/dev/null; then '
+                'wait "$publisher_pid"; publisher_status=$?; '
+                'echo "publisher exited with code ${publisher_status}" >&2; '
+                'kill "$ffmpeg_pid" 2>/dev/null || true; '
+                'wait "$ffmpeg_pid" 2>/dev/null || true; '
+                'exit "$publisher_status"; '
+                'fi; '
+                'if ! kill -0 "$ffmpeg_pid" 2>/dev/null; then '
+                'wait "$ffmpeg_pid"; ffmpeg_status=$?; '
+                'echo "ffmpeg exited with code ${ffmpeg_status}" >&2; '
+                'kill "$publisher_pid" 2>/dev/null || true; '
+                'wait "$publisher_pid" 2>/dev/null || true; '
+                'exit "$ffmpeg_status"; '
+                'fi; '
+                'sleep 0.2; '
+                'done'
             )
             return await asyncio.create_subprocess_shell(
                 shell_cmd,
