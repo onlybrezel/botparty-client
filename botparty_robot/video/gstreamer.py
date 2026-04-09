@@ -193,6 +193,56 @@ class VideoProfile(BaseVideoProfile):
             return self.command_exists(ffmpeg_path)
         return self.command_exists(ffmpeg_path)
 
+    def _validate_gstreamer_dependencies(self, using_ffmpeg_pipe: bool) -> None:
+        publisher_path = self._gstreamer_publisher_path()
+        if not self.command_exists(publisher_path):
+            raise RuntimeError(
+                "Missing gstreamer-publisher binary. Install it with "
+                "./scripts/install-gstreamer-publisher.sh"
+            )
+
+        if not self.command_exists("gst-inspect-1.0"):
+            raise RuntimeError(
+                "GStreamer runtime tools are missing (gst-inspect-1.0 not found). "
+                "Install with: sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base "
+                "gstreamer1.0-plugins-good gstreamer1.0-plugins-bad"
+            )
+
+        required_elements = ["h264parse"]
+        if using_ffmpeg_pipe:
+            required_elements.extend(["filesrc", "queue"])
+        else:
+            required_elements.extend(["v4l2src", "videoconvert", "queue"])
+            if not (self.gst_element_exists("openh264enc") or self.gst_element_exists("x264enc")):
+                raise RuntimeError(
+                    "No GStreamer H.264 encoder found (need openh264enc or x264enc). "
+                    "Install with: sudo apt install -y gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
+                )
+
+        missing_elements = [name for name in required_elements if not self.gst_element_exists(name)]
+        if missing_elements:
+            joined = ", ".join(missing_elements)
+            raise RuntimeError(
+                f"Missing required GStreamer elements: {joined}. "
+                "Install with: sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base "
+                "gstreamer1.0-plugins-good gstreamer1.0-plugins-bad"
+            )
+
+        if using_ffmpeg_pipe:
+            ffmpeg_path = str(self.options.get("ffmpeg_path", "ffmpeg"))
+            if not self.command_exists(ffmpeg_path):
+                raise RuntimeError(
+                    "FFmpeg backend selected but ffmpeg was not found. "
+                    "Install with: sudo apt install -y ffmpeg"
+                )
+
+            codec = str(self.options.get("video_codec") or self.detect_default_h264_codec()).strip()
+            if codec != "libx264" and not self.ffmpeg_supports("encoder", codec):
+                raise RuntimeError(
+                    f"FFmpeg encoder '{codec}' is not available on this system. "
+                    "Choose a supported encoder (for example libx264) or install the required codec package."
+                )
+
     async def spawn_livekit_process(
         self,
         *,
@@ -201,10 +251,8 @@ class VideoProfile(BaseVideoProfile):
         target_bitrate_kbps: int | None,
     ):
         publisher_path = self._gstreamer_publisher_path()
-        if not self.command_exists(publisher_path):
-            raise RuntimeError(
-                "gstreamer-publisher is not installed. Install it first or switch back to ffmpeg/legacy mode."
-            )
+        use_ffmpeg_pipe = self._use_ffmpeg_pipe()
+        self._validate_gstreamer_dependencies(use_ffmpeg_pipe)
 
         pipeline = self._build_gstreamer_pipeline()
         publisher_cmd = [
@@ -217,7 +265,7 @@ class VideoProfile(BaseVideoProfile):
             *shlex.split(pipeline),
         ]
 
-        if self._use_ffmpeg_pipe():
+        if use_ffmpeg_pipe:
             ffmpeg_cmd = self._build_ffmpeg_video_command(target_bitrate_kbps)
             fifo_option = self.options.get("video_fifo_path")
             camera_id = str(self.options.get("camera_id", "front")).strip() or "front"

@@ -209,6 +209,14 @@ instead of raw `/dev/video0`, `/dev/video2`, because device numbers can swap aft
 
 ## Troubleshooting
 
+The client now runs a startup preflight for `gstreamer` / `gstreamer_arecord` and fails fast with actionable package hints when core dependencies are missing.
+
+Common preflight failures:
+
+- missing `gst-inspect-1.0` or required elements (`h264parse`, `filesrc`, `v4l2src`, ...)
+- missing `ffmpeg` when `publish_backend: "ffmpeg"` is selected
+- missing FFmpeg encoder requested by `video_codec`
+
 **`gstreamer-publisher is not installed`**
 
 Install it with:

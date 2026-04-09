@@ -58,6 +58,31 @@ class LiveKitPublisherManager:
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
+        fallback_attempted = False
+        while True:
+            try:
+                await self._run_once(target_bitrate_kbps, running_fn, connected_fn)
+                return
+            except RuntimeError as exc:
+                uptime = max(0.0, time.monotonic() - self._started_at)
+                if self._should_retry_with_gstreamer(exc, uptime, fallback_attempted):
+                    fallback_attempted = True
+                    previous_backend = self._selected_publish_backend()
+                    self.video_profile.options["publish_backend"] = "gstreamer"
+                    logger.warning(
+                        "Direct publisher exited after %.1fs on %s backend; retrying with pure gstreamer backend",
+                        uptime,
+                        previous_backend,
+                    )
+                    continue
+                raise
+
+    async def _run_once(
+        self,
+        target_bitrate_kbps: Optional[int],
+        running_fn: Callable[[], bool],
+        connected_fn: Callable[[], bool],
+    ) -> None:
         livekit_url = str(self._livekit_url_fn() or "").strip()
         token = str(self._token_fn() or "").strip()
         if not livekit_url or not token:
@@ -124,6 +149,38 @@ class LiveKitPublisherManager:
                         proc.kill()
                     with contextlib.suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(proc.wait(), timeout=2)
+
+    def _selected_publish_backend(self) -> str:
+        preferred = str(
+            self.video_profile.options.get("publish_backend")
+            or self.video_profile.options.get("livekit_publish_backend")
+            or "auto"
+        ).strip().lower()
+        return preferred or "auto"
+
+    def _should_retry_with_gstreamer(
+        self,
+        error: RuntimeError,
+        uptime_sec: float,
+        fallback_attempted: bool,
+    ) -> bool:
+        if fallback_attempted:
+            return False
+        if self._selected_publish_backend() == "gstreamer":
+            return False
+        if uptime_sec > 8.0:
+            return False
+
+        message = str(error).lower()
+        non_retryable = (
+            "missing",
+            "not installed",
+            "token",
+            "permission denied",
+        )
+        if any(marker in message for marker in non_retryable):
+            return False
+        return True
 
     async def _drain_logs(self, stream) -> None:
         while True:
