@@ -86,9 +86,12 @@ class GatewayConnection:
                         self._shutdown_message = None
                         self._shutdown_scope = None
                         logger.info("Control websocket connected")
+                        robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                        if not robot_auth_token:
+                            raise RuntimeError("Missing robot auth token for websocket claim")
                         await ws.send_json({
                             "event": "robot:claim",
-                            "data": {"claimToken": self.config.server.claim_token},
+                            "data": {"robotAuthToken": robot_auth_token},
                         })
                         await self._pull_actions(ws, force=True)
                         if self._pending_recovery_reason and self._on_reconnected is not None:

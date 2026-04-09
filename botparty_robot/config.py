@@ -9,6 +9,8 @@ class ServerConfig(BaseModel):
     api_url: str = "https://botparty.live"
     livekit_url: str = "wss://botparty.live/rtc"
     claim_token: str
+    device_key: str | None = None
+    robot_auth_token: str | None = None
 
 
 class CameraConfig(BaseModel):

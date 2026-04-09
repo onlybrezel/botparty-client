@@ -102,10 +102,14 @@ class ClientOpsMixin:
                     self.stats.last_heartbeat_at = time.time()
                 else:
                     session = self._get_session()
+                    headers = {"Content-Type": "application/json"}
+                    robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                    if robot_auth_token:
+                        headers["Authorization"] = f"Bearer {robot_auth_token}"
                     async with session.post(
                         f"{self.config.server.api_url}/api/v1/robots/heartbeat",
-                        json={"robotId": self._robot_id},
-                        headers={"Content-Type": "application/json"},
+                        json={},
+                        headers=headers,
                         timeout=aiohttp.ClientTimeout(total=5),
                     ) as resp:
                         if resp.status in (200, 201):
@@ -120,7 +124,6 @@ class ClientOpsMixin:
 
     async def _send_telemetry(self) -> None:
         payload: dict[str, Any] = {
-            "claimToken": self.config.server.claim_token,
             "clientVersion": __version__,
             "gitBranch": self._client_git_branch,
             "gitCommit": self._client_git_commit,
@@ -148,10 +151,14 @@ class ClientOpsMixin:
         sent = await self._gateway.send_event("robot:telemetry", payload)
         if not sent:
             session = self._get_session()
+            headers = {"Content-Type": "application/json"}
+            robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+            if robot_auth_token:
+                headers["Authorization"] = f"Bearer {robot_auth_token}"
             await session.post(
                 f"{self.config.server.api_url}/api/v1/robots/telemetry",
                 json=payload,
-                headers={"Content-Type": "application/json"},
+                headers=headers,
                 timeout=aiohttp.ClientTimeout(total=5),
             )
 
@@ -232,10 +239,14 @@ class ClientOpsMixin:
                     continue
 
                 session = self._get_session()
+                headers = {"Content-Type": "application/json"}
+                robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                if robot_auth_token:
+                    headers["Authorization"] = f"Bearer {robot_auth_token}"
                 async with session.post(
                     f"{self.config.server.api_url}/api/v1/robots/actions/poll",
-                    json={"claimToken": self.config.server.claim_token},
-                    headers={"Content-Type": "application/json"},
+                    json={},
+                    headers=headers,
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status in (200, 201):
@@ -287,13 +298,16 @@ class ClientOpsMixin:
                         batch = lines[self._diag_last_sent_idx:self._diag_last_sent_idx + 50]
                         self._diag_last_sent_idx += len(batch)
                         session = self._get_session()
+                        headers = {"Content-Type": "application/json"}
+                        robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                        if robot_auth_token:
+                            headers["Authorization"] = f"Bearer {robot_auth_token}"
                         await session.post(
                             f"{self.config.server.api_url}/api/v1/robots/logs",
                             json={
-                                "claimToken": self.config.server.claim_token,
                                 "lines": batch,
                             },
-                            headers={"Content-Type": "application/json"},
+                            headers=headers,
                             timeout=aiohttp.ClientTimeout(total=5),
                         )
             except Exception as e:
@@ -308,6 +322,7 @@ class ClientOpsMixin:
         Optional[str],
         Optional[dict[str, object]],
         dict[str, str],
+        Optional[str],
     ]:
         try:
             publish_camera_ids = (
@@ -320,6 +335,7 @@ class ClientOpsMixin:
                 f"{self.config.server.api_url}/api/v1/robots/claim",
                 json={
                     "claimToken": self.config.server.claim_token,
+                    "deviceKey": self.config.server.device_key,
                     "publishCameraIds": publish_camera_ids,
                 },
                 headers={"Content-Type": "application/json"},
@@ -333,13 +349,13 @@ class ClientOpsMixin:
                         resp.status,
                         location,
                     )
-                    return None, None, None, None, {}
+                    return None, None, None, None, {}, None
                 if resp.status not in (200, 201):
                     text = await resp.text()
                     logger.error("Claim failed (%d): %s", resp.status, text)
                     if resp.status == 404 and self.config.server.api_url.startswith("http://"):
                         logger.error("Hint: try https:// if your server has SSL enabled")
-                    return None, None, None, None, {}
+                        return None, None, None, None, {}, None
 
                 data = await resp.json()
                 stream = data.get("stream") if isinstance(data, dict) else None
@@ -373,10 +389,18 @@ class ClientOpsMixin:
                     if isinstance(publish_tokens_raw, dict)
                     else {}
                 )
-                return data.get("token"), data.get("robotId"), livekit_url, ingress, publish_tokens
+                robot_auth_token = data.get("robotAuthToken")
+                return (
+                    data.get("token"),
+                    data.get("robotId"),
+                    livekit_url,
+                    ingress,
+                    publish_tokens,
+                    robot_auth_token.strip() if isinstance(robot_auth_token, str) and robot_auth_token.strip() else None,
+                )
         except Exception as e:
             logger.error("Authentication error: %s", e)
-            return None, None, None, None, {}
+            return None, None, None, None, {}, None
 
     def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
         if not (self._repo_root / ".git").exists():

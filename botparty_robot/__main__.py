@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import os
+import secrets
 import signal
 import sys
 from pathlib import Path
@@ -153,6 +154,27 @@ def load_config() -> RobotConfig:
     raw = _apply_legacy_hardware_defaults(raw)
     raw = _apply_legacy_video_defaults(raw)
     raw = _apply_legacy_tts_defaults(raw)
+    server = raw.get("server")
+    if isinstance(server, dict):
+        device_key = server.get("device_key")
+        if not isinstance(device_key, str) or not device_key.strip():
+            device_key_path = Path(".botparty-device-key")
+            try:
+                stored_device_key = device_key_path.read_text(encoding="utf-8").strip()
+            except FileNotFoundError:
+                stored_device_key = ""
+            except OSError:
+                stored_device_key = ""
+
+            if not stored_device_key:
+                stored_device_key = secrets.token_hex(32)
+                try:
+                    device_key_path.write_text(f"{stored_device_key}\n", encoding="utf-8")
+                    os.chmod(device_key_path, 0o600)
+                except OSError:
+                    logger.warning("Failed to persist .botparty-device-key; reconnects may require re-claim")
+
+            server["device_key"] = stored_device_key
     return RobotConfig(**raw)
 
 
