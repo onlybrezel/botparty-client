@@ -59,12 +59,26 @@ class LiveKitPublisherManager:
         connected_fn: Callable[[], bool],
     ) -> None:
         fallback_attempted = False
+        codec_fallback_attempted = False
         while True:
             try:
                 await self._run_once(target_bitrate_kbps, running_fn, connected_fn)
                 return
             except RuntimeError as exc:
                 uptime = max(0.0, time.monotonic() - self._started_at)
+                if self._should_retry_with_libx264(exc, uptime, codec_fallback_attempted):
+                    codec_fallback_attempted = True
+                    previous_codec = str(
+                        self.video_profile.options.get("video_codec")
+                        or self.video_profile.detect_default_h264_codec()
+                    ).strip()
+                    self.video_profile.options["video_codec"] = "libx264"
+                    logger.warning(
+                        "Direct publisher exited after %.1fs on ffmpeg backend (codec=%s); retrying with codec=libx264",
+                        uptime,
+                        previous_codec,
+                    )
+                    continue
                 if self._should_retry_with_gstreamer(exc, uptime, fallback_attempted):
                     fallback_attempted = True
                     previous_backend = self._selected_publish_backend()
@@ -169,6 +183,37 @@ class LiveKitPublisherManager:
         if self._selected_publish_backend() == "gstreamer":
             return False
         if uptime_sec > 8.0:
+            return False
+
+        message = str(error).lower()
+        non_retryable = (
+            "missing",
+            "not installed",
+            "token",
+            "permission denied",
+        )
+        if any(marker in message for marker in non_retryable):
+            return False
+        return True
+
+    def _should_retry_with_libx264(
+        self,
+        error: RuntimeError,
+        uptime_sec: float,
+        fallback_attempted: bool,
+    ) -> bool:
+        if fallback_attempted:
+            return False
+        if self._selected_publish_backend() == "gstreamer":
+            return False
+        if uptime_sec > 8.0:
+            return False
+
+        configured_codec = str(
+            self.video_profile.options.get("video_codec")
+            or self.video_profile.detect_default_h264_codec()
+        ).strip().lower()
+        if configured_codec == "libx264":
             return False
 
         message = str(error).lower()
