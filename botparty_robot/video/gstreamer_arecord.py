@@ -12,6 +12,10 @@ class VideoProfile(GStreamerVideoProfile):
     profile_name = "gstreamer_arecord"
 
     def _build_audio_branch(self) -> str | None:
+        direct_audio_enabled = bool(self.options.get("direct_audio_enabled", True))
+        if not direct_audio_enabled:
+            return None
+
         if not self.gst_element_exists("alsasrc"):
             raise RuntimeError(
                 "gstreamer_arecord requires the GStreamer ALSA plugin. Install gstreamer1.0-alsa."

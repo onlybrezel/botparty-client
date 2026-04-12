@@ -59,6 +59,7 @@ class LiveKitPublisherManager:
         connected_fn: Callable[[], bool],
     ) -> None:
         fallback_attempted = False
+        audio_fallback_attempted = False
         codec_fallback_attempted = False
         while True:
             try:
@@ -66,6 +67,14 @@ class LiveKitPublisherManager:
                 return
             except RuntimeError as exc:
                 uptime = max(0.0, time.monotonic() - self._started_at)
+                if self._should_retry_without_direct_audio(exc, uptime, audio_fallback_attempted):
+                    audio_fallback_attempted = True
+                    self.video_profile.options["direct_audio_enabled"] = False
+                    logger.warning(
+                        "Direct publisher exited after %.1fs with inline audio; retrying without direct audio branch to keep ffmpeg video backend",
+                        uptime,
+                    )
+                    continue
                 if self._should_retry_with_libx264(exc, uptime, codec_fallback_attempted):
                     codec_fallback_attempted = True
                     previous_codec = str(
@@ -183,6 +192,34 @@ class LiveKitPublisherManager:
         if self._selected_publish_backend() == "gstreamer":
             return False
         if uptime_sec > 8.0:
+            return False
+
+        message = str(error).lower()
+        non_retryable = (
+            "missing",
+            "not installed",
+            "token",
+            "permission denied",
+        )
+        if any(marker in message for marker in non_retryable):
+            return False
+        return True
+
+    def _should_retry_without_direct_audio(
+        self,
+        error: RuntimeError,
+        uptime_sec: float,
+        fallback_attempted: bool,
+    ) -> bool:
+        if fallback_attempted:
+            return False
+        if uptime_sec > 8.0:
+            return False
+        if getattr(self.video_profile, "profile_name", "") != "gstreamer_arecord":
+            return False
+
+        direct_audio_enabled = self.video_profile.options.get("direct_audio_enabled", True)
+        if not bool(direct_audio_enabled):
             return False
 
         message = str(error).lower()
