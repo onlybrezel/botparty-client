@@ -4,17 +4,23 @@ set -euo pipefail
 VERSION="v0.1.0"
 ARCH="auto"
 BASE_URL="${BOTPARTY_STREAMER_URL:-http://dl.botparty.live}"
-INSTALL_DIR="${BOTPARTY_STREAMER_DIR:-/tmp}"
+INSTALL_DIR="${BOTPARTY_STREAMER_DIR:-/home/pi/bin}"
 TARGET="$INSTALL_DIR/botparty-streamer"
 
 usage() {
   cat >&2 <<'EOF'
-usage: install-botparty-streamer.sh [version] [--arch amd64|arm64|rpi|auto] [--dir /tmp] [--url http://dl.botparty.live]
+usage: install-botparty-streamer.sh [version] [--arch amd64|arm64|arm|auto] [--dir /home/pi/bin] [--url http://dl.botparty.live]
+
+Supported architectures:
+  amd64   x86-64
+  arm64   64-bit ARM  (Raspberry Pi 4/5 in 64-bit mode)
+  arm     32-bit ARMv7 (Raspberry Pi 2/3 or 64-bit Pi in 32-bit OS)
+  auto    detect from uname -m  (default)
 
 Examples:
   ./scripts/install-botparty-streamer.sh
-  ./scripts/install-botparty-streamer.sh v0.1.0 --arch amd64
-  ./scripts/install-botparty-streamer.sh --arch rpi --dir /tmp
+  ./scripts/install-botparty-streamer.sh v0.1.0 --arch arm64
+  ./scripts/install-botparty-streamer.sh --arch arm --dir /home/pi/bin
 EOF
 }
 
@@ -58,6 +64,9 @@ case "$ARCH" in
     ;;
   x86_64|amd64|linux-amd64)
     ASSET_ARCH="linux-amd64"
+    ;;
+  armv7l|armhf|arm7|linux-arm|armv7)
+    ASSET_ARCH="linux-arm"
     ;;
   *)
     echo "Unsupported architecture: $ARCH" >&2

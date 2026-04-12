@@ -25,12 +25,17 @@ class VideoProfile(BaseVideoProfile):
         return "livekit_direct"
 
     def _publisher_binary_path(self) -> str:
-        return str(
+        explicit = (
             self.options.get("publisher_binary")
             or self.options.get("botparty_streamer_path")
             or self.options.get("lk_h264_publisher_path")
-            or "botparty-streamer"
         )
+        if explicit:
+            return str(explicit)
+        for candidate in ("/home/pi/bin/botparty-streamer", "/usr/local/bin/botparty-streamer"):
+            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
+                return candidate
+        return "botparty-streamer"
 
     def _camera_id(self) -> str:
         camera_id = str(self.options.get("camera_id", "front")).strip()
@@ -165,7 +170,7 @@ class VideoProfile(BaseVideoProfile):
                 "-maxrate",
                 f"{bitrate}k",
                 "-bufsize",
-                f"{bitrate * 2}k",
+                f"{bitrate}k",
                 "-g",
                 str(gop),
                 "-keyint_min",

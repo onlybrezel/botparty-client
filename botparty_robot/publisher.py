@@ -35,6 +35,7 @@ class LiveKitPublisherManager:
         self._last_reported_frame_count = 0
         self._last_reported_at = 0.0
         self._started_at = 0.0
+        self._last_ffmpeg_progress_at = 0.0
         self._published_tracks: list[str] = []
         self._source_mime_types: list[str] = []
         self._ffmpeg_progress: dict[str, str] = {}
@@ -293,7 +294,6 @@ class LiveKitPublisherManager:
 
         parsed_fps = self._parse_ffmpeg_progress_float(message, "fps")
         if parsed_fps is not None:
-            logger.info("Direct runtime %s: ffmpeg_fps=%.1f", self.camera_id, parsed_fps)
             return
 
         source_match = re.search(r'found source\s+\{"mimeType":\s*"([^"]+)"\}', message)
@@ -304,11 +304,35 @@ class LiveKitPublisherManager:
             logger.info("Direct source %s: %s", self.camera_id, mime)
             return
 
-        track_match = re.search(r'published track\s+\{"name":\s*"[^"]*",\s*"source":\s*"([^"]+)"', message)
-        if track_match:
-            source = track_match.group(1)
+        # Go slog format: "msg"="published track" "name"="camera" "source"="CAMERA"
+        slog_track_match = re.search(r'"msg"="published track"', message)
+        if slog_track_match:
+            name_m = re.search(r'"name"="([^"]*)"', message)
+            src_m = re.search(r'"source"="([^"]*)"', message)
+            name = name_m.group(1) if name_m else "?"
+            src = src_m.group(1).lower() if src_m else "?"
+            self._published_tracks.append(src)
+            logger.info("Direct track published %s: name=%s source=%s", self.camera_id, name, src)
+            return
+
+        # Old JSON format: published track {"name": "...", "source": "..."}
+        json_track_match = re.search(r'published track\s+\{"name":\s*"[^"]*",\s*"source":\s*"([^"]+)"', message)
+        if json_track_match:
+            source = json_track_match.group(1)
             self._published_tracks.append(source)
             logger.info("Direct track published %s: %s", self.camera_id, source.lower())
+            return
+
+        # Go slog messages that are noisy internal SDK events → suppress to debug
+        noisy_debug_slog = (
+            '"msg"="participant sid update"',
+            '"msg"="signal reconnecting"',
+            '"msg"="signal reconnected"',
+            '"msg"="starting ICE restart"',
+            '"msg"="ICE restart completed"',
+        )
+        if any(pattern in message for pattern in noisy_debug_slog):
+            logger.debug("video: %s", message)
             return
 
         noisy_debug_patterns = (
@@ -320,7 +344,27 @@ class LiveKitPublisherManager:
             logger.debug("video: %s", message)
             return
 
-        logger.warning("video: %s", message)
+        # For Go slog-format lines, use the "level"=N field to determine log level.
+        # slog levels: <=0 = INFO, 4 = WARN, 8 = ERROR; negative = DEBUG.
+        slog_level_match = re.search(r'"level"=(-?\d+)', message)
+        if slog_level_match:
+            level_num = int(slog_level_match.group(1))
+            if level_num >= 8:
+                logger.error("video: %s", message)
+            elif level_num >= 4:
+                logger.warning("video: %s", message)
+            elif level_num >= 0:
+                logger.info("video: %s", message)
+            else:
+                logger.debug("video: %s", message)
+            return
+
+        # Unknown lines: only escalate to WARNING when they look like errors.
+        error_keywords = ("error", "failed", "fatal", "panic", "exception")
+        if any(kw in message.lower() for kw in error_keywords):
+            logger.warning("video: %s", message)
+        else:
+            logger.info("video: %s", message)
 
     def _format_nonzero_exit(self, return_code: int) -> str:
         if not self._recent_log_lines:
@@ -384,7 +428,23 @@ class LiveKitPublisherManager:
         drop_value = self._ffmpeg_progress.get("drop_frames")
         dup_value = self._ffmpeg_progress.get("dup_frames")
 
+        now = time.monotonic()
+        self._last_ffmpeg_progress_at = now
+
         parts = [f"camera={self.camera_id}"]
+
+        # Inline sent_fps + uptime so we get one combined line instead of two.
+        if self._frame_count > 0 and self._last_reported_at > 0:
+            elapsed = now - self._last_reported_at
+            if elapsed > 0:
+                delta = self._frame_count - self._last_reported_frame_count
+                parts.append(f"sent_fps={delta / elapsed:.1f}")
+        uptime = now - self._started_at if self._started_at > 0 else 0.0
+        if uptime >= 1.0:
+            parts.append(f"uptime={uptime:.0f}s")
+        self._last_reported_at = now
+        self._last_reported_frame_count = self._frame_count
+
         if fps_value:
             parts.append(f"ffmpeg_fps={fps_value}")
         if frame_value:
@@ -400,7 +460,7 @@ class LiveKitPublisherManager:
         if dup_value and dup_value != "0":
             parts.append(f"dup={dup_value}")
 
-        label = "Direct ffmpeg final" if progress_value == "end" else "Direct ffmpeg"
+        label = "Direct final" if progress_value == "end" else "Direct"
         logger.info("%s: %s", label, " ".join(parts))
 
     def _log_runtime_stats_if_due(self) -> None:
@@ -408,30 +468,33 @@ class LiveKitPublisherManager:
         elapsed = now - self._last_reported_at
         if elapsed < 10:
             return
+        # Skip if ffmpeg progress events are coming in — they already log combined stats.
+        if self._last_ffmpeg_progress_at > 0 and now - self._last_ffmpeg_progress_at < elapsed * 1.5:
+            self._last_reported_at = now
+            self._last_reported_frame_count = self._frame_count
+            return
         progress_fps = self._ffmpeg_progress.get("fps")
         progress_bitrate = self._ffmpeg_progress.get("bitrate")
         if self._frame_count > 0:
             delta_frames = self._frame_count - self._last_reported_frame_count
             sent_fps = (delta_frames / elapsed) if elapsed > 0 else 0.0
             message = (
-                f"Direct runtime: camera={self.camera_id} sent_fps={sent_fps:.1f} "
-                f"frames={self._frame_count} uptime={now - self._started_at:.1f}s"
+                f"Direct: camera={self.camera_id} sent_fps={sent_fps:.1f} "
+                f"uptime={now - self._started_at:.0f}s"
             )
             if progress_fps:
                 message += f" ffmpeg_fps={progress_fps}"
             if progress_bitrate:
                 message += f" bitrate={progress_bitrate}"
+            message += f" frames={self._frame_count}"
             logger.info(message)
         else:
             message = (
-                f"Direct runtime: camera={self.camera_id} uptime={now - self._started_at:.1f}s "
-                f"tracks={','.join(self._published_tracks) if self._published_tracks else 'none'} "
-                f"sources={','.join(self._source_mime_types) if self._source_mime_types else 'none'}"
+                f"Direct: camera={self.camera_id} uptime={now - self._started_at:.0f}s "
+                f"tracks={','.join(self._published_tracks) if self._published_tracks else 'none'}"
             )
             if progress_fps:
                 message += f" ffmpeg_fps={progress_fps}"
-            if progress_bitrate:
-                message += f" bitrate={progress_bitrate}"
             if not progress_fps and not progress_bitrate:
                 message += " ffmpeg=warming_up"
             logger.info(message)
