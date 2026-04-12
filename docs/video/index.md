@@ -16,6 +16,7 @@ For multi-camera robots, the same profile types can be applied per camera throug
 | [`ffmpeg_arecord`](ffmpeg.md#with-microphone-audio) | FFmpeg + ALSA microphone | USB cameras with audio |
 | [`gstreamer`](gstreamer.md) | Optional low-latency H.264 mode | Raspberry Pi 4/5 with extra helper installed |
 | [`gstreamer_arecord`](gstreamer.md) | Same as above plus ALSA microphone | Raspberry Pi robots with mic audio |
+| `botparty_streamer` | ffmpeg -> localhost TCP -> botparty-streamer -> LiveKit | Client-managed low-latency direct publishing |
 | [`ffmpeg_libcamera`](libcamera.md) | libcamera-vid piped to FFmpeg | Raspberry Pi Camera Module |
 | [`opencv`](opencv.md) | OpenCV pure Python | Simple setups, no FFmpeg |
 | `none` | Disable video publishing | Audio-only or control-only setups |
@@ -87,6 +88,19 @@ If you want microphone audio with `gstreamer_arecord`, install `gstreamer1.0-als
 For the full setup and troubleshooting page, see [`gstreamer.md`](gstreamer.md).
 
 Use the normal `ffmpeg` profile if you want the simplest setup. Use `gstreamer` only when you specifically want the lower-latency Raspberry Pi path.
+
+If you want direct publishing but still keep everything inside the normal botparty-client controller lifecycle (start/restart/shutdown), use:
+
+```yaml
+video:
+  type: "botparty_streamer"
+  options:
+    publisher_binary: "botparty-streamer"
+    video_codec: "h264_v4l2m2m"   # RPi4/5 example
+    target_bitrate_kbps: 1200
+```
+
+This uses short-lived publish tokens from the existing claim flow and does not require LiveKit API secrets on the client.
 
 For a front + rear setup, do not treat both cameras equally by default. A good starting point is:
 

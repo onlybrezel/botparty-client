@@ -238,3 +238,54 @@ http://dl.botparty.live/botparty-gstreamer-publisher-v0.1.0-linux-arm64
 ```
 
 On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for `ffmpeg + h264_v4l2m2m + gstreamer-publisher`.
+
+## botparty-streamer download
+
+The installer script chooses the correct BotParty-tested `botparty-streamer` binary for the current machine architecture.
+
+Today the main supported helper builds are:
+
+- `linux-arm64` for Raspberry Pi 4/5 with 64-bit Raspberry Pi OS
+- `linux-amd64` for x86_64 Ubuntu/Debian systems
+
+Example asset URL:
+
+```text
+http://dl.botparty.live/botparty-streamer-v0.1.0-linux-arm64
+```
+
+Install default version:
+
+```bash
+./scripts/install-botparty-streamer.sh
+```
+
+Default output path is `/tmp/botparty-streamer`.
+
+Install a specific version:
+
+```bash
+./scripts/install-botparty-streamer.sh v0.1.0
+```
+
+Install with explicit architecture selection:
+
+```bash
+# x86_64 / amd64
+./scripts/install-botparty-streamer.sh --arch amd64
+
+# Raspberry Pi (arm64)
+./scripts/install-botparty-streamer.sh --arch rpi
+```
+
+Custom output directory:
+
+```bash
+./scripts/install-botparty-streamer.sh --arch amd64 --dir /tmp
+```
+
+Legacy alias (same installer):
+
+```bash
+./scripts/install-lk-h264-publisher.sh
+```

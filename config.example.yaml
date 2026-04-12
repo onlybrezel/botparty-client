@@ -53,6 +53,9 @@ camera:
 #                       recommended on Raspberry Pi 4/5 only if you install the
 #                       extra BotParty video helper
 #   gstreamer_arecord - gstreamer + microphone audio
+#   botparty_streamer - ffmpeg -> localhost TCP -> botparty-streamer (Go) -> LiveKit
+#                       managed directly by botparty-client controller
+#                       requires: ffmpeg + botparty-streamer binary on PATH
 #   ffmpeg_libcamera  - Raspberry Pi Camera Module v2/v3 (libcamera stack)
 #                       requires: libcamera-vid installed
 #   opencv            - pure Python fallback, no extra dependencies
@@ -99,6 +102,33 @@ video:
 #
 #   # If you switch to "gstreamer_arecord" for microphone audio, also install:
 #   #   sudo apt install -y gstreamer1.0-alsa
+
+# -- Optional direct Go publisher mode (client-managed subprocess) ------------
+#
+# This mode keeps the same low-latency architecture while staying in the normal
+# botparty-client lifecycle (start/restart/shutdown handled by controller):
+#
+#   ffmpeg -> localhost TCP -> botparty-streamer -> LiveKit
+#
+# Requirements on client:
+#   - ffmpeg installed
+#   - botparty-streamer binary downloaded via ./scripts/install-botparty-streamer.sh
+#     (default target: /tmp/botparty-streamer)
+#
+# No LiveKit API key/secret is required on the client. The existing claim flow
+# already provides short-lived publish tokens used by the publisher process.
+#
+# video:
+#   type: "botparty_streamer"
+#   options:
+#     publisher_binary: "botparty-streamer"  # or absolute path
+#     video_codec: "h264_v4l2m2m"            # RPi4/5 HW encoder example
+#     target_bitrate_kbps: 1200
+#     # Optional low-latency tuning (defaults are already conservative):
+#     # frame_chan_size: 4
+#     # max_publish_stale_ms: 250
+#     # input_read_timeout_ms: 500
+#     # frame_flush_timeout_ms: 50
 
 # -- Optional multi-camera setup ----------------------------------------------
 #
