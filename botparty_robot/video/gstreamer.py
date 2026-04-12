@@ -24,6 +24,28 @@ class VideoProfile(BaseVideoProfile):
             or "gstreamer-publisher"
         )
 
+    def _detect_gst_h264_encoder(self) -> str:
+        """Return the best available GStreamer H.264 encoder for this platform.
+
+        Priority: explicit config > v4l2h264enc (RPi HW) > omxh264enc (old RPi HW)
+        > openh264enc (SW) > x264enc (SW).
+        """
+        explicit = str(self.options.get("video_encoder", "")).strip()
+        if explicit:
+            return explicit
+
+        model = (self._read_platform_model() or "").lower()
+        if "raspberry pi" in model:
+            for hw_enc in ("v4l2h264enc", "omxh264enc"):
+                if self.gst_element_exists(hw_enc):
+                    return hw_enc
+
+        for sw_enc in ("openh264enc", "x264enc"):
+            if self.gst_element_exists(sw_enc):
+                return sw_enc
+
+        return "openh264enc"  # will produce a clear runtime error if missing
+
     def _build_pure_gstreamer_video_branch(self, target_bitrate_kbps: int | None) -> str:
         width = int(self.camera.width)
         height = int(self.camera.height)
@@ -37,6 +59,7 @@ class VideoProfile(BaseVideoProfile):
         fourcc = (self.camera.fourcc or "").strip().upper()
         configured_input_format = str(self.options.get("input_format", "")).strip().lower()
         is_mjpeg = configured_input_format == "mjpeg" or fourcc == "MJPG"
+        encoder = self._detect_gst_h264_encoder()
 
         src = f"v4l2src device={device} do-timestamp=true"
         if is_mjpeg:
@@ -47,20 +70,38 @@ class VideoProfile(BaseVideoProfile):
         else:
             src += f" ! video/x-raw,width={width},height={height},framerate={fps}/1"
 
-        encoder = (
-            "openh264enc "
-            f"bitrate={bitrate * 1000} complexity=low gop-size={fps}"
-        )
-        if self.gst_element_exists("x264enc") and not self.gst_element_exists("openh264enc"):
-            encoder = (
-                "x264enc tune=zerolatency speed-preset=ultrafast "
+        if encoder == "v4l2h264enc":
+            # V4L2 M2M hardware encoder – RPi 4/5 (bcm2835-codec, kernel >= 5.15)
+            # v4l2convert handles color-space conversion in-kernel before the encoder.
+            bitrate_bps = bitrate * 1000
+            enc_chain = (
+                "! queue max-size-buffers=2 ! v4l2convert "
+                "! video/x-raw,format=I420 "
+                f"! v4l2h264enc extra-controls=\"controls,video_bitrate={bitrate_bps}\" "
+                "! video/x-h264,stream-format=byte-stream,alignment=au"
+            )
+        elif encoder == "omxh264enc":
+            # OpenMAX IL hardware encoder – RPi 3 / older VideoCore IV
+            bitrate_bps = bitrate * 1000
+            enc_chain = (
+                "! queue max-size-buffers=2 "
+                f"! omxh264enc target-bitrate={bitrate_bps} control-rate=variable "
+                "! video/x-h264,stream-format=byte-stream,alignment=au"
+            )
+        elif encoder == "x264enc":
+            enc_chain = (
+                "! videoconvert ! queue "
+                f"! x264enc tune=zerolatency speed-preset=ultrafast "
                 f"key-int-max={fps} bitrate={bitrate} bframes=0 threads=2"
             )
+        else:
+            # openh264enc (default SW fallback)
+            enc_chain = (
+                "! videoconvert ! queue "
+                f"! openh264enc bitrate={bitrate * 1000} complexity=low gop-size={fps}"
+            )
 
-        return (
-            f"{src} ! videoconvert ! queue ! {encoder} "
-            "! h264parse config-interval=-1"
-        )
+        return f"{src} {enc_chain} ! h264parse config-interval=-1"
 
     def _build_ffmpeg_video_command(self, target_bitrate_kbps: int | None) -> list[str]:
         width = int(self.camera.width)
@@ -212,11 +253,15 @@ class VideoProfile(BaseVideoProfile):
         if using_ffmpeg_pipe:
             required_elements.extend(["filesrc", "queue"])
         else:
-            required_elements.extend(["v4l2src", "videoconvert", "queue"])
-            if not (self.gst_element_exists("openh264enc") or self.gst_element_exists("x264enc")):
+            required_elements.extend(["v4l2src", "queue"])
+            hw_encs = ("v4l2h264enc", "omxh264enc")
+            sw_encs = ("openh264enc", "x264enc")
+            if not any(self.gst_element_exists(e) for e in (*hw_encs, *sw_encs)):
                 raise RuntimeError(
-                    "No GStreamer H.264 encoder found (need openh264enc or x264enc). "
-                    "Install with: sudo apt install -y gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
+                    "No GStreamer H.264 encoder found. "
+                    "On Raspberry Pi install the V4L2 codec driver and confirm v4l2h264enc is available, "
+                    "or install a software encoder: "
+                    "sudo apt install -y gstreamer1.0-plugins-bad gstreamer1.0-plugins-ugly"
                 )
 
         missing_elements = [name for name in required_elements if not self.gst_element_exists(name)]

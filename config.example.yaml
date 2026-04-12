@@ -65,9 +65,22 @@ video:
   #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
 
 # -- Optional low-latency Raspberry Pi mode -----------------------------------
-# Uncomment this block if you want the tested Raspberry Pi H.264 path.
-# This uses ffmpeg for camera capture + h264_v4l2m2m, then publishes directly
-# with gstreamer-publisher.
+# Two flavours – pick the one that matches your Pi:
+#
+# A) Pure GStreamer with hardware H.264 (Raspberry Pi 4/5, no ffmpeg needed)
+#    Requires kernel >= 5.15 and the bcm2835-codec V4L2 driver loaded.
+#    Check with: gst-inspect-1.0 v4l2h264enc
+#
+# video:
+#   type: "gstreamer"           # or "gstreamer_arecord" to include mic audio
+#   options:
+#     publisher_path: "/home/pi/bin/gstreamer-publisher"
+#     publish_backend: "gstreamer"   # force pure GStreamer, skip ffmpeg
+#     # video_encoder: "v4l2h264enc" # auto-detected on RPi; set explicitly if needed
+#     target_bitrate_kbps: 1200
+#
+# B) GStreamer publisher + ffmpeg backend (tested on RPi 3/4, uses h264_v4l2m2m)
+#    Needs ffmpeg installed: sudo apt install -y ffmpeg
 #
 # video:
 #   type: "gstreamer"
