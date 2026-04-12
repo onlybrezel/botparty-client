@@ -62,8 +62,10 @@ class ClientMediaMixin:
                     token_fn=lambda camera_id=entry.id: (
                         self._livekit_publish_tokens.get(camera_id) or self._livekit_publish_token
                     ),
+                    audio_token_fn=lambda: self._livekit_publish_token,
                     livekit_url_fn=lambda: self.config.server.livekit_url,
                     camera_id=entry.id,
+                    audio_enabled=include_audio,
                 )
             else:
                 manager = CameraManager(

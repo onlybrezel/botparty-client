@@ -10,6 +10,8 @@ import time
 from collections import deque
 from typing import Callable, Optional
 
+from livekit import rtc
+
 from .config import RobotConfig
 
 logger = logging.getLogger("botparty.camera")
@@ -22,15 +24,20 @@ class LiveKitPublisherManager:
         video_profile,
         *,
         token_fn: Callable[[], str | None],
+        audio_token_fn: Callable[[], str | None],
         livekit_url_fn: Callable[[], str | None],
         camera_id: str = "front",
+        audio_enabled: bool = False,
     ) -> None:
         self.config = config
         self.video_profile = video_profile
         self.camera_id = camera_id
         self._token_fn = token_fn
+        self._audio_token_fn = audio_token_fn
         self._livekit_url_fn = livekit_url_fn
+        self._audio_enabled = audio_enabled
         self._audio_task: Optional[asyncio.Task] = None
+        self._audio_room: rtc.Room | None = None
         self._frame_count = 0
         self._last_reported_frame_count = 0
         self._last_reported_at = 0.0
@@ -50,7 +57,11 @@ class LiveKitPublisherManager:
         return self._audio_task
 
     def restart_audio(self, room, running_fn):
-        return None
+        if not self._audio_enabled or not self.video_profile.has_audio() or self._audio_room is None:
+            return None
+        task = asyncio.create_task(self.video_profile.start_audio(rtc, self._audio_room, running_fn))
+        self._audio_task = task
+        return task
 
     async def run(
         self,
@@ -114,6 +125,9 @@ class LiveKitPublisherManager:
 
         proc = None
         log_task = None
+        audio_task = None
+        audio_room = None
+        audio_done_logged = False
         self._published_tracks.clear()
         self._source_mime_types.clear()
         self._ffmpeg_progress.clear()
@@ -123,6 +137,42 @@ class LiveKitPublisherManager:
         self._last_reported_frame_count = self._frame_count
 
         try:
+            if self._audio_enabled and self.video_profile.has_audio():
+                audio_token = str(self._audio_token_fn() or "").strip()
+                if not audio_token:
+                    logger.warning(
+                        "Direct audio requested for %s but no base publish token is available; skipping audio",
+                        self.camera_id,
+                    )
+                elif audio_token == token:
+                    logger.warning(
+                        "Direct audio skipped for %s because audio token equals camera publish token; "
+                        "this would cause participant SID collisions",
+                        self.camera_id,
+                    )
+                else:
+                    try:
+                        audio_room = rtc.Room()
+                        await audio_room.connect(livekit_url, audio_token)
+                        self._audio_room = audio_room
+                        audio_task = asyncio.create_task(
+                            self.video_profile.start_audio(rtc, audio_room, running_fn)
+                        )
+                        self._audio_task = audio_task
+                        logger.info("Direct audio started for camera=%s", self.camera_id)
+                    except Exception as audio_exc:
+                        logger.warning(
+                            "Direct audio setup failed for %s; continuing with video only: %s",
+                            self.camera_id,
+                            audio_exc,
+                        )
+                        if audio_room is not None:
+                            with contextlib.suppress(Exception):
+                                await audio_room.disconnect()
+                        audio_room = None
+                        self._audio_room = None
+                        self._audio_task = None
+
             proc = await self.video_profile.spawn_livekit_process(
                 livekit_url=livekit_url,
                 token=token,
@@ -148,6 +198,13 @@ class LiveKitPublisherManager:
                     if return_code == 0:
                         return
                     raise RuntimeError(self._format_nonzero_exit(return_code))
+                if audio_task is not None and audio_task.done() and not audio_done_logged:
+                    audio_done_logged = True
+                    audio_error = audio_task.exception() if not audio_task.cancelled() else None
+                    if audio_error is not None:
+                        logger.warning("Direct audio task failed for %s: %s", self.camera_id, audio_error)
+                    else:
+                        logger.warning("Direct audio task stopped for %s", self.camera_id)
                 self._log_runtime_stats_if_due()
                 await asyncio.sleep(1)
         except asyncio.CancelledError:
@@ -173,6 +230,15 @@ class LiveKitPublisherManager:
                         proc.kill()
                     with contextlib.suppress(asyncio.TimeoutError):
                         await asyncio.wait_for(proc.wait(), timeout=2)
+            if audio_task is not None and not audio_task.done():
+                audio_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await audio_task
+            self._audio_task = None
+            if audio_room is not None:
+                with contextlib.suppress(Exception):
+                    await audio_room.disconnect()
+            self._audio_room = None
 
     def _selected_publish_backend(self) -> str:
         preferred = str(
