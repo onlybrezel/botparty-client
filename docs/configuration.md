@@ -42,7 +42,7 @@ Describes the physical camera device. These settings are passed to the active vi
 | `height` | int | `720` | Capture height in pixels |
 | `fps` | int | `30` | Target frames per second |
 | `fourcc` | string | `MJPG` | Pixel format passed to ffmpeg (`MJPG` or `YUYV`) |
-| `backend` | string | `v4l2` | V4L2/OpenCV backend hint (`v4l2`, `gstreamer`, `ffmpeg`, `auto`) |
+| `backend` | string | `v4l2` | V4L2/OpenCV backend hint (`v4l2`, `ffmpeg`, `auto`) |
 | `buffer_size` | int | `1` | V4L2 capture buffer size (1–8). Keep at 1 for minimum latency. |
 | `warmup_frames` | int | `4` | Frames to discard after opening the camera to flush stale frames. |
 
@@ -142,7 +142,7 @@ Selects the video capture and streaming pipeline.
 
 | Type | Description |
 |------|-------------|
-| `ffmpeg` | FFmpeg via V4L2 — best quality, lowest latency **(recommended)** |
+| `ffmpeg` | FFmpeg via V4L2 with automatic direct-publisher mode when available **(recommended)** |
 | `ffmpeg_arecord` | FFmpeg + microphone audio via ALSA `arecord` |
 | `ffmpeg_libcamera` | `libcamera-vid` piped into FFmpeg — for Raspberry Pi Camera Module |
 | `opencv` | Pure-Python OpenCV fallback — no FFmpeg needed |
@@ -169,6 +169,12 @@ video:
     audio_sample_rate: 48000
     audio_channels: 1
 ```
+
+`ffmpeg` startup behavior:
+
+- uses the managed helper at `.botparty/bin/botparty-streamer`
+- if missing or outdated, resolves active version from `https://stats.botparty.live/get_active_version.php?app=streamer` and auto-downloads it
+- if direct mode is unavailable, falls back to SDK publish automatically
 
 ---
 

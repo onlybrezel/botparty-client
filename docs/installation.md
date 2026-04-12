@@ -99,41 +99,28 @@ video:
   options: {}
 ```
 
-If you want the optional Raspberry Pi low-latency path with H.264 hardware encoding, first install the extra helper:
-
-```bash
-sudo apt install -y gstreamer1.0-tools gstreamer1.0-plugins-base \
-  gstreamer1.0-plugins-good gstreamer1.0-plugins-bad
-./scripts/install-gstreamer-publisher.sh
-```
-
-If you also want microphone audio with `gstreamer_arecord`, add:
-
-```bash
-sudo apt install -y gstreamer1.0-alsa
-```
-
-Then use:
+For the lowest-latency Raspberry Pi path with hardware H.264, keep `type: ffmpeg`. The client prefers hardware H.264 automatically and falls back to software H.264 if needed:
 
 ```yaml
 video:
-  type: gstreamer
+  type: ffmpeg
   options:
-    publisher_path: /home/pi/bin/gstreamer-publisher
-    video_codec: h264_v4l2m2m
-    publish_backend: ffmpeg
     target_bitrate_kbps: 1200
 ```
 
-This is the BotParty-tested Raspberry Pi path:
+Only set `video_codec` if you want to force a specific FFmpeg H.264 encoder.
 
-- `ffmpeg` captures from `/dev/video0`
-- `h264_v4l2m2m` does the Raspberry Pi H.264 encoding
-- `gstreamer-publisher` publishes the stream directly to LiveKit
+The client automatically manages `botparty-streamer` in `.botparty/bin` and auto-downloads or updates it when needed. You can also install it manually:
 
-If you only want the easiest setup, stay on `video.type: ffmpeg`. The `gstreamer` path is optional.
+```bash
+./scripts/install-botparty-streamer.sh
+```
 
-For the full Raspberry Pi GStreamer guide, see [Video Profiles / GStreamer](video/gstreamer.md).
+This is the recommended high-performance path:
+
+- ffmpeg captures from the camera and encodes H.264
+- botparty-streamer publishes directly to LiveKit
+- botparty-streamer is our selfmade video transmitter for maximum performance, low CPU usage and low latency
 
 ### 5. Run as a service (optional)
 
@@ -149,9 +136,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/pi/botparty-client
-ExecStart=/home/pi/botparty-client/.venv/bin/python -m botparty_robot
+User=<your-user>
+WorkingDirectory=/home/<your-user>/botparty-client
+ExecStart=/home/<your-user>/botparty-client/.venv/bin/python -m botparty_robot
 Restart=always
 RestartSec=5
 StandardOutput=journal
@@ -222,23 +209,6 @@ python3 -m botparty_robot   # starts with config.yaml in cwd
 
 If you used the GPIO step above, log out and back in once before your first real hardware test so the `gpio` group membership is active.
 
-## GStreamer publisher download
-
-The installer script chooses the correct BotParty-tested `gstreamer-publisher` binary for the current machine architecture.
-
-Today the main supported helper builds are:
-
-- `linux-arm64` for Raspberry Pi 4/5 with 64-bit Raspberry Pi OS
-- `linux-amd64` for x86_64 Ubuntu/Debian systems
-
-Example asset URL:
-
-```text
-http://dl.botparty.live/botparty-gstreamer-publisher-v0.1.0-linux-arm64
-```
-
-On Raspberry Pi 4/5 with 64-bit Raspberry Pi OS, that is the optional low-latency path for `ffmpeg + h264_v4l2m2m + gstreamer-publisher`.
-
 ## botparty-streamer download
 
 The installer script chooses the correct BotParty-tested `botparty-streamer` binary for the current machine architecture.
@@ -260,7 +230,7 @@ Install default version:
 ./scripts/install-botparty-streamer.sh
 ```
 
-Default output path is `/tmp/botparty-streamer`.
+Default output path is `<repo>/.botparty/bin/botparty-streamer`.
 
 Install a specific version:
 
@@ -281,11 +251,5 @@ Install with explicit architecture selection:
 Custom output directory:
 
 ```bash
-./scripts/install-botparty-streamer.sh --arch amd64 --dir /tmp
-```
-
-Legacy alias (same installer):
-
-```bash
-./scripts/install-lk-h264-publisher.sh
+./scripts/install-botparty-streamer.sh --arch amd64 --dir /opt/botparty/bin
 ```

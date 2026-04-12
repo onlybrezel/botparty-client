@@ -17,7 +17,6 @@ CAMERA_BACKEND_MAP = {
     "auto": None,
     "any": None,
     "v4l2": "CAP_V4L2",
-    "gstreamer": "CAP_GSTREAMER",
     "ffmpeg": "CAP_FFMPEG",
 }
 

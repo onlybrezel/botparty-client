@@ -20,6 +20,24 @@ The README is intentionally short. Full documentation is in [docs/index.md](docs
 
 ## Quick Start
 
+One-command bootstrap (install deps + venv + optional service + streamer helper):
+
+```bash
+./scripts/install-botparty-client.sh
+```
+
+Then edit `config.yaml` and check logs with:
+
+```bash
+sudo journalctl -u botparty-robot.service -f
+```
+
+Manual start (no `source .venv/bin/activate` needed):
+
+```bash
+./scripts/start-botparty-robot.sh
+```
+
 ```bash
 # 0) Install base packages first
 sudo apt update
@@ -94,8 +112,8 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 ## Notes
 
 - Keep your `claim_token` secret.
-- If you want the optional low-latency Raspberry Pi mode, install the extra helper with `./scripts/install-gstreamer-publisher.sh` and switch `video.type` to `gstreamer`. The BotParty-tested path is `publish_backend: "ffmpeg"` with `video_codec: "h264_v4l2m2m"`.
-- For `video.type: "botparty_streamer"`, install the helper binary from CDN with `./scripts/install-botparty-streamer.sh` (or `./scripts/install-lk-h264-publisher.sh`) and keep `botparty-streamer` on `PATH`.
+
+- `botparty-streamer` is our selfmade video transmitter for maximum performance, low CPU usage and low latency.
 - On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.
 - If `sudo apt install python3-rpi.gpio` wants to remove `python3-rpi-lgpio`, that is usually expected for BotParty's built-in GPIO adapters.
 - `venv` is the recommended default, but a no-`venv` system-Python install is also supported and can be convenient for GPIO-heavy Raspberry Pi setups.

@@ -3,6 +3,7 @@ hardware_custom.py
 
 # Your local config - keep credentials out of git
 config.yaml
+.botparty/
 
 # Python
 __pycache__/

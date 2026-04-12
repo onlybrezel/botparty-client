@@ -186,6 +186,9 @@ class VideoProfile(BaseVideoProfile):
     def publish_transport(self) -> str:
         return "livekit_direct"
 
+    def botparty_streamer_version(self) -> str | None:
+        return self.read_streamer_version_for_binary(self._publisher_binary_path())
+
     def _publisher_binary_path(self) -> str:
         explicit = (
             self.options.get("publisher_binary")
@@ -194,7 +197,12 @@ class VideoProfile(BaseVideoProfile):
         )
         if explicit:
             return str(explicit)
-        for candidate in ("/home/pi/bin/botparty-streamer", "/usr/local/bin/botparty-streamer"):
+
+        managed = self.managed_streamer_binary_path()
+        if managed.is_file() and os.access(managed, os.X_OK):
+            return str(managed)
+
+        for candidate in ("/usr/local/bin/botparty-streamer",):
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 return candidate
         return "botparty-streamer"
@@ -386,7 +394,7 @@ class VideoProfile(BaseVideoProfile):
 
         if not self.command_exists(publisher_path):
             raise RuntimeError(
-                f"Missing botparty-streamer binary ({publisher_path}). Install it on PATH or set video.options.publisher_binary"
+                f"Missing botparty-streamer binary ({publisher_path}). Install it with ./scripts/install-botparty-streamer.sh or set video.options.publisher_binary"
             )
         if not self.command_exists(ffmpeg_path):
             raise RuntimeError("FFmpeg is missing. Install with: sudo apt install -y ffmpeg")

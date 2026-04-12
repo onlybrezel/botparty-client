@@ -34,7 +34,7 @@ camera:
   width: 1280
   height: 720
   fps: 30
-  backend: "v4l2"         # "v4l2", "gstreamer", "ffmpeg", or "auto"
+  backend: "v4l2"         # "v4l2", "ffmpeg", or "auto"
 ```
 
 ### `camera.backend`
@@ -45,7 +45,6 @@ Selects the OpenCV capture backend:
 |-------|-------------|-------|
 | `auto` / `any` | (default) | OpenCV picks automatically |
 | `v4l2` | `CAP_V4L2` | Linux V4L2 — most reliable on Pi |
-| `gstreamer` | `CAP_GSTREAMER` | GStreamer pipeline |
 | `ffmpeg` | `CAP_FFMPEG` | FFmpeg backend inside OpenCV |
 
 ---

@@ -123,6 +123,20 @@ class ClientOpsMixin:
             await asyncio.sleep(15)
 
     async def _send_telemetry(self) -> None:
+        streamer_version: str | None = None
+        for runtime in self._camera_runtimes:
+            version = runtime.video_profile.botparty_streamer_version()
+            if version:
+                streamer_version = version
+                break
+        if not streamer_version:
+            version_file = self._repo_root / ".botparty" / "bin" / "botparty-streamer.version"
+            try:
+                raw = version_file.read_text(encoding="utf-8").strip()
+                streamer_version = raw or None
+            except Exception:
+                streamer_version = None
+
         payload: dict[str, Any] = {
             "clientVersion": __version__,
             "gitBranch": self._client_git_branch,
@@ -138,6 +152,8 @@ class ClientOpsMixin:
             "commandsReceived": self.stats.commands_received,
             "cameraFrames": self._total_camera_frames(),
         }
+        if streamer_version:
+            payload["botpartyStreamerVersion"] = streamer_version
         try:
             import psutil  # type: ignore
 

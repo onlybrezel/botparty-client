@@ -1,8 +1,13 @@
 # FFmpeg Video Profile
 
-The `ffmpeg` profile uses FFmpeg to capture frames from a V4L2 camera device and stream them through the built-in Python video path.
+The `ffmpeg` profile is the normal default and now handles both paths automatically:
 
-This is the normal default profile and the easiest place to start.
+- preferred path: ffmpeg -> botparty-streamer -> LiveKit (direct, low-latency)
+- fallback path: ffmpeg -> Python SDK publish
+
+`botparty-streamer` is our selfmade video transmitter for maximum performance, low CPU usage and low latency.
+
+You keep `video.type: "ffmpeg"` in both cases.
 
 ```yaml
 video:
@@ -14,9 +19,21 @@ video:
 
 ## How it works
 
-1. FFmpeg opens the V4L2 device with aggressive low-latency flags such as `fflags nobuffer`, `flags low_delay`, and tiny probe sizes.
-2. Frames are decoded to raw RGBA and piped to stdout.
-3. The client keeps only the newest frame when the publish loop falls briefly behind, so stale video does not build up in the pipe.
+1. On startup, the client checks the managed helper in `.botparty/bin/botparty-streamer`.
+2. If it is missing or older than the active version, it downloads the current release automatically.
+3. If the binary is healthy, the direct path is used with automatic H.264 encoder selection.
+4. If direct mode is unavailable or invalid, the client falls back to the SDK publish path automatically.
+
+## Codec behavior
+
+When the direct path is active, the client always prefers H.264:
+
+- on Raspberry Pi: `h264_v4l2m2m` first, then `h264_omx`, then `libx264`
+- on other systems: `libx264`
+
+You only need `video.options.video_codec` if you want to force a specific FFmpeg H.264 encoder manually.
+
+When the SDK fallback path is active, `video_codec` is not used because LiveKit handles encoding internally.
 
 ---
 
@@ -33,6 +50,7 @@ video:
 | `fpsprobesize` | int | `0` | Disable extra FPS probing to start reading frames immediately. |
 | `publish_fps` | float | `camera.fps` | Max frame rate sent into LiveKit. Lower this to prevent encoder backlog. |
 | `loglevel` | string | `error` | FFmpeg log level (`error`, `warning`, `info`) |
+| `video_codec` | string | `auto` | Optional override for the direct H.264 encoder. Leave unset for automatic hardware-first selection. |
 | `target_bitrate_kbps` | int | `auto` | Cap LiveKit video bitrate. If unset, the client applies a conservative low-latency default based on resolution and FPS. |
 
 ---
@@ -58,6 +76,8 @@ Most modern USB webcams support MJPG at 1280x720@30fps. Switch to YUYV only if t
 ## With microphone audio
 
 Use `ffmpeg_arecord` to capture and stream audio from a USB microphone or onboard sound card alongside the video.
+
+The video side keeps the same automatic `botparty-streamer` update/direct/fallback behavior as plain `ffmpeg`.
 
 ```yaml
 video:
@@ -94,27 +114,23 @@ For low-latency teleoperation, keep `audio_queue_frames` small. With the default
 
 ## Troubleshooting
 
-**I want the optional low-latency Raspberry Pi mode**
+**I want the lowest-latency Raspberry Pi mode**
 
-Use:
+Keep `video.type: "ffmpeg"`. The client already prefers hardware H.264 automatically. Only force `video_codec` if you want to pin a specific encoder:
 
 ```yaml
 video:
-  type: "gstreamer"
+  type: "ffmpeg"
   options:
-    publisher_path: "/home/pi/bin/gstreamer-publisher"
     video_codec: "h264_v4l2m2m"
-    publish_backend: "ffmpeg"
     target_bitrate_kbps: 1200
 ```
 
-Then install the BotParty-tested publisher binary:
+Install the helper binary manually (optional, auto-install also exists):
 
 ```bash
-./scripts/install-gstreamer-publisher.sh
+./scripts/install-botparty-streamer.sh
 ```
-
-That Raspberry Pi mode uses `ffmpeg` for capture plus `h264_v4l2m2m` for hardware H.264 encoding, then hands the stream to `gstreamer-publisher` for direct LiveKit publishing.
 
 **"No such file or directory: /dev/video0"**
 

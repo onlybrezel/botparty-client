@@ -45,17 +45,14 @@ camera:
 #
 # Available types:
 #   ffmpeg            - standard choice for most robots  [RECOMMENDED]
+#                       auto-manages botparty-streamer in .botparty/bin
+#                       and falls back to Python SDK publish path otherwise
+#                       botparty-streamer is our selfmade video transmitter for
+#                       maximum performance, low CPU usage and low latency
 #                       requires: sudo apt install ffmpeg
 #   ffmpeg_arecord    - same as ffmpeg + microphone audio
+#                       same auto botparty-streamer handling, plus ALSA mic capture
 #                       requires: sudo apt install ffmpeg alsa-utils
-#   gstreamer         - optional low-latency Raspberry Pi mode
-#                       tested with ffmpeg + h264_v4l2m2m + gstreamer-publisher
-#                       recommended on Raspberry Pi 4/5 only if you install the
-#                       extra BotParty video helper
-#   gstreamer_arecord - gstreamer + microphone audio
-#   botparty_streamer - ffmpeg -> localhost TCP -> botparty-streamer (Go) -> LiveKit
-#                       managed directly by botparty-client controller
-#                       requires: ffmpeg + botparty-streamer binary on PATH
 #   ffmpeg_libcamera  - Raspberry Pi Camera Module v2/v3 (libcamera stack)
 #                       requires: libcamera-vid installed
 #   opencv            - pure Python fallback, no extra dependencies
@@ -66,69 +63,6 @@ video:
   options: {}
   # options:
   #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
-
-# -- Optional low-latency Raspberry Pi mode -----------------------------------
-# Two flavours – pick the one that matches your Pi:
-#
-# A) Hardware H.264 via ffmpeg h264_v4l2m2m (RECOMMENDED for RPi 4/5)
-#    Uses the bcm2835-codec hardware encoder, no CPU for H.264. Fast.
-#    Needs ffmpeg: sudo apt install -y ffmpeg
-#    GStreamer 1.26 / kernel 6.x has a double-open bug in v4l2h264enc that
-#    causes ESRCH on STREAMON; ffmpeg avoids it by using a single fd.
-#    The client detects this at startup and falls back here automatically
-#    when you set publish_backend: gstreamer.
-#
-# video:
-#   type: "gstreamer"           # or "gstreamer_arecord" for mic audio
-#   options:
-#     publisher_path: "/home/pi/bin/gstreamer-publisher"
-#     video_codec: "h264_v4l2m2m"   # bcm2835-codec HW encoder via ffmpeg
-#     publish_backend: "ffmpeg"
-#     target_bitrate_kbps: 1200
-#
-# B) Pure GStreamer with hardware H.264 (RPi 4/5, no ffmpeg)
-#    Only use this if v4l2h264enc works on your kernel+GStreamer combo.
-#    On kernel 6.x + GStreamer 1.26 this is BROKEN (see note above).
-#    The client auto-detects the failure and switches to ffmpeg if available.
-#    Force this path (and bypass the probe) with: video_encoder: v4l2h264enc
-#
-# video:
-#   type: "gstreamer"
-#   options:
-#     publisher_path: "/home/pi/bin/gstreamer-publisher"
-#     publish_backend: "gstreamer"   # pure GStreamer, no ffmpeg
-#     # video_encoder: "v4l2h264enc" # auto-detected; set explicitly if needed
-#     target_bitrate_kbps: 1200
-#
-#   # If you switch to "gstreamer_arecord" for microphone audio, also install:
-#   #   sudo apt install -y gstreamer1.0-alsa
-
-# -- Optional direct Go publisher mode (client-managed subprocess) ------------
-#
-# This mode keeps the same low-latency architecture while staying in the normal
-# botparty-client lifecycle (start/restart/shutdown handled by controller):
-#
-#   ffmpeg -> localhost TCP -> botparty-streamer -> LiveKit
-#
-# Requirements on client:
-#   - ffmpeg installed
-#   - botparty-streamer binary downloaded via ./scripts/install-botparty-streamer.sh
-#     (default target: /tmp/botparty-streamer)
-#
-# No LiveKit API key/secret is required on the client. The existing claim flow
-# already provides short-lived publish tokens used by the publisher process.
-#
-# video:
-#   type: "botparty_streamer"
-#   options:
-#     publisher_binary: "botparty-streamer"  # or absolute path
-#     video_codec: "h264_v4l2m2m"            # RPi4/5 HW encoder example
-#     target_bitrate_kbps: 1200
-#     # Optional low-latency tuning (defaults are already conservative):
-#     # frame_chan_size: 4
-#     # max_publish_stale_ms: 250
-#     # input_read_timeout_ms: 500
-#     # frame_flush_timeout_ms: 50
 
 # -- Optional multi-camera setup ----------------------------------------------
 #

@@ -70,7 +70,6 @@ class LiveKitPublisherManager:
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
-        fallback_attempted = False
         audio_fallback_attempted = False
         codec_fallback_attempted = False
         while True:
@@ -98,16 +97,6 @@ class LiveKitPublisherManager:
                         "Direct publisher exited after %.1fs on ffmpeg backend (codec=%s); retrying with codec=libx264",
                         uptime,
                         previous_codec,
-                    )
-                    continue
-                if self._should_retry_with_gstreamer(exc, uptime, fallback_attempted):
-                    fallback_attempted = True
-                    previous_backend = self._selected_publish_backend()
-                    self.video_profile.options["publish_backend"] = "gstreamer"
-                    logger.warning(
-                        "Direct publisher exited after %.1fs on %s backend; retrying with pure gstreamer backend",
-                        uptime,
-                        previous_backend,
                     )
                     continue
                 raise
@@ -240,38 +229,6 @@ class LiveKitPublisherManager:
                     await audio_room.disconnect()
             self._audio_room = None
 
-    def _selected_publish_backend(self) -> str:
-        preferred = str(
-            self.video_profile.options.get("publish_backend")
-            or self.video_profile.options.get("livekit_publish_backend")
-            or "auto"
-        ).strip().lower()
-        return preferred or "auto"
-
-    def _should_retry_with_gstreamer(
-        self,
-        error: RuntimeError,
-        uptime_sec: float,
-        fallback_attempted: bool,
-    ) -> bool:
-        if fallback_attempted:
-            return False
-        if self._selected_publish_backend() == "gstreamer":
-            return False
-        if uptime_sec > 8.0:
-            return False
-
-        message = str(error).lower()
-        non_retryable = (
-            "missing",
-            "not installed",
-            "token",
-            "permission denied",
-        )
-        if any(marker in message for marker in non_retryable):
-            return False
-        return True
-
     def _should_retry_without_direct_audio(
         self,
         error: RuntimeError,
@@ -282,7 +239,7 @@ class LiveKitPublisherManager:
             return False
         if uptime_sec > 8.0:
             return False
-        if getattr(self.video_profile, "profile_name", "") != "gstreamer_arecord":
+        if getattr(self.video_profile, "profile_name", "") != "botparty_streamer":
             return False
 
         direct_audio_enabled = self.video_profile.options.get("direct_audio_enabled", True)
@@ -307,8 +264,6 @@ class LiveKitPublisherManager:
         fallback_attempted: bool,
     ) -> bool:
         if fallback_attempted:
-            return False
-        if self._selected_publish_backend() == "gstreamer":
             return False
         if uptime_sec > 8.0:
             return False

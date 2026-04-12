@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import shutil
 import subprocess
 from pathlib import Path
@@ -15,7 +16,7 @@ from ..config import RobotConfig
 class BaseVideoProfile:
     profile_name = "base"
     _ffmpeg_feature_cache: dict[tuple[str, str, str], bool] = {}
-    _gstreamer_feature_cache: dict[tuple[str, str], bool] = {}
+    _streamer_version_pattern = re.compile(r"v?\d+\.\d+\.\d+(?:[-.][A-Za-z0-9._]+)?")
 
     def __init__(self, config: RobotConfig) -> None:
         self.config = config
@@ -100,6 +101,56 @@ class BaseVideoProfile:
     def has_audio(self) -> bool:
         return False
 
+    def botparty_streamer_version(self) -> str | None:
+        return None
+
+    def repo_root(self) -> Path:
+        return Path(__file__).resolve().parents[2]
+
+    def managed_streamer_dir(self) -> Path:
+        return self.repo_root() / ".botparty" / "bin"
+
+    def managed_streamer_binary_path(self) -> Path:
+        return self.managed_streamer_dir() / "botparty-streamer"
+
+    def managed_streamer_version_file(self) -> Path:
+        return self.managed_streamer_dir() / "botparty-streamer.version"
+
+    def read_streamer_version_for_binary(self, binary_path: str | os.PathLike[str] | None) -> str | None:
+        if not binary_path:
+            return None
+
+        path = Path(binary_path)
+        candidate_files = (
+            path.with_suffix(path.suffix + ".version") if path.suffix else path.parent / f"{path.name}.version",
+            path.parent / "botparty-streamer.version",
+        )
+        for candidate in candidate_files:
+            try:
+                raw = candidate.read_text(encoding="utf-8").strip()
+            except Exception:
+                raw = ""
+            normalized = self.normalize_streamer_version(raw)
+            if normalized:
+                return normalized
+
+        match = self._streamer_version_pattern.search(str(path))
+        if match:
+            return self.normalize_streamer_version(match.group(0))
+        return None
+
+    def normalize_streamer_version(self, raw: str | None) -> str | None:
+        if not raw:
+            return None
+        value = raw.strip()
+        if not value:
+            return None
+        if value.startswith("v"):
+            return value
+        if self._streamer_version_pattern.fullmatch(value):
+            return f"v{value}"
+        return None
+
     async def start_audio(self, rtc, room, running: Callable[[], bool]) -> None:
         return
 
@@ -133,59 +184,6 @@ class BaseVideoProfile:
 
     def command_exists(self, name: str) -> bool:
         return shutil.which(name) is not None
-
-    def gstreamer_env(self) -> dict[str, str]:
-        env = os.environ.copy()
-        configured = str(self.options.get("gst_plugin_path", "")).strip()
-        paths: list[str] = []
-        if configured:
-            paths.extend(part for part in configured.split(":") if part)
-
-        home = Path.home()
-        defaults = [
-            home / ".local/lib/gstreamer-1.0",
-            Path("/usr/local/lib/gstreamer-1.0"),
-            Path("/usr/local/lib/aarch64-linux-gnu/gstreamer-1.0"),
-            Path("/usr/local/lib/arm-linux-gnueabihf/gstreamer-1.0"),
-        ]
-        for candidate in defaults:
-            if candidate.exists():
-                paths.append(str(candidate))
-
-        existing = env.get("GST_PLUGIN_PATH", "").strip()
-        if existing:
-            paths.extend(part for part in existing.split(":") if part)
-
-        if paths:
-            deduped = list(dict.fromkeys(paths))
-            env["GST_PLUGIN_PATH"] = ":".join(deduped)
-        return env
-
-    def gst_element_exists(self, name: str) -> bool:
-        gst_inspect = shutil.which("gst-inspect-1.0")
-        if not gst_inspect:
-            return False
-
-        plugin_path = self.gstreamer_env().get("GST_PLUGIN_PATH", "")
-        cache_key = (f"{gst_inspect}:{plugin_path}", name)
-        cached = self._gstreamer_feature_cache.get(cache_key)
-        if cached is not None:
-            return cached
-
-        try:
-            result = subprocess.run(
-                [gst_inspect, name],
-                env=self.gstreamer_env(),
-                capture_output=True,
-                text=True,
-                check=False,
-            )
-            supported = result.returncode == 0
-        except Exception:
-            supported = False
-
-        self._gstreamer_feature_cache[cache_key] = supported
-        return supported
 
     def detect_default_h264_codec(self) -> str:
         explicit = self.options.get("video_codec")
