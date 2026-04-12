@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import shlex
+import subprocess
 
 from .base import BaseVideoProfile
+
+logger = logging.getLogger("botparty.video.gstreamer")
 
 
 class VideoProfile(BaseVideoProfile):
@@ -221,6 +225,45 @@ class VideoProfile(BaseVideoProfile):
             branches.append(audio_branch)
         return " ".join(branches)
 
+    def _probe_v4l2h264enc(self, device: str = "/dev/video0") -> bool:
+        """Quick smoke-test: can v4l2h264enc actually encode a frame?
+
+        On RPi4 with kernel 6.x + GStreamer 1.26, v4l2h264enc opens
+        /dev/video11 twice which causes MMAL to return ESRCH on STREAMON.
+        ffmpeg h264_v4l2m2m uses a single fd and works fine.
+        Caches the result so the probe only runs once per process.
+        """
+        cache_key = f"_probe_v4l2h264enc:{device}"
+        cached = self._gstreamer_feature_cache.get((cache_key, "probe"))
+        if cached is not None:
+            return cached
+
+        if not self.gst_element_exists("v4l2h264enc"):
+            self._gstreamer_feature_cache[(cache_key, "probe")] = False
+            return False
+
+        pipeline = (
+            f"v4l2src device={shlex.quote(device)} num-buffers=2 "
+            "! 'video/x-raw,width=160,height=120' "
+            "! v4l2h264enc "
+            "! fakesink sync=false"
+        )
+        try:
+            result = subprocess.run(
+                ["gst-launch-1.0", "-q", "--no-fault"] + shlex.split(pipeline),
+                env=self.gstreamer_env(),
+                capture_output=True,
+                text=True,
+                timeout=3,
+                check=False,
+            )
+            ok = result.returncode == 0
+        except Exception:
+            ok = False
+
+        self._gstreamer_feature_cache[(cache_key, "probe")] = ok
+        return ok
+
     def _use_ffmpeg_pipe(self) -> bool:
         preferred = str(
             self.options.get("publish_backend")
@@ -228,8 +271,31 @@ class VideoProfile(BaseVideoProfile):
             or "auto"
         ).strip().lower()
         ffmpeg_path = str(self.options.get("ffmpeg_path", "ffmpeg"))
+
         if preferred == "gstreamer":
+            # Verify that v4l2h264enc actually works before committing to the
+            # pure-GStreamer path. On RPi4 + kernel 6.x + GStreamer 1.26, the
+            # plugin opens /dev/video11 twice which breaks MMAL (ESRCH). In that
+            # case fall back to ffmpeg h264_v4l2m2m which uses a single fd.
+            encoder = self._detect_gst_h264_encoder()
+            if encoder in ("v4l2h264enc", "omxh264enc"):
+                device = str(self.camera.device)
+                if not self._probe_v4l2h264enc(device):
+                    if self.command_exists(ffmpeg_path):
+                        logger.warning(
+                            "v4l2h264enc probe failed on %s "
+                            "(GStreamer double-open bug on kernel 6.x). "
+                            "Falling back to ffmpeg h264_v4l2m2m for hardware encoding. "
+                            "To suppress this, set publish_backend: ffmpeg explicitly.",
+                            device,
+                        )
+                        return True
+                    logger.warning(
+                        "v4l2h264enc probe failed and ffmpeg is not available. "
+                        "Attempting pure-GStreamer path with software encoder."
+                    )
             return False
+
         if preferred == "ffmpeg":
             return self.command_exists(ffmpeg_path)
         return self.command_exists(ffmpeg_path)

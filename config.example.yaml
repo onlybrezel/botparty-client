@@ -67,27 +67,34 @@ video:
 # -- Optional low-latency Raspberry Pi mode -----------------------------------
 # Two flavours – pick the one that matches your Pi:
 #
-# A) Pure GStreamer with hardware H.264 (Raspberry Pi 4/5, no ffmpeg needed)
-#    Requires kernel >= 5.15 and the bcm2835-codec V4L2 driver loaded.
-#    Check with: gst-inspect-1.0 v4l2h264enc
+# A) Hardware H.264 via ffmpeg h264_v4l2m2m (RECOMMENDED for RPi 4/5)
+#    Uses the bcm2835-codec hardware encoder, no CPU for H.264. Fast.
+#    Needs ffmpeg: sudo apt install -y ffmpeg
+#    GStreamer 1.26 / kernel 6.x has a double-open bug in v4l2h264enc that
+#    causes ESRCH on STREAMON; ffmpeg avoids it by using a single fd.
+#    The client detects this at startup and falls back here automatically
+#    when you set publish_backend: gstreamer.
 #
 # video:
-#   type: "gstreamer"           # or "gstreamer_arecord" to include mic audio
+#   type: "gstreamer"           # or "gstreamer_arecord" for mic audio
 #   options:
 #     publisher_path: "/home/pi/bin/gstreamer-publisher"
-#     publish_backend: "gstreamer"   # force pure GStreamer, skip ffmpeg
-#     # video_encoder: "v4l2h264enc" # auto-detected on RPi; set explicitly if needed
+#     video_codec: "h264_v4l2m2m"   # bcm2835-codec HW encoder via ffmpeg
+#     publish_backend: "ffmpeg"
 #     target_bitrate_kbps: 1200
 #
-# B) GStreamer publisher + ffmpeg backend (tested on RPi 3/4, uses h264_v4l2m2m)
-#    Needs ffmpeg installed: sudo apt install -y ffmpeg
+# B) Pure GStreamer with hardware H.264 (RPi 4/5, no ffmpeg)
+#    Only use this if v4l2h264enc works on your kernel+GStreamer combo.
+#    On kernel 6.x + GStreamer 1.26 this is BROKEN (see note above).
+#    The client auto-detects the failure and switches to ffmpeg if available.
+#    Force this path (and bypass the probe) with: video_encoder: v4l2h264enc
 #
 # video:
 #   type: "gstreamer"
 #   options:
 #     publisher_path: "/home/pi/bin/gstreamer-publisher"
-#     video_codec: "h264_v4l2m2m"
-#     publish_backend: "ffmpeg"
+#     publish_backend: "gstreamer"   # pure GStreamer, no ffmpeg
+#     # video_encoder: "v4l2h264enc" # auto-detected; set explicitly if needed
 #     target_bitrate_kbps: 1200
 #
 #   # If you switch to "gstreamer_arecord" for microphone audio, also install:
