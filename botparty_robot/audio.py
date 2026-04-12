@@ -45,10 +45,25 @@ def resolve_alsa_device(spec: str | None, kind: DeviceKind = "playback") -> str:
     if not spec:
         return "default"
     normalized = spec.strip()
-    if normalized in {"default", "pulse"} or normalized.startswith(("hw:", "plughw:")):
+    if normalized in {"default", "pulse"}:
+        return normalized
+    if normalized.startswith(("hw:", "plughw:")):
+        match = re.match(r"^(?:plug)?hw:(\d+)(?:,(\d+))?$", normalized)
+        if match:
+            card = match.group(1)
+            device = match.group(2) or "0"
+            requested = f"{card},{device}"
+            available = {entry["hw"] for entry in list_alsa_devices(kind)}
+            if requested in available:
+                return normalized
+            return "default"
         return normalized
     if re.fullmatch(r"\d+(,\d+)?", normalized):
-        return f"plughw:{normalized}"
+        card_device = f"{normalized},0" if "," not in normalized else normalized
+        available = {entry["hw"] for entry in list_alsa_devices(kind)}
+        if card_device in available:
+            return f"plughw:{normalized}"
+        return "default"
 
     lowered = normalized.lower()
     for device in list_alsa_devices(kind):
