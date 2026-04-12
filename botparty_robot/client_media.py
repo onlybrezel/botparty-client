@@ -138,17 +138,32 @@ class ClientMediaMixin:
             return 1500
         return 2200
 
+    def _resolve_target_bitrate_kbps(
+        self,
+        *,
+        remote: Optional[int],
+        configured: Optional[int],
+        default: int,
+    ) -> int:
+        if remote is not None and configured is not None:
+            return max(remote, configured)
+        return remote or configured or default
+
     def _effective_target_bitrate_kbps(self) -> int:
-        return (
-            self._remote_target_bitrate_kbps
-            or self._configured_target_bitrate_kbps
-            or self._default_target_bitrate_kbps()
+        return self._resolve_target_bitrate_kbps(
+            remote=self._remote_target_bitrate_kbps,
+            configured=self._configured_target_bitrate_kbps,
+            default=self._default_target_bitrate_kbps(),
         )
 
     def _target_bitrate_for_runtime(self, runtime: CameraRuntime) -> int | None:
         configured = self._parse_target_bitrate_kbps(runtime.config.video.options.get("target_bitrate_kbps"))
         if len(self._camera_runtimes) <= 1 or runtime.camera_id == self._primary_camera_id:
-            return self._remote_target_bitrate_kbps or configured or self._default_target_bitrate_kbps(runtime)
+            return self._resolve_target_bitrate_kbps(
+                remote=self._remote_target_bitrate_kbps,
+                configured=configured,
+                default=self._default_target_bitrate_kbps(runtime),
+            )
         return configured
 
     async def _start_all_cameras(self) -> None:

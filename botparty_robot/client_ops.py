@@ -269,7 +269,9 @@ class ClientOpsMixin:
                 self._sync_primary_runtime_aliases()
 
             next_effective_bitrate = (
-                next_remote_bitrate
+                max(next_remote_bitrate, self._configured_target_bitrate_kbps)
+                if next_remote_bitrate is not None and self._configured_target_bitrate_kbps is not None
+                else next_remote_bitrate
                 or self._configured_target_bitrate_kbps
                 or self._default_target_bitrate_kbps()
             )
