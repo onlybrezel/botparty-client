@@ -121,8 +121,27 @@ class BaseVideoProfile:
             return None
 
         path = Path(binary_path)
+
+        # Primary: ask the binary directly (supported since v0.1.0 with --version flag).
+        if path.is_file() and os.access(path, os.X_OK):
+            try:
+                result = subprocess.run(
+                    [str(path), "--version"],
+                    capture_output=True,
+                    text=True,
+                    check=False,
+                    timeout=3,
+                )
+                output = (result.stdout or "").strip()
+                normalized = self.normalize_streamer_version(output)
+                if normalized:
+                    return normalized
+            except Exception:
+                pass
+
+        # Fallback: companion version file written by the install script.
         candidate_files = (
-            path.with_suffix(path.suffix + ".version") if path.suffix else path.parent / f"{path.name}.version",
+            path.parent / f"{path.name}.version",
             path.parent / "botparty-streamer.version",
         )
         for candidate in candidate_files:
@@ -134,7 +153,8 @@ class BaseVideoProfile:
             if normalized:
                 return normalized
 
-        match = self._streamer_version_pattern.search(str(path))
+        # Last resort: version embedded in the file name (e.g. botparty-streamer-v0.1.0-linux-arm64).
+        match = self._streamer_version_pattern.search(path.name)
         if match:
             return self.normalize_streamer_version(match.group(0))
         return None

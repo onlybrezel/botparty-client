@@ -154,27 +154,47 @@ class VideoProfile(BaseVideoProfile):
 
         if managed_healthy and managed_version == self._streamer_expected_version:
             self._installed_streamer_version = managed_version
+            logger.info(
+                "botparty-streamer %s is up to date [%s]",
+                managed_version,
+                managed_binary,
+            )
             return False
 
         current_version = self.read_streamer_version_for_binary(current_binary)
         if current_version:
             self._installed_streamer_version = current_version
 
+        if current_version and current_version == self._streamer_expected_version:
+            # Correct version but not in the managed path – accept it without reinstalling.
+            logger.info(
+                "botparty-streamer %s is up to date [%s]",
+                current_version,
+                current_binary,
+            )
+            return False
+
         if current_version and current_version != self._streamer_expected_version:
             logger.info(
-                "A newer botparty-streamer is available for optimal performance: installed=%s active=%s. Updating now.",
+                "botparty-streamer %s found at %s, active version is %s – updating now",
                 current_version,
+                current_binary,
                 self._streamer_expected_version,
             )
-        elif not current_version:
+        else:
             logger.info(
-                "botparty-streamer version is unknown or missing. Installing active version=%s before video startup.",
+                "botparty-streamer not found or version unknown – installing %s",
                 self._streamer_expected_version,
             )
 
         return True
 
     def _maybe_enable_direct_publisher(self) -> None:
+        logger.info(
+            "Initialising botparty-streamer (active version: %s)",
+            self._streamer_expected_version,
+        )
+
         streamer_binary = self._resolve_streamer_binary_path()
         healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
         self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
@@ -187,7 +207,7 @@ class VideoProfile(BaseVideoProfile):
                 healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
                 self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
                 if self._installed_streamer_version:
-                    logger.info("botparty-streamer is now up to date: %s", self._installed_streamer_version)
+                    logger.info("botparty-streamer updated to %s", self._installed_streamer_version)
             else:
                 logger.warning("botparty-streamer update/install failed; continuing with existing video path")
 
@@ -209,9 +229,9 @@ class VideoProfile(BaseVideoProfile):
 
         self._direct_profile = BotPartyStreamerProfile(self.config)
         logger.info(
-            "FFmpeg profile switched to botparty-streamer direct transport: binary=%s version=%s",
+            "botparty-streamer direct transport active: version=%s binary=%s",
+            self._installed_streamer_version or self._streamer_expected_version,
             streamer_binary,
-            self._streamer_expected_version,
         )
 
     def capture_mode(self) -> str:
