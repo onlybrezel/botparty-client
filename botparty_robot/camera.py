@@ -214,6 +214,82 @@ class CameraManager:
             return None
         return getattr(cv2, attr, None)
 
+    def _update_adaptive_publish_rate(
+        self,
+        *,
+        now: float,
+        next_publish_at: float,
+        publish_interval: float,
+        lag_overruns: int,
+        effective_publish_fps: float,
+        min_publish_fps: float,
+        publish_fps: float,
+        stable_since: float,
+    ) -> tuple[float, float, int, float, float]:
+        lag = now - next_publish_at
+        if lag > publish_interval * 1.5:
+            lag_overruns += 1
+        elif lag_overruns > 0:
+            lag_overruns -= 1
+
+        if lag_overruns >= 8 and effective_publish_fps > min_publish_fps:
+            previous_fps = effective_publish_fps
+            effective_publish_fps = max(min_publish_fps, effective_publish_fps - 2.0)
+            publish_interval = 1.0 / effective_publish_fps
+            lag_overruns = 0
+            stable_since = now
+            logger.info(
+                "Adaptive performance cap: publish_fps %.1f -> %.1f for %s",
+                previous_fps,
+                effective_publish_fps,
+                self.camera_id,
+            )
+        elif (
+            effective_publish_fps < publish_fps
+            and now - stable_since >= 12.0
+            and lag <= publish_interval * 0.5
+        ):
+            previous_fps = effective_publish_fps
+            effective_publish_fps = min(publish_fps, effective_publish_fps + 1.0)
+            publish_interval = 1.0 / effective_publish_fps
+            stable_since = now
+            logger.info(
+                "Adaptive performance recovery: publish_fps %.1f -> %.1f for %s",
+                previous_fps,
+                effective_publish_fps,
+                self.camera_id,
+            )
+
+        if lag > publish_interval * 2:
+            next_publish_at = now
+
+        return next_publish_at, publish_interval, lag_overruns, effective_publish_fps, stable_since
+
+    def _maybe_log_ffmpeg_runtime(
+        self,
+        *,
+        now: float,
+        report_started_at: float,
+        frames_since_report: int,
+        effective_publish_fps: float,
+        dropped_for_pacing: int,
+        frame_width: int,
+        frame_height: int,
+    ) -> tuple[float, int, int]:
+        elapsed = now - report_started_at
+        if elapsed < 10:
+            return report_started_at, frames_since_report, dropped_for_pacing
+
+        logger.info(
+            "Camera runtime: sent_fps=%.1f target_fps=%.1f dropped_pacing=%d resolution=%dx%d",
+            frames_since_report / elapsed,
+            effective_publish_fps,
+            dropped_for_pacing,
+            frame_width,
+            frame_height,
+        )
+        return now, 0, 0
+
     async def _loop_ffmpeg(
         self,
         source: rtc.VideoSource,
@@ -319,42 +395,16 @@ class CameraManager:
                     dropped_for_pacing += 1
                     continue
 
-                lag = now - next_publish_at
-                if lag > publish_interval * 1.5:
-                    lag_overruns += 1
-                elif lag_overruns > 0:
-                    lag_overruns -= 1
-
-                if lag_overruns >= 8 and effective_publish_fps > min_publish_fps:
-                    previous_fps = effective_publish_fps
-                    effective_publish_fps = max(min_publish_fps, effective_publish_fps - 2.0)
-                    publish_interval = 1.0 / effective_publish_fps
-                    lag_overruns = 0
-                    stable_since = now
-                    logger.info(
-                        "Adaptive performance cap: publish_fps %.1f -> %.1f for %s",
-                        previous_fps,
-                        effective_publish_fps,
-                        self.camera_id,
-                    )
-                elif (
-                    effective_publish_fps < publish_fps
-                    and now - stable_since >= 12.0
-                    and lag <= publish_interval * 0.5
-                ):
-                    previous_fps = effective_publish_fps
-                    effective_publish_fps = min(publish_fps, effective_publish_fps + 1.0)
-                    publish_interval = 1.0 / effective_publish_fps
-                    stable_since = now
-                    logger.info(
-                        "Adaptive performance recovery: publish_fps %.1f -> %.1f for %s",
-                        previous_fps,
-                        effective_publish_fps,
-                        self.camera_id,
-                    )
-
-                if lag > publish_interval * 2:
-                    next_publish_at = now
+                next_publish_at, publish_interval, lag_overruns, effective_publish_fps, stable_since = self._update_adaptive_publish_rate(
+                    now=now,
+                    next_publish_at=next_publish_at,
+                    publish_interval=publish_interval,
+                    lag_overruns=lag_overruns,
+                    effective_publish_fps=effective_publish_fps,
+                    min_publish_fps=min_publish_fps,
+                    publish_fps=publish_fps,
+                    stable_since=stable_since,
+                )
 
                 lk_frame = rtc.VideoFrame(frame_width, frame_height, rtc.VideoBufferType.RGBA, frame)
                 source.capture_frame(lk_frame)
@@ -367,19 +417,15 @@ class CameraManager:
                     frames_since_yield = 0
                     await asyncio.sleep(0)
 
-                elapsed = now - report_started_at
-                if elapsed >= 10:
-                    logger.info(
-                        "Camera runtime: sent_fps=%.1f target_fps=%.1f dropped_pacing=%d resolution=%dx%d",
-                        frames_since_report / elapsed,
-                        effective_publish_fps,
-                        dropped_for_pacing,
-                        frame_width,
-                        frame_height,
-                    )
-                    frames_since_report = 0
-                    dropped_for_pacing = 0
-                    report_started_at = now
+                report_started_at, frames_since_report, dropped_for_pacing = self._maybe_log_ffmpeg_runtime(
+                    now=now,
+                    report_started_at=report_started_at,
+                    frames_since_report=frames_since_report,
+                    effective_publish_fps=effective_publish_fps,
+                    dropped_for_pacing=dropped_for_pacing,
+                    frame_width=frame_width,
+                    frame_height=frame_height,
+                )
 
             if reader_error is not None:
                 raise reader_error
@@ -449,8 +495,9 @@ class CameraManager:
         try:
             import cv2
         except ImportError:
-            logger.error("OpenCV not installed: pip install opencv-python-headless")
-            return
+            raise RuntimeError(
+                "OpenCV not installed: pip install opencv-python-headless"
+            )
 
         interval = 1.0 / camera_fps if camera_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
         next_frame_at = time.monotonic()

@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import shlex
+import socket
 import zlib
 
 from ..audio import list_alsa_devices, resolve_alsa_device
@@ -223,17 +224,41 @@ class VideoProfile(BaseVideoProfile):
         if isinstance(explicit, int) and 1024 <= explicit <= 65535:
             return explicit
 
+        base = int(self.options.get("publisher_tcp_port_base", 5600))
         camera_id = self._camera_id()
         if camera_id == "front":
-            return 5004
+            if self._is_local_port_available(5004):
+                return 5004
+            logger.warning("Default publisher port 5004 is busy; selecting fallback port")
 
-        base = int(self.options.get("publisher_tcp_port_base", 5600))
-        # Use the lower 10 bits of the CRC32 hash to distribute across 1024 slots.
-        # CRC32 has good uniformity for short strings; with up to ~16 cameras the
-        # collision probability is negligible (birthday bound ~2%).  If an exact
-        # port conflicts, set video.options.publisher_tcp_port explicitly.
-        slot = (zlib.crc32(camera_id.encode("utf-8")) & 0x3FF) + 1
-        return base + slot
+        window = 1024
+        slot = zlib.crc32(camera_id.encode("utf-8")) % window
+        for offset in range(window):
+            candidate = base + ((slot + offset) % window) + 1
+            if self._is_local_port_available(candidate):
+                if offset > 0:
+                    logger.warning(
+                        "Publisher port collision detected for %s, using fallback port %d",
+                        camera_id,
+                        candidate,
+                    )
+                return candidate
+
+        raise RuntimeError(
+            f"No free publisher TCP port in range [{base + 1}, {base + window}]"
+        )
+
+    def _is_local_port_available(self, port: int) -> bool:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            sock.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+        finally:
+            with contextlib.suppress(OSError):
+                sock.close()
 
     def _decode_token_payload(self, token: str) -> dict[str, object]:
         # Note: this decodes the JWT payload WITHOUT signature verification.

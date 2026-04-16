@@ -40,8 +40,34 @@ def write_bytes_file(data: bytes, suffix: str) -> Path:
     return path
 
 
+def _read_secret_file(path: str) -> str:
+    candidate = Path(path).expanduser()
+    try:
+        value = candidate.read_text(encoding="utf-8").strip()
+    except Exception:
+        return ""
+    return value
+
+
 def getenv_or_option(options: dict[str, Any], key: str, env_name: str, default: str = "") -> str:
     value = options.get(key)
     if isinstance(value, str) and value:
         return value
-    return os.getenv(env_name, default)
+
+    option_file = options.get(f"{key}_file")
+    if isinstance(option_file, str) and option_file.strip():
+        secret = _read_secret_file(option_file)
+        if secret:
+            return secret
+
+    env_value = os.getenv(env_name, "")
+    if env_value:
+        return env_value
+
+    env_file = os.getenv(f"{env_name}_FILE", "")
+    if env_file:
+        secret = _read_secret_file(env_file)
+        if secret:
+            return secret
+
+    return default

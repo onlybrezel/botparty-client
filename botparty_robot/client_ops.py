@@ -25,6 +25,18 @@ except Exception:
 
 
 class ClientOpsMixin:
+    def _build_git_pull_argv(self) -> list[str]:
+        """Build git pull argv, optionally using an authenticated remote URL from env."""
+        remote_url = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
+        remote_ref = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_REF", "").strip()
+        if not remote_url:
+            return ["git", "pull", "--ff-only"]
+
+        argv = ["git", "pull", "--ff-only", remote_url]
+        if remote_ref:
+            argv.append(remote_ref)
+        return argv
+
     async def _supervisor(self) -> None:
         logger.info("Supervisor started")
         timeout_sec = self.config.safety.max_run_time_ms / 1000.0
@@ -505,7 +517,7 @@ class ClientOpsMixin:
 
         self._update_in_progress = True
         try:
-            await self._run_update_command(["git", "pull", "--ff-only"], "git pull --ff-only")
+            await self._run_update_command(self._build_git_pull_argv(), "git pull --ff-only")
             await self._run_update_command(
                 [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
                 "pip install -r requirements.txt",

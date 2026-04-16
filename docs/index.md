@@ -93,6 +93,7 @@ You should see output like:
 |---------|-------------|
 | [Installation](installation.md) | OS-specific install guide |
 | [Configuration](configuration.md) | Full `config.yaml` reference |
+| [Client mixins](client-mixins.md) | MRO, shared state, and concurrency model |
 | [Multi-camera](multi-camera.md) | Front/rear camera setups, good defaults, and practical tips |
 | [Hardware adapters](hardware/index.md) | Motor drivers, servo boards, serial, MQTT, custom |
 | [Video profiles](video/index.md) | Camera capture and streaming to LiveKit |

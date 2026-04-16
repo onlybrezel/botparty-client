@@ -276,6 +276,9 @@ tts:
 #   playback_device: "default"
 #   options:
 #     region_name: "us-east-1"
+#     # Optional secret files (safer than plaintext in config):
+#     # access_key_file: "/run/secrets/aws_access_key_id"
+#     # secret_key_file: "/run/secrets/aws_secret_access_key"
 #     robot_voice: "Joanna"    # run "aws polly describe-voices" for available voices
 
 # -- Google Cloud TTS (cloud, requires service-account JSON): -----------------
@@ -285,6 +288,8 @@ tts:
 #   playback_device: "default"
 #   options:
 #     key_file: "/home/pi/google-tts.json"
+#     # Alternative via environment:
+#     # GOOGLE_APPLICATION_CREDENTIALS_FILE=/run/secrets/google_tts_sa_json_path
 #     voice: "en-US-Neural2-F"
 
 
