@@ -7,7 +7,7 @@ REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 ACTIVE_VERSION_URL="${BOTPARTY_ACTIVE_VERSION_URL:-https://stats.botparty.live/get_active_version.php?app=streamer}"
 VERSION=""
 ARCH="auto"
-BASE_URL="${BOTPARTY_STREAMER_URL:-http://dl.botparty.live}"
+BASE_URL="${BOTPARTY_STREAMER_URL:-https://dl.botparty.live}"
 INSTALL_DIR="${BOTPARTY_STREAMER_DIR:-$REPO_DIR/.botparty/bin}"
 TARGET="$INSTALL_DIR/botparty-streamer"
 VERSION_FILE="$INSTALL_DIR/botparty-streamer.version"
@@ -34,7 +34,7 @@ fetch_active_version() {
 
 usage() {
   cat >&2 <<'EOF'
-usage: install-botparty-streamer.sh [version] [--arch amd64|arm64|arm|auto] [--dir <repo>/.botparty/bin] [--url http://dl.botparty.live]
+usage: install-botparty-streamer.sh [version] [--arch amd64|arm64|arm|auto] [--dir <repo>/.botparty/bin] [--url https://dl.botparty.live]
 
 Supported architectures:
   amd64   x86-64
@@ -110,8 +110,6 @@ case "$ARCH" in
     ;;
 esac
 
-ASSET="botparty-streamer-${VERSION}-${ASSET_ARCH}"
-URL="${BASE_URL%/}/${ASSET}"
 TARGET="$INSTALL_DIR/botparty-streamer"
 VERSION_FILE="$INSTALL_DIR/botparty-streamer.version"
 
@@ -125,8 +123,41 @@ if [[ -x "$TARGET" ]] && [[ -f "$VERSION_FILE" ]]; then
   fi
 fi
 
-echo "Downloading $URL"
-curl -fL "$URL" -o "$TARGET"
+asset_candidates=("botparty-streamer-${VERSION}-${ASSET_ARCH}")
+if [[ "$VERSION" == v* ]]; then
+  asset_candidates+=("botparty-streamer-${VERSION#v}-${ASSET_ARCH}")
+fi
+
+if [[ "$ASSET_ARCH" == "linux-arm64" ]]; then
+  asset_candidates+=("botparty-streamer-${VERSION}-linux-aarch64")
+  if [[ "$VERSION" == v* ]]; then
+    asset_candidates+=("botparty-streamer-${VERSION#v}-linux-aarch64")
+  fi
+fi
+
+download_errors=()
+download_ok="false"
+for asset_name in "${asset_candidates[@]}"; do
+  url="${BASE_URL%/}/${asset_name}"
+  echo "Downloading $url"
+  if curl -fsSL "$url" -o "$TARGET"; then
+    download_ok="true"
+    break
+  fi
+  download_errors+=("$url")
+done
+
+if [[ "$download_ok" != "true" ]]; then
+  echo "Failed to download botparty-streamer ${VERSION} for ${ASSET_ARCH}" >&2
+  if [[ ${#download_errors[@]} -gt 0 ]]; then
+    echo "Tried URLs:" >&2
+    for attempted_url in "${download_errors[@]}"; do
+      echo "  - $attempted_url" >&2
+    done
+  fi
+  exit 1
+fi
+
 chmod +x "$TARGET"
 printf '%s\n' "$VERSION" > "$VERSION_FILE"
 

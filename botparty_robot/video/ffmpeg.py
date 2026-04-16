@@ -7,6 +7,7 @@ import logging
 import os
 import shutil
 import subprocess
+from threading import Lock
 from pathlib import Path
 
 from .base import BaseVideoProfile
@@ -22,6 +23,10 @@ ACTIVE_STREAMER_VERSION_URL = "https://stats.botparty.live/get_active_version.ph
 
 class VideoProfile(BaseVideoProfile):
     profile_name = "ffmpeg"
+    _streamer_state_lock = Lock()
+    _cached_active_streamer_version: str | None = None
+    _active_streamer_version_resolved = False
+    _streamer_install_results: dict[str, bool] = {}
 
     def __init__(self, config) -> None:
         super().__init__(config)
@@ -52,16 +57,28 @@ class VideoProfile(BaseVideoProfile):
         return self.normalize_streamer_version(raw[0].strip())
 
     def _resolve_streamer_expected_version(self) -> str:
-        active = self._fetch_active_streamer_version()
-        if active:
+        with self._streamer_state_lock:
+            if self._active_streamer_version_resolved:
+                return self._cached_active_streamer_version or "v0.1.0"
+
+            active = self._fetch_active_streamer_version()
+            if not active:
+                active = "v0.1.0"
+                logger.warning(
+                    "Could not resolve active botparty-streamer version from stats endpoint, using fallback=%s",
+                    active,
+                )
+            self._cached_active_streamer_version = active
+            self._active_streamer_version_resolved = True
             return active
 
-        fallback = "v0.1.0"
-        logger.warning(
-            "Could not resolve active botparty-streamer version from stats endpoint, using fallback=%s",
-            fallback,
-        )
-        return fallback
+    def _cached_install_result(self, version: str) -> bool | None:
+        with self._streamer_state_lock:
+            return self._streamer_install_results.get(version)
+
+    def _set_cached_install_result(self, version: str, success: bool) -> None:
+        with self._streamer_state_lock:
+            self._streamer_install_results[version] = success
 
     def _resolve_streamer_binary_path(self) -> str | None:
         explicit = (
@@ -201,15 +218,28 @@ class VideoProfile(BaseVideoProfile):
         install_attempted = False
 
         if self._should_refresh_managed_streamer(streamer_binary):
-            install_attempted = True
-            if self._maybe_install_streamer_binary():
+            cached_result = self._cached_install_result(self._streamer_expected_version)
+            if cached_result is False:
+                logger.info(
+                    "botparty-streamer update for %s already failed earlier in this session; skipping retry",
+                    self._streamer_expected_version,
+                )
+            elif cached_result is True:
                 streamer_binary = self._resolve_streamer_binary_path()
                 healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
                 self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
-                if self._installed_streamer_version:
-                    logger.info("botparty-streamer updated to %s", self._installed_streamer_version)
             else:
-                logger.warning("botparty-streamer update/install failed; continuing with existing video path")
+                install_attempted = True
+                install_ok = self._maybe_install_streamer_binary()
+                self._set_cached_install_result(self._streamer_expected_version, install_ok)
+                if install_ok:
+                    streamer_binary = self._resolve_streamer_binary_path()
+                    healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
+                    self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
+                    if self._installed_streamer_version:
+                        logger.info("botparty-streamer updated to %s", self._installed_streamer_version)
+                else:
+                    logger.warning("botparty-streamer update/install failed; continuing with existing video path")
 
         if not healthy and not install_attempted:
             if not self._maybe_install_streamer_binary():
