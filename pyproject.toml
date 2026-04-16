@@ -1,0 +1,83 @@
+[build-system]
+requires = ["setuptools>=70", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+[project]
+name = "botparty-robot"
+version = "0.1.0-alpha"
+description = "BotParty Robot Client – connect your robot to the world"
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.10"
+dependencies = [
+    "livekit>=1.0.0",
+    "livekit-api>=1.0.0",
+    "aiohttp>=3.11.0",
+    "pyyaml>=6.0.2",
+    "pydantic>=2.10.0",
+]
+
+[project.optional-dependencies]
+# Vision / OpenCV-based video profiles
+vision = [
+    "opencv-python-headless>=4.10.0",
+    "numpy>=2.0.0",
+    "Pillow>=11.0.0",
+]
+# Hardware adapters that need additional libraries
+hardware = [
+    "pyserial>=3.5",
+    "paho-mqtt>=2.1.0",
+    "pyusb>=1.3.1",
+]
+# System telemetry
+telemetry = [
+    "psutil>=5.9.0",
+]
+# All optional extras
+all = [
+    "botparty-robot[vision,hardware,telemetry]",
+]
+# Development / testing
+dev = [
+    "pytest>=8.0",
+    "mypy>=1.10",
+]
+
+[project.scripts]
+botparty-robot = "botparty_robot.__main__:main"
+
+[project.urls]
+"Homepage" = "https://botparty.io"
+"Documentation" = "https://botparty.io/docs"
+"Source" = "https://github.com/botparty/botparty-client"
+"Bug Tracker" = "https://github.com/botparty/botparty-client/issues"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["botparty_robot*"]
+
+[tool.setuptools.package-data]
+"botparty_robot" = ["py.typed"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = [
+    "B008",   # do not perform function calls in default arguments
+    "SIM108", # ternary instead of if-else
+]
+
+[tool.ruff.lint.per-file-ignores]
+"botparty_robot/hardware/hardware_custom_example.py" = ["F401"]
+"hardware_custom.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.10"
+strict = false
+warn_unused_ignores = true
+warn_return_any = true
+ignore_missing_imports = true

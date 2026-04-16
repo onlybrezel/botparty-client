@@ -153,8 +153,10 @@ class CameraManager:
         self._configure_capture(cap, cv2)
 
         for _ in range(self.config.camera.warmup_frames):
-            with contextlib.suppress(Exception):
+            try:
                 cap.read()
+            except Exception as exc:
+                logger.debug("Camera warmup frame error (non-fatal): %s", exc)
 
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or self.config.camera.width
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or self.config.camera.height

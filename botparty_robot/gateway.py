@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import random
 import time
 from typing import Any, Callable, Coroutine, Optional
 
@@ -55,6 +56,16 @@ class GatewayConnection:
     @property
     def connected(self) -> bool:
         return self._connected
+
+    async def close(self) -> None:
+        """Close the active WebSocket connection immediately (for clean shutdown or restart)."""
+        ws = self._ws
+        self._connected = False
+        self._ws = None
+        if ws is not None:
+            import contextlib
+            with contextlib.suppress(Exception):
+                await ws.close()
 
     async def send_event(self, event: str, data: dict) -> bool:
         """Send an event over the active WebSocket. Returns False if not connected."""
@@ -129,7 +140,7 @@ class GatewayConnection:
                     await asyncio.sleep(delay)
             except Exception as e:
                 self._connected = False
-                delay = self._consume_reconnect_delay(default_delay=min(2 ** min(attempt, 6), 30))
+                delay = self._consume_reconnect_delay(default_delay=min(2 ** min(attempt, 6), 30) + random.uniform(0, 2))
                 logger.warning("Control websocket disconnected (%s); retrying in %ds", e, int(delay))
                 await asyncio.sleep(delay)
             finally:

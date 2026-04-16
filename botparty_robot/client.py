@@ -120,6 +120,7 @@ class BotPartyClient(
         self._last_heartbeat_stale_warning_at = 0.0
         self._last_telemetry_sent_at = 0.0
         self._last_cpu_sample: Optional[tuple[float, float]] = None
+        self._prime_cpu_sample()  # Read initial /proc/stat so first telemetry has a delta
 
         self._diag_handler = DiagnosticsBufferHandler(self._diag_buffer)
         self._diag_handler.setFormatter(

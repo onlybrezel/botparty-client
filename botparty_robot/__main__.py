@@ -1,6 +1,7 @@
 """Entry point for the BotParty robot client."""
 
 import asyncio
+import argparse
 import logging
 import os
 import secrets
@@ -46,6 +47,10 @@ def _apply_legacy_hardware_defaults(raw: dict[str, Any]) -> dict[str, Any]:
         return raw
 
     if controls.get("gpio_enabled"):
+        logger.warning(
+            "Deprecated config: top-level 'controls' section detected. "
+            "Migrate to 'hardware:' in your config.yaml. See config.example.yaml."
+        )
         raw["hardware"] = {
             "type": "l298n",
             "options": {
@@ -67,9 +72,17 @@ def _apply_legacy_video_defaults(raw: dict[str, Any]) -> dict[str, Any]:
 
     camera = raw.get("camera") or {}
     if not isinstance(camera, dict):
+        logger.warning(
+            "Deprecated config: top-level 'camera' section detected. "
+            "Migrate to 'video:' in your config.yaml. See config.example.yaml."
+        )
         raw["video"] = {"type": "opencv", "options": {}}
         return raw
 
+    logger.warning(
+        "Deprecated config: top-level 'camera' section detected. "
+        "Migrate to 'video:' in your config.yaml. See config.example.yaml."
+    )
     pipeline = str(camera.get("pipeline", "opencv")).strip().lower()
     mapping = {
         "opencv": "opencv",
@@ -139,9 +152,14 @@ def _apply_legacy_tts_defaults(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def load_config() -> RobotConfig:
-    config_path = Path("config.yaml")
+    return _load_config_from(None)
+
+
+def _load_config_from(path_override: str | None) -> RobotConfig:
+    env_path = os.environ.get("BOTPARTY_CONFIG")
+    config_path = Path(path_override or env_path or "config.yaml")
     if not config_path.exists():
-        logger.error("config.yaml not found. Copy config.example.yaml to config.yaml and edit it.")
+        logger.error("%s not found. Copy config.example.yaml and edit it.", config_path)
         sys.exit(1)
 
     with open(config_path) as f:
@@ -179,7 +197,10 @@ def load_config() -> RobotConfig:
 
 
 async def main() -> None:
-    config = load_config()
+    parser = argparse.ArgumentParser(description="BotParty Robot Client")
+    parser.add_argument("--config", metavar="PATH", help="Path to config YAML (overrides BOTPARTY_CONFIG env var)")
+    args = parser.parse_args()
+    config = _load_config_from(args.config)
 
     if config.server.claim_token == "PASTE_YOUR_CLAIM_TOKEN_HERE":
         logger.error("Please set your claim_token in config.yaml!")

@@ -16,6 +16,13 @@ import aiohttp
 from . import __version__
 from .client_state import LOCAL_GIT_STATUS_IGNORE_PATHS, TELEMETRY_INTERVAL_SEC, logger
 
+try:
+    import psutil as _psutil  # type: ignore
+    _PSUTIL_AVAILABLE = True
+except Exception:
+    _psutil = None  # type: ignore
+    _PSUTIL_AVAILABLE = False
+
 
 class ClientOpsMixin:
     async def _supervisor(self) -> None:
@@ -154,15 +161,14 @@ class ClientOpsMixin:
         }
         if streamer_version:
             payload["botpartyStreamerVersion"] = streamer_version
-        try:
-            import psutil  # type: ignore
-
-            payload["cpuPercent"] = float(psutil.cpu_percent(interval=None))
-            payload["memoryPercent"] = float(psutil.virtual_memory().percent)
-            boot_time = float(psutil.boot_time())
-            payload["uptimeSec"] = max(0, int(time.time() - boot_time))
-        except Exception:
-            pass
+        if _PSUTIL_AVAILABLE:
+            try:
+                payload["cpuPercent"] = float(_psutil.cpu_percent(interval=None))
+                payload["memoryPercent"] = float(_psutil.virtual_memory().percent)
+                boot_time = float(_psutil.boot_time())
+                payload["uptimeSec"] = max(0, int(time.time() - boot_time))
+            except Exception:
+                pass
 
         sent = await self._gateway.send_event("robot:telemetry", payload)
         if not sent:
@@ -200,6 +206,17 @@ class ClientOpsMixin:
                 return max(0, int(float(fh.read().split()[0])))
         except Exception:
             return None
+
+    def _prime_cpu_sample(self) -> None:
+        try:
+            with open("/proc/stat", encoding="utf-8") as fh:
+                parts = fh.readline().split()
+            if len(parts) < 5 or parts[0] != "cpu":
+                return
+            values = [float(v) for v in parts[1:]]
+            self._last_cpu_sample = (values[3], sum(values))
+        except Exception:
+            pass
 
     def _read_cpu_percent(self) -> Optional[float]:
         try:
@@ -528,4 +545,11 @@ class ClientOpsMixin:
                 await self._http_session.close()
 
         await self._trigger_hardware_stop("process_restart")
+
+        with contextlib.suppress(Exception):
+            await asyncio.wait_for(self._gateway.close(), timeout=2)
+
+        # Brief pause to let the event loop flush any final callbacks
+        await asyncio.sleep(0.1)
+
         os.execv(sys.executable, [sys.executable, "-m", "botparty_robot"])

@@ -228,10 +228,18 @@ class VideoProfile(BaseVideoProfile):
             return 5004
 
         base = int(self.options.get("publisher_tcp_port_base", 5600))
-        slot = (zlib.crc32(camera_id.encode("utf-8")) % 200) + 1
+        # Use the lower 10 bits of the CRC32 hash to distribute across 1024 slots.
+        # CRC32 has good uniformity for short strings; with up to ~16 cameras the
+        # collision probability is negligible (birthday bound ~2%).  If an exact
+        # port conflicts, set video.options.publisher_tcp_port explicitly.
+        slot = (zlib.crc32(camera_id.encode("utf-8")) & 0x3FF) + 1
         return base + slot
 
     def _decode_token_payload(self, token: str) -> dict[str, object]:
+        # Note: this decodes the JWT payload WITHOUT signature verification.
+        # The token is not used for authentication here — it is verified by the
+        # LiveKit server when the publisher connects. We only extract the
+        # identity/room fields so the Go streamer can be configured correctly.
         parts = token.split(".")
         if len(parts) < 2:
             return {}
@@ -263,6 +271,9 @@ class VideoProfile(BaseVideoProfile):
         return identity or f"robot-{self._camera_id()}", room
 
     def _build_ffmpeg_command(self, port: int, target_bitrate_kbps: int | None) -> list[str]:
+        device = str(self.camera.device)
+        if "\x00" in device or "\n" in device or "\r" in device:
+            raise ValueError(f"Camera device path contains invalid characters: {device!r}")
         width = int(self.camera.width)
         height = int(self.camera.height)
         input_fps = max(1, int(self.camera.fps))
@@ -319,7 +330,7 @@ class VideoProfile(BaseVideoProfile):
                 "-use_wallclock_as_timestamps",
                 "1",
                 "-i",
-                str(self.camera.device),
+                device,
                 "-an",
                 "-fps_mode",
                 "passthrough",
