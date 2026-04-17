@@ -39,7 +39,7 @@ CURRENT_USER="$(id -un)"
 INSTALL_USER="$CURRENT_USER"
 REPO_URL="https://github.com/onlybrezel/botparty-client"
 BRANCH=""
-if [[ -f "$SCRIPT_REPO_DIR/requirements.txt" ]] && [[ -d "$SCRIPT_REPO_DIR/botparty_robot" ]]; then
+if [[ -f "$SCRIPT_REPO_DIR/pyproject.toml" ]] && [[ -d "$SCRIPT_REPO_DIR/botparty_robot" ]]; then
   REPO_DIR="$SCRIPT_REPO_DIR"
 else
   REPO_DIR="/home/$CURRENT_USER/botparty-client"
@@ -229,7 +229,7 @@ install_missing_apt_packages() {
 }
 
 ensure_repo_present() {
-  if [[ -d "$REPO_DIR/.git" ]] && [[ -f "$REPO_DIR/requirements.txt" ]] && [[ -d "$REPO_DIR/botparty_robot" ]]; then
+  if [[ -d "$REPO_DIR/.git" ]] && [[ -f "$REPO_DIR/pyproject.toml" ]] && [[ -d "$REPO_DIR/botparty_robot" ]]; then
     return
   fi
 
@@ -298,7 +298,7 @@ echo "==> Creating Python virtualenv"
 
 echo "==> Installing Python dependencies"
 "$VENV_DIR/bin/pip" install --upgrade pip
-"$VENV_DIR/bin/pip" install -r "$REPO_DIR/requirements.txt"
+(cd "$REPO_DIR" && "$VENV_DIR/bin/pip" install -e ".[all]")
 
 if [[ ! -f "$REPO_DIR/config.yaml" ]] || [[ "$OVERWRITE_CONFIG" == "true" ]]; then
   echo "==> Writing config.yaml from config.example.yaml"

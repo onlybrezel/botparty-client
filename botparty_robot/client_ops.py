@@ -8,6 +8,7 @@ import os
 import subprocess
 import sys
 import time
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Optional
 
@@ -24,7 +25,34 @@ except Exception:
     _PSUTIL_AVAILABLE = False
 
 
+@dataclass(slots=True)
+class AuthResult:
+    token: str | None
+    robot_id: str | None
+    livekit_url: str | None
+    ingress: dict[str, object] | None
+    publish_tokens: dict[str, str]
+    robot_auth_token: str | None
+
+
 class ClientOpsMixin:
+    def _mask_remote_url(self, value: str) -> str:
+        if "://" not in value or "@" not in value:
+            return value
+
+        scheme, rest = value.split("://", 1)
+        credentials, tail = rest.split("@", 1)
+        if not credentials:
+            return value
+        return f"{scheme}://***@{tail}"
+
+    def _sanitize_update_log_line(self, line: str) -> str:
+        remote_url = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
+        if not remote_url:
+            return line
+
+        return line.replace(remote_url, self._mask_remote_url(remote_url))
+
     def _build_git_pull_argv(self) -> list[str]:
         """Build git pull argv, optionally using an authenticated remote URL from env."""
         remote_url = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
@@ -363,14 +391,7 @@ class ClientOpsMixin:
 
     async def _authenticate(
         self,
-    ) -> tuple[
-        Optional[str],
-        Optional[str],
-        Optional[str],
-        Optional[dict[str, object]],
-        dict[str, str],
-        Optional[str],
-    ]:
+    ) -> AuthResult:
         try:
             publish_camera_ids = (
                 [runtime.camera_id for runtime in self._camera_runtimes]
@@ -396,13 +417,13 @@ class ClientOpsMixin:
                         resp.status,
                         location,
                     )
-                    return None, None, None, None, {}, None
+                    return AuthResult(None, None, None, None, {}, None)
                 if resp.status not in (200, 201):
                     text = await resp.text()
                     logger.error("Claim failed (%d): %s", resp.status, text)
                     if resp.status == 404 and self.config.server.api_url.startswith("http://"):
                         logger.error("Hint: try https:// if your server has SSL enabled")
-                        return None, None, None, None, {}, None
+                        return AuthResult(None, None, None, None, {}, None)
 
                 data = await resp.json()
                 stream = data.get("stream") if isinstance(data, dict) else None
@@ -437,7 +458,7 @@ class ClientOpsMixin:
                     else {}
                 )
                 robot_auth_token = data.get("robotAuthToken")
-                return (
+                return AuthResult(
                     data.get("token"),
                     data.get("robotId"),
                     livekit_url,
@@ -447,7 +468,7 @@ class ClientOpsMixin:
                 )
         except Exception as e:
             logger.error("Authentication error: %s", e)
-            return None, None, None, None, {}, None
+            return AuthResult(None, None, None, None, {}, None)
 
     def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
         if not (self._repo_root / ".git").exists():
@@ -502,7 +523,7 @@ class ClientOpsMixin:
         output = stdout.decode("utf-8", errors="replace").strip() if stdout else ""
         if output:
             for line in output.splitlines()[-20:]:
-                logger.info("%s: %s", label, line)
+                logger.info("%s: %s", label, self._sanitize_update_log_line(line))
         if process.returncode != 0:
             raise RuntimeError(f"{label} failed with exit code {process.returncode}")
 
@@ -519,8 +540,8 @@ class ClientOpsMixin:
         try:
             await self._run_update_command(self._build_git_pull_argv(), "git pull --ff-only")
             await self._run_update_command(
-                [sys.executable, "-m", "pip", "install", "-r", "requirements.txt"],
-                "pip install -r requirements.txt",
+                [sys.executable, "-m", "pip", "install", "-e", ".[all]"],
+                "pip install -e .[all]",
             )
             (
                 self._client_git_branch,

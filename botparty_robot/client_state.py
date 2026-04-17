@@ -7,10 +7,13 @@ import logging
 import time
 from collections import deque
 from dataclasses import dataclass, field
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from .camera import CameraManager
 from .config import RobotConfig
+
+if TYPE_CHECKING:
+    from .publisher import LiveKitPublisherManager
 
 logger = logging.getLogger("botparty.client")
 _SUPPRESS_LIVEKIT_NOISE_UNTIL = 0.0
@@ -56,9 +59,11 @@ def should_emit_runtime_log(record: logging.LogRecord) -> bool:
 
 
 class DiagnosticsBufferHandler(logging.Handler):
-    def __init__(self, storage: deque[str]) -> None:
+    def __init__(self, storage: deque[str], default_maxlen: int = 1000) -> None:
         super().__init__(level=logging.INFO)
-        self.storage = storage
+        self.storage = (
+            storage if storage.maxlen is not None else deque(storage, maxlen=default_maxlen)
+        )
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -87,7 +92,7 @@ class CameraRuntime:
     publish_mode: str
     config: RobotConfig
     video_profile: Any
-    manager: CameraManager
+    manager: CameraManager | LiveKitPublisherManager
     include_audio: bool = False
     task: Optional[asyncio.Task] = None
     restart_count: int = 0

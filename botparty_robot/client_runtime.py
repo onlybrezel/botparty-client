@@ -23,32 +23,25 @@ class ClientLifecycleMixin:
     async def run(self) -> None:
         self._running = True
         while self._running:
-            (
-                token,
-                robot_id,
-                livekit_url,
-                _ingress_info,
-                publish_tokens,
-                robot_auth_token,
-            ) = await self._authenticate()
-            if not robot_id or not token:
+            auth = await self._authenticate()
+            if not auth.robot_id or not auth.token:
                 logger.error("Authentication failed. Retrying in 5s.")
                 await asyncio.sleep(5)
                 continue
 
-            self._robot_id = robot_id
-            self._livekit_publish_token = token
-            self._livekit_publish_tokens = publish_tokens
-            self.config.server.robot_auth_token = robot_auth_token
-            if livekit_url and livekit_url != self.config.server.livekit_url:
-                logger.info("Using LiveKit URL from claim response: %s", livekit_url)
-                self.config.server.livekit_url = livekit_url
-            logger.info("Authenticated as robot %s", robot_id)
+            self._robot_id = auth.robot_id
+            self._livekit_publish_token = auth.token
+            self._livekit_publish_tokens = auth.publish_tokens
+            self.config.server.robot_auth_token = auth.robot_auth_token
+            if auth.livekit_url and auth.livekit_url != self.config.server.livekit_url:
+                logger.info("Using LiveKit URL from claim response: %s", auth.livekit_url)
+                self.config.server.livekit_url = auth.livekit_url
+            logger.info("Authenticated as robot %s", auth.robot_id)
 
             if self._uses_direct_livekit_publisher():
                 await self._connect_direct_livekit()
             else:
-                await self._connect(token)
+                await self._connect(auth.token)
 
             if not self._running:
                 break

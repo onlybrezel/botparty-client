@@ -47,7 +47,7 @@ cd botparty-client
 python3 -m venv .venv
 source .venv/bin/activate
 
-pip install -r requirements.txt
+pip install -e ".[all]"
 ```
 
 Alternative without `venv`:
@@ -56,7 +56,7 @@ Alternative without `venv`:
 git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 
-python3 -m pip install --break-system-packages -r requirements.txt
+python3 -m pip install --break-system-packages -e ".[all]"
 ```
 
 Notes:
@@ -67,7 +67,7 @@ Notes:
 
 ### 3. Optional extras
 
-All core dependencies (opencv, pyserial, paho-mqtt, etc.) are already in `requirements.txt` and installed in the step above. The only extras you need to install manually are cloud TTS engines:
+All core dependencies (opencv, pyserial, paho-mqtt, psutil, etc.) are installed from `pyproject.toml` via `.[all]`. The only extras you need to install manually are cloud TTS engines:
 
 | Extra | Command | Needed for |
 |-------|---------|-----------|
@@ -166,7 +166,7 @@ JetPack includes Python 3.8 by default; you need 3.10+.
 sudo apt install -y python3.10 python3.10-venv
 python3.10 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[all]"
 ```
 
 For camera capture use the `ffmpeg` video profile with `input_driver: v4l2`. The `ffmpeg_libcamera` profile is Raspberry Pi-specific.
@@ -183,7 +183,7 @@ git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[all]"
 ```
 
 ---

@@ -27,6 +27,7 @@ logging.basicConfig(
     datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger("botparty")
+SHUTDOWN_TIMEOUT_SECONDS = 15.0
 
 
 class PlannedReconnectNoiseFilter(logging.Filter):
@@ -155,6 +156,17 @@ def load_config() -> RobotConfig:
     return _load_config_from(None)
 
 
+async def _shutdown_with_timeout(client: BotPartyClient, main_task: asyncio.Task[None]) -> None:
+    try:
+        await asyncio.wait_for(client.shutdown(), timeout=SHUTDOWN_TIMEOUT_SECONDS)
+    except asyncio.TimeoutError:
+        logger.error(
+            "Shutdown timed out after %.1fs; forcing event loop cancellation",
+            SHUTDOWN_TIMEOUT_SECONDS,
+        )
+        main_task.cancel()
+
+
 def _load_config_from(path_override: str | None) -> RobotConfig:
     env_path = os.environ.get("BOTPARTY_CONFIG")
     config_path = Path(path_override or env_path or "config.yaml")
@@ -230,10 +242,26 @@ async def main() -> None:
 
     # Graceful shutdown
     loop = asyncio.get_running_loop()
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        loop.add_signal_handler(sig, lambda: asyncio.create_task(client.shutdown()))
+    main_task = asyncio.current_task()
+    if main_task is None:
+        raise RuntimeError("main task is not available")
+    shutdown_task: asyncio.Task[None] | None = None
 
-    await client.run()
+    def request_shutdown() -> None:
+        nonlocal shutdown_task
+        if shutdown_task is not None and not shutdown_task.done():
+            return
+        shutdown_task = asyncio.create_task(_shutdown_with_timeout(client, main_task))
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        loop.add_signal_handler(sig, request_shutdown)
+
+    try:
+        await client.run()
+    except asyncio.CancelledError:
+        if shutdown_task is not None and shutdown_task.done():
+            return
+        raise
 
 
 if __name__ == "__main__":

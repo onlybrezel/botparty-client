@@ -36,7 +36,7 @@ cd botparty-client
 # Python 3.10+ required
 python3 -m venv .venv
 source .venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[all]"
 ```
 
 If you prefer to run without `venv`, see [Installation](installation.md) for the system-Python variant as well.

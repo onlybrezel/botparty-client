@@ -19,11 +19,22 @@ from .tts import create_tts_profile
 
 
 class ClientCommandsMixin:
+    def _start_background_task(self, coro: asyncio.Future[object] | asyncio.coroutines.Coroutine[object, object, object], name: str) -> None:
+        task = asyncio.create_task(coro)
+
+        def _log_task_result(done: asyncio.Task[object]) -> None:
+            with contextlib.suppress(asyncio.CancelledError):
+                exc = done.exception()
+                if exc is not None:
+                    logger.warning("Background task %s failed: %s", name, exc)
+
+        task.add_done_callback(_log_task_result)
+
     def _is_motion_command(self, command: str) -> bool:
         return command in {"forward", "backward", "left", "right"}
 
     def _on_gateway_emergency_stop(self) -> None:
-        asyncio.create_task(self._trigger_hardware_stop("gateway_emergency_stop"))
+        self._start_background_task(self._trigger_hardware_stop("gateway_emergency_stop"), "gateway_emergency_stop")
 
     async def _tts_loop(self) -> None:
         while self._running:
@@ -154,7 +165,7 @@ class ClientCommandsMixin:
         logger.debug("CMD[%s]: %s=%s metadata=%s (latency: %.0fms)", source, command, value, metadata, latency_ms)
         normalized_command = command.strip().lower()
         if normalized_command == "stop":
-            asyncio.create_task(self._trigger_hardware_stop("stop_command"))
+            self._start_background_task(self._trigger_hardware_stop("stop_command"), "stop_command")
             return
 
         motion_command_id: int | None = None
@@ -162,14 +173,15 @@ class ClientCommandsMixin:
             self._latest_motion_command_id += 1
             motion_command_id = self._latest_motion_command_id
 
-        asyncio.create_task(
+        self._start_background_task(
             self._run_hardware_command(
                 command,
                 value,
                 metadata,
                 motion_command_id=motion_command_id,
                 safety_epoch=self._hardware_safety_epoch,
-            )
+            ),
+            f"hardware_command:{normalized_command}",
         )
 
     async def _run_hardware_command(

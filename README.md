@@ -51,7 +51,7 @@ python3 -m venv .venv
 source .venv/bin/activate
 
 # 2) Install dependencies
-pip install -r requirements.txt
+pip install -e ".[all]"
 
 # 3) Create config
 cp config.example.yaml config.yaml
@@ -65,7 +65,7 @@ Without `venv`, you can also install and run it directly with system Python:
 ```bash
 git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
-python3 -m pip install --break-system-packages -r requirements.txt
+python3 -m pip install --break-system-packages -e ".[all]"
 cp config.example.yaml config.yaml
 python3 -m botparty_robot
 ```
