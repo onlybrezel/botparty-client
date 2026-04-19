@@ -36,6 +36,49 @@ class AuthResult:
 
 
 class ClientOpsMixin:
+    def _env_bool(self, name: str, default: bool) -> bool:
+        raw = os.getenv(name)
+        if raw is None:
+            return default
+        normalized = raw.strip().lower()
+        if normalized in {"1", "true", "yes", "on"}:
+            return True
+        if normalized in {"0", "false", "no", "off"}:
+            return False
+        return default
+
+    def _allowed_update_remotes(self) -> list[str]:
+        raw = os.getenv("BOTPARTY_CLIENT_UPDATE_ALLOWED_REMOTES", "").strip()
+        if not raw:
+            return [
+                "https://github.com/onlybrezel/botparty-client.git",
+                "git@github.com:onlybrezel/botparty-client.git",
+            ]
+        return [entry.strip() for entry in raw.split(",") if entry.strip()]
+
+    def _is_allowed_update_remote(self, remote_url: str) -> bool:
+        allowed = self._allowed_update_remotes()
+        if not allowed:
+            return False
+        return any(remote_url == entry for entry in allowed)
+
+    async def _read_git_head_commit(self) -> str | None:
+        process = await asyncio.create_subprocess_exec(
+            "git",
+            "rev-parse",
+            "HEAD",
+            cwd=str(self._repo_root),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.STDOUT,
+        )
+        stdout, _ = await process.communicate()
+        if process.returncode != 0:
+            return None
+        if not stdout:
+            return None
+        head = stdout.decode("utf-8", errors="replace").strip()
+        return head or None
+
     def _mask_remote_url(self, value: str) -> str:
         if "://" not in value or "@" not in value:
             return value
@@ -532,13 +575,33 @@ class ClientOpsMixin:
             logger.info("Client update already in progress - ignoring duplicate action")
             return
 
+        if self._env_bool("BOTPARTY_DISABLE_REMOTE_UPDATE", False):
+            logger.warning("Skipping update_client: remote updates disabled by BOTPARTY_DISABLE_REMOTE_UPDATE")
+            return
+
         if not (self._repo_root / ".git").exists():
             logger.warning("Skipping update_client: repository is not a git checkout at %s", self._repo_root)
             return
 
+        configured_remote = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
+        if configured_remote and not self._is_allowed_update_remote(configured_remote):
+            logger.error(
+                "Skipping update_client: BOTPARTY_CLIENT_UPDATE_REMOTE_URL is not allowlisted (%s)",
+                self._mask_remote_url(configured_remote),
+            )
+            return
+
         self._update_in_progress = True
+        snapshot_commit: str | None = None
         try:
+            snapshot_commit = await self._read_git_head_commit()
+
             await self._run_update_command(self._build_git_pull_argv(), "git pull --ff-only")
+            if self._env_bool("BOTPARTY_CLIENT_UPDATE_VERIFY_SIGNATURE", True):
+                await self._run_update_command(
+                    ["git", "verify-commit", "HEAD"],
+                    "git verify-commit HEAD",
+                )
             await self._run_update_command(
                 [sys.executable, "-m", "pip", "install", "-e", ".[all]"],
                 "pip install -e .[all]",
@@ -558,6 +621,13 @@ class ClientOpsMixin:
             await self._restart_process_after_update()
         except Exception as exc:
             logger.error("Client update failed: %s", exc)
+            if snapshot_commit:
+                with contextlib.suppress(Exception):
+                    await self._run_update_command(
+                        ["git", "reset", "--hard", snapshot_commit],
+                        f"git reset --hard {snapshot_commit[:12]}",
+                    )
+                    logger.warning("Rolled back failed client update to snapshot %s", snapshot_commit[:12])
         finally:
             self._update_in_progress = False
 

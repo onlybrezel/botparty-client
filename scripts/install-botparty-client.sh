@@ -303,6 +303,7 @@ echo "==> Installing Python dependencies"
 if [[ ! -f "$REPO_DIR/config.yaml" ]] || [[ "$OVERWRITE_CONFIG" == "true" ]]; then
   echo "==> Writing config.yaml from config.example.yaml"
   cp "$REPO_DIR/config.example.yaml" "$REPO_DIR/config.yaml"
+  chmod 600 "$REPO_DIR/config.yaml"
 fi
 
 if [[ "$WITH_STREAMER" == "true" ]]; then

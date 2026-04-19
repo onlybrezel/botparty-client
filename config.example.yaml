@@ -1,6 +1,11 @@
 # BotParty Robot Client - Configuration File
 # ============================================
 #
+# SECURITY: This file contains your claim_token which acts like a password.
+#   After creating config.yaml, restrict its permissions:
+#     chmod 600 config.yaml
+#   Never commit this file to version control or share it publicly.
+#
 # QUICK START:
 #   1. Set server.claim_token  (copy it from the BotParty web dashboard)
 #   2. Set server.api_url      (address of your BotParty server)
@@ -20,7 +25,8 @@ server:
   livekit_url: "wss://botparty.live/rtc"
 
   # Your robot's claim token from the BotParty dashboard.
-  # Treat this like a password - do not share it publicly.
+  # SENSITIVE: treat this like a password - do not share or commit it.
+  # Protect with: chmod 600 config.yaml
   claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
 
 

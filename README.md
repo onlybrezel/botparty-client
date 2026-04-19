@@ -55,6 +55,7 @@ pip install -e ".[all]"
 
 # 3) Create config
 cp config.example.yaml config.yaml
+chmod 600 config.yaml  # claim_token is sensitive — restrict file permissions
 
 # 4) Run
 python -m botparty_robot
@@ -67,6 +68,7 @@ git clone https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 python3 -m pip install --break-system-packages -e ".[all]"
 cp config.example.yaml config.yaml
+chmod 600 config.yaml  # claim_token is sensitive — restrict file permissions
 python3 -m botparty_robot
 ```
 

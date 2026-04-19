@@ -28,6 +28,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger("botparty")
 SHUTDOWN_TIMEOUT_SECONDS = 15.0
+LEGACY_CONFIG_DEPRECATION_DEADLINE = "2026-09-01"
 
 
 class PlannedReconnectNoiseFilter(logging.Filter):
@@ -39,6 +40,16 @@ for handler in logging.getLogger().handlers:
     handler.addFilter(PlannedReconnectNoiseFilter())
 
 
+def _warn_legacy_config(section: str, target: str) -> None:
+    logger.warning(
+        "Deprecated config: top-level '%s' section detected. Migrate to '%s' in config.yaml. "
+        "Legacy support will be removed after %s. See config.example.yaml.",
+        section,
+        target,
+        LEGACY_CONFIG_DEPRECATION_DEADLINE,
+    )
+
+
 def _apply_legacy_hardware_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     if "hardware" in raw:
         return raw
@@ -48,10 +59,7 @@ def _apply_legacy_hardware_defaults(raw: dict[str, Any]) -> dict[str, Any]:
         return raw
 
     if controls.get("gpio_enabled"):
-        logger.warning(
-            "Deprecated config: top-level 'controls' section detected. "
-            "Migrate to 'hardware:' in your config.yaml. See config.example.yaml."
-        )
+        _warn_legacy_config("controls", "hardware")
         raw["hardware"] = {
             "type": "l298n",
             "options": {
@@ -73,17 +81,11 @@ def _apply_legacy_video_defaults(raw: dict[str, Any]) -> dict[str, Any]:
 
     camera = raw.get("camera") or {}
     if not isinstance(camera, dict):
-        logger.warning(
-            "Deprecated config: top-level 'camera' section detected. "
-            "Migrate to 'video:' in your config.yaml. See config.example.yaml."
-        )
+        _warn_legacy_config("camera", "video")
         raw["video"] = {"type": "opencv", "options": {}}
         return raw
 
-    logger.warning(
-        "Deprecated config: top-level 'camera' section detected. "
-        "Migrate to 'video:' in your config.yaml. See config.example.yaml."
-    )
+    _warn_legacy_config("camera", "video")
     pipeline = str(camera.get("pipeline", "opencv")).strip().lower()
     mapping = {
         "opencv": "opencv",
