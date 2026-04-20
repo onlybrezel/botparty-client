@@ -100,6 +100,45 @@ def test_load_config_allows_claim_token_env_override(monkeypatch, tmp_path: Path
     assert config.server.livekit_url == "wss://botparty.live"
 
 
+def test_load_config_defaults_video_to_ffmpeg_when_video_block_is_missing(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "server:\n"
+        '  api_url: "https://botparty.live"\n'
+        '  livekit_url: "wss://botparty.live"\n'
+        '  claim_token: "from-file"\n'
+        "camera:\n"
+        '  device: "/dev/video0"\n'
+        "hardware:\n"
+        '  type: "none"\n',
+        encoding="utf-8",
+    )
+
+    config = _load_config_from(str(config_path))
+
+    assert config.video.type == "ffmpeg"
+
+
+def test_load_config_maps_legacy_camera_pipeline_to_video_type(tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "server:\n"
+        '  api_url: "https://botparty.live"\n'
+        '  livekit_url: "wss://botparty.live"\n'
+        '  claim_token: "from-file"\n'
+        "camera:\n"
+        '  device: "/dev/video0"\n'
+        '  pipeline: "libcamera"\n'
+        "hardware:\n"
+        '  type: "none"\n',
+        encoding="utf-8",
+    )
+
+    config = _load_config_from(str(config_path))
+
+    assert config.video.type == "ffmpeg_libcamera"
+
+
 def test_trigger_hardware_stop_applies_emergency_stop_safely() -> None:
     async def _scenario() -> None:
         dummy = _DummyCommands()

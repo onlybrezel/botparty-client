@@ -80,20 +80,21 @@ def _apply_legacy_video_defaults(raw: dict[str, Any]) -> dict[str, Any]:
         return raw
 
     camera = raw.get("camera") or {}
-    if not isinstance(camera, dict):
-        _warn_legacy_config("camera", "video")
-        raw["video"] = {"type": "opencv", "options": {}}
-        return raw
+    if isinstance(camera, dict):
+        pipeline_raw = camera.get("pipeline")
+        if isinstance(pipeline_raw, str) and pipeline_raw.strip():
+            _warn_legacy_config("camera.pipeline", "video.type")
+            pipeline = pipeline_raw.strip().lower()
+            mapping = {
+                "opencv": "opencv",
+                "ffmpeg": "ffmpeg",
+                "libcamera": "ffmpeg_libcamera",
+                "ffmpeg-libcamera": "ffmpeg_libcamera",
+            }
+            raw["video"] = {"type": mapping.get(pipeline, pipeline), "options": {}}
+            return raw
 
-    _warn_legacy_config("camera", "video")
-    pipeline = str(camera.get("pipeline", "opencv")).strip().lower()
-    mapping = {
-        "opencv": "opencv",
-        "ffmpeg": "ffmpeg",
-        "libcamera": "ffmpeg_libcamera",
-        "ffmpeg-libcamera": "ffmpeg_libcamera",
-    }
-    raw["video"] = {"type": mapping.get(pipeline, pipeline), "options": {}}
+    raw["video"] = {"type": "ffmpeg", "options": {}}
     return raw
 
 
