@@ -17,9 +17,38 @@ from .client_state import (
 from .config import normalize_cameras
 from .publisher import LiveKitPublisherManager
 from .video import create_video_profile
+from .video.base import BaseVideoProfile
 
 
 class ClientMediaMixin:
+    def _build_initial_camera_runtime_state(
+        self,
+    ) -> tuple[
+        list[CameraRuntime],
+        str,
+        CameraManager | LiveKitPublisherManager,
+        BaseVideoProfile,
+    ]:
+        camera_runtimes = self._build_camera_runtimes()
+        if camera_runtimes:
+            primary_runtime = next(
+                (
+                    runtime
+                    for runtime in camera_runtimes
+                    if runtime.role.strip().lower() == "primary"
+                ),
+                camera_runtimes[0],
+            )
+            return (
+                camera_runtimes,
+                primary_runtime.camera_id,
+                primary_runtime.manager,
+                primary_runtime.video_profile,
+            )
+
+        video_profile = create_video_profile(self.config)
+        return [], "front", CameraManager(self.config, video_profile), video_profile
+
     def _uses_direct_livekit_publisher(self) -> bool:
         return bool(self._camera_runtimes) and all(
             runtime.video_profile.publish_transport() == "livekit_direct"

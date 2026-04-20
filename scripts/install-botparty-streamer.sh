@@ -47,7 +47,7 @@ If no version is given, active version is fetched from:
 
 Examples:
   ./scripts/install-botparty-streamer.sh
-  ./scripts/install-botparty-streamer.sh v0.1.0 --arch arm64
+  ./scripts/install-botparty-streamer.sh v0.1.3 --arch arm64
   ./scripts/install-botparty-streamer.sh --arch arm --dir ./custom-bin
 EOF
 }
@@ -86,7 +86,7 @@ if [[ -z "$VERSION" ]]; then
   VERSION="$(fetch_active_version || true)"
 fi
 if [[ -z "$VERSION" ]]; then
-  VERSION="v0.1.0"
+  VERSION="v0.1.3"
   echo "Warning: could not fetch active streamer version, falling back to $VERSION" >&2
 fi
 

@@ -16,6 +16,7 @@ import aiohttp
 
 from . import __version__
 from .client_state import LOCAL_GIT_STATUS_IGNORE_PATHS, TELEMETRY_INTERVAL_SEC, logger
+from .ws_protocol import WS_EVENTS
 
 try:
     import psutil as _psutil  # type: ignore
@@ -186,7 +187,7 @@ class ClientOpsMixin:
         while self._running:
             try:
                 sent = await self._gateway.send_event(
-                    "robot:heartbeat", {"robotId": self._robot_id}
+                    WS_EVENTS["ROBOT_HEARTBEAT"], {"robotId": self._robot_id}
                 )
                 if sent:
                     self.stats.last_heartbeat_at = time.time()
@@ -253,7 +254,7 @@ class ClientOpsMixin:
             except Exception:
                 pass
 
-        sent = await self._gateway.send_event("robot:telemetry", payload)
+        sent = await self._gateway.send_event(WS_EVENTS["ROBOT_TELEMETRY"], payload)
         if not sent:
             session = self._get_session()
             headers = {"Content-Type": "application/json"}

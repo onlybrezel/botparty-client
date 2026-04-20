@@ -1,158 +1,234 @@
-"""Unit tests for gateway connection logic."""
-
 import asyncio
 import json
-from unittest.mock import AsyncMock, MagicMock, patch
-import pytest
+from types import SimpleNamespace
 
+import aiohttp
+
+from botparty_robot.config import RobotConfig, ServerConfig
 from botparty_robot.gateway import GatewayConnection
-from botparty_robot.client_state import ClientState
 
 
-@pytest.fixture
-async def gateway_connection():
-    """Create a gateway connection for testing."""
-    conn = GatewayConnection(
-        robot_id="test-robot-id",
-        robot_token="test-token",
-        gateway_url="ws://localhost:8080/ws",
-        on_action=AsyncMock(),
-        on_disconnect=AsyncMock(),
-    )
-    yield conn
-    # Cleanup
-    if conn.connected:
-        await conn.disconnect()
+async def _async_noop(_payload: dict) -> None:
+    return None
 
 
-@pytest.mark.asyncio
-async def test_gateway_connection_init(gateway_connection):
-    """Test gateway connection initialization."""
-    assert gateway_connection.robot_id == "test-robot-id"
-    assert gateway_connection.robot_token == "test-token"
-    assert gateway_connection.gateway_url == "ws://localhost:8080/ws"
-    assert not gateway_connection.connected
-
-
-@pytest.mark.asyncio
-async def test_gateway_connection_disconnect_idempotent(gateway_connection):
-    """Test that disconnect can be called multiple times safely."""
-    # Should not raise, even if not connected
-    await gateway_connection.disconnect()
-    await gateway_connection.disconnect()  # Second call should be safe
-
-
-@pytest.mark.asyncio
-async def test_gateway_send_event(gateway_connection):
-    """Test sending an event through gateway."""
-    # Mock the WebSocket connection
-    gateway_connection._ws = AsyncMock()
-    gateway_connection._ws.send = AsyncMock()
-    gateway_connection._connected = True
-
-    await gateway_connection.send_event("control", {"command": "forward", "value": 100})
-
-    # Verify the event was sent
-    gateway_connection._ws.send.assert_called_once()
-    call_args = gateway_connection._ws.send.call_args[0][0]
-    sent_data = json.loads(call_args)
-    assert sent_data["event"] == "control"
-    assert sent_data["data"]["command"] == "forward"
-
-
-@pytest.mark.asyncio
-async def test_gateway_heartbeat():
-    """Test gateway heartbeat mechanism."""
-    conn = GatewayConnection(
-        robot_id="test-robot",
-        robot_token="test-token",
-        gateway_url="ws://localhost:8080/ws",
-        on_action=AsyncMock(),
-        on_disconnect=AsyncMock(),
-        heartbeat_interval_s=0.1,  # Short interval for testing
+def _build_config(api_url: str = "https://botparty.live/api/v1") -> RobotConfig:
+    return RobotConfig(
+        server=ServerConfig(
+            api_url=api_url,
+            claim_token="claim-token",
+            robot_auth_token="robot-token",
+        )
     )
 
-    conn._ws = AsyncMock()
-    conn._ws.send = AsyncMock()
-    conn._connected = True
 
-    # Start heartbeat
-    task = asyncio.create_task(conn._heartbeat_loop())
-
-    # Wait for at least one heartbeat
-    await asyncio.sleep(0.2)
-
-    # Cleanup
-    task.cancel()
-    try:
-        await task
-    except asyncio.CancelledError:
-        pass
-
-    # Verify heartbeat was sent (should have at least 1 or 2 calls)
-    assert conn._ws.send.call_count >= 1
+def _build_gateway(**kwargs: object) -> GatewayConnection:
+    config = kwargs.pop("config", _build_config())
+    return GatewayConnection(
+        config,
+        on_command=kwargs.pop("on_command", lambda *_args: None),
+        on_emergency_stop=kwargs.pop("on_emergency_stop", lambda: None),
+        on_actions=kwargs.pop("on_actions", _async_noop),
+        running_fn=kwargs.pop("running_fn", lambda: False),
+        session_provider=kwargs.pop("session_provider", None),
+        on_shutdown=kwargs.pop("on_shutdown", None),
+        on_reconnected=kwargs.pop("on_reconnected", None),
+        on_disconnected=kwargs.pop("on_disconnected", None),
+    )
 
 
-@pytest.mark.asyncio
-async def test_gateway_reconnect_backoff(gateway_connection):
-    """Test exponential backoff on reconnection."""
-    with patch.object(gateway_connection, "_connect", new_callable=AsyncMock):
-        backoffs = []
-
-        async def track_backoff():
-            for i in range(3):
-                # Simulate backoff delays
-                delay = min(2 ** i, 30)
-                backoffs.append(delay)
-                if i >= 2:
-                    break
-
-        await track_backoff()
-
-        # Expected: 1s, 2s, 4s (exponential with cap)
-        assert backoffs[0] <= 2
-        assert backoffs[1] <= 4
-        assert backoffs[2] <= 8
+def test_resolve_ws_url_strips_api_prefix_and_uses_wss() -> None:
+    gateway = _build_gateway(config=_build_config("https://example.com/api/v1"))
+    assert gateway._resolve_ws_url() == "wss://example.com/ws"
 
 
-def test_gateway_event_parsing():
-    """Test parsing incoming WebSocket events."""
-    event_data = {
-        "event": "control_result",
-        "data": {"status": "success", "command": "forward"},
-    }
-
-    # The gateway should properly parse this event
-    event_str = json.dumps(event_data)
-    parsed = json.loads(event_str)
-
-    assert parsed["event"] == "control_result"
-    assert parsed["data"]["status"] == "success"
+def test_send_event_returns_false_when_disconnected() -> None:
+    gateway = _build_gateway()
+    assert asyncio.run(gateway.send_event("robot:heartbeat", {})) is False
 
 
-@pytest.mark.asyncio
-async def test_gateway_handles_invalid_json(gateway_connection):
-    """Test graceful handling of invalid JSON."""
-    gateway_connection._ws = AsyncMock()
-    gateway_connection._connected = True
+def test_handle_shutdown_message_updates_reconnect_state() -> None:
+    gateway = _build_gateway(running_fn=lambda: True)
 
-    # The gateway should handle invalid messages without crashing
-    try:
-        # Simulate receiving invalid JSON
-        invalid_msg = "not json at all"
-        # This would normally come from ws.recv()
-        # For now, just verify the connection doesn't crash
-        assert gateway_connection.connected
-    except Exception as e:
-        pytest.fail(f"Gateway should handle invalid JSON gracefully: {e}")
+    asyncio.run(
+        gateway._handle_message(
+            json.dumps(
+                {
+                    "event": "server:shutdown",
+                    "data": {
+                        "retryAfterMs": 7000,
+                        "reason": "update",
+                        "scope": "app",
+                        "message": "Deploy in progress",
+                    },
+                }
+            )
+        )
+    )
+
+    assert gateway._retry_after_override_sec == 7.0
+    assert gateway._pending_recovery_reason == "update"
+    assert gateway._pending_recovery_scope == "app"
 
 
-@pytest.mark.asyncio
-async def test_gateway_reconnect_callback(gateway_connection):
-    """Test that on_disconnect callback is called."""
-    gateway_connection.on_disconnect = AsyncMock()
+def test_handle_command_message_invokes_callback() -> None:
+    calls: list[tuple[str, object, object, dict[str, object] | None]] = []
+    gateway = _build_gateway(
+        on_command=lambda command, value, timestamp, metadata: calls.append(
+            (command, value, timestamp, metadata)
+        )
+    )
 
-    # Simulate disconnection
-    await gateway_connection._handle_disconnect()
+    asyncio.run(
+        gateway._handle_message(
+            json.dumps(
+                {
+                    "event": "control:command",
+                    "data": {
+                        "command": "forward",
+                        "value": 1,
+                        "timestamp": 123,
+                        "metadata": {"source": "test"},
+                    },
+                }
+            )
+        )
+    )
 
-    gateway_connection.on_disconnect.assert_called_once()
+    assert calls == [("forward", 1, 123, {"source": "test"})]
+
+
+def test_handle_emergency_stop_message_invokes_callback() -> None:
+    calls: list[str] = []
+    gateway = _build_gateway(on_emergency_stop=lambda: calls.append("estop"))
+
+    asyncio.run(
+        gateway._handle_message(
+            json.dumps(
+                {
+                    "event": "control:emergency-stop",
+                    "data": {},
+                }
+            )
+        )
+    )
+
+    assert calls == ["estop"]
+
+
+def test_gateway_reuses_shared_session_provider_across_reconnects() -> None:
+    class _FakeWsContext:
+        def __init__(self) -> None:
+            self._received = False
+
+        async def __aenter__(self) -> "_FakeWsContext":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def send_json(self, payload: dict[str, object]) -> None:
+            del payload
+
+        async def receive(self, timeout: float | None = None) -> SimpleNamespace:
+            del timeout
+            if not self._received:
+                self._received = True
+                return SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None)
+            return SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None)
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.ws_connect_calls = 0
+            self.closed = False
+
+        def ws_connect(self, url: str, heartbeat: int = 20) -> _FakeWsContext:
+            del url, heartbeat
+            self.ws_connect_calls += 1
+            return _FakeWsContext()
+
+    session = _FakeSession()
+    gateway = _build_gateway(
+        running_fn=lambda: session.ws_connect_calls < 2,
+        session_provider=lambda: session,  # type: ignore[arg-type]
+    )
+    gateway._consume_reconnect_delay = lambda default_delay: 0.0  # type: ignore[method-assign]
+    gateway._log_reconnect_delay = lambda delay: None  # type: ignore[method-assign]
+
+    asyncio.run(gateway.run())
+
+    assert session.ws_connect_calls == 2
+
+
+def test_gateway_run_notifies_disconnect_and_reconnect_callbacks_after_shutdown() -> None:
+    class _FakeWsContext:
+        def __init__(self, messages: list[SimpleNamespace]) -> None:
+            self._messages = list(messages)
+
+        async def __aenter__(self) -> "_FakeWsContext":
+            return self
+
+        async def __aexit__(self, exc_type, exc, tb) -> None:
+            return None
+
+        async def send_json(self, payload: dict[str, object]) -> None:
+            del payload
+
+        async def receive(self, timeout: float | None = None) -> SimpleNamespace:
+            del timeout
+            if self._messages:
+                return self._messages.pop(0)
+            return SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None)
+
+    class _FakeSession:
+        def __init__(self) -> None:
+            self.ws_connect_calls = 0
+            self.closed = False
+            shutdown_payload = json.dumps(
+                {
+                    "event": "server:shutdown",
+                    "data": {
+                        "retryAfterMs": 1000,
+                        "reason": "update",
+                        "scope": "app",
+                        "message": "Rolling restart",
+                    },
+                }
+            )
+            self._contexts = [
+                _FakeWsContext(
+                    [
+                        SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data=shutdown_payload),
+                        SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None),
+                    ]
+                ),
+                _FakeWsContext([SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None)]),
+            ]
+
+        def ws_connect(self, url: str, heartbeat: int = 20) -> _FakeWsContext:
+            del url, heartbeat
+            context = self._contexts[self.ws_connect_calls]
+            self.ws_connect_calls += 1
+            return context
+
+    shutdown_calls: list[tuple[str, str, float, str]] = []
+    disconnected_calls: list[str] = []
+    reconnected_calls: list[tuple[str, str]] = []
+    session = _FakeSession()
+    gateway = _build_gateway(
+        running_fn=lambda: session.ws_connect_calls < 2,
+        session_provider=lambda: session,  # type: ignore[arg-type]
+        on_shutdown=lambda reason, message, retry_after_sec, scope: shutdown_calls.append(
+            (reason, message, retry_after_sec, scope)
+        ) or _async_noop({}),
+        on_disconnected=lambda scope: disconnected_calls.append(scope) or _async_noop({}),
+        on_reconnected=lambda reason, scope: reconnected_calls.append((reason, scope)) or _async_noop({}),
+    )
+    gateway._consume_reconnect_delay = lambda default_delay: 0.0  # type: ignore[method-assign]
+    gateway._log_reconnect_delay = lambda delay: None  # type: ignore[method-assign]
+
+    asyncio.run(gateway.run())
+
+    assert shutdown_calls == [("update", "Rolling restart", 1.0, "app")]
+    assert disconnected_calls == ["app"]
+    assert reconnected_calls == [("update", "app")]

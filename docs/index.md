@@ -77,7 +77,7 @@ python3 -m botparty_robot
 You should see output like:
 
 ```
-2025-01-01 12:00:00 [INFO] botparty: BotParty Robot Client v0.1.0
+2025-01-01 12:00:00 [INFO] botparty: BotParty Robot Client v0.1.3
 2025-01-01 12:00:00 [INFO] botparty: API: https://botparty.live
 2025-01-01 12:00:00 [INFO] botparty: Hardware: l298n
 2025-01-01 12:00:00 [INFO] botparty: Video: ffmpeg

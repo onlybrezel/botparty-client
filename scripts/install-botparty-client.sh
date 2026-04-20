@@ -78,7 +78,7 @@ fetch_active_version() {
 ACTIVE_CONTROLLER_VERSION="$(fetch_active_version "$ACTIVE_CONTROLLER_VERSION_URL" || true)"
 ACTIVE_STREAMER_VERSION="$(fetch_active_version "$ACTIVE_STREAMER_VERSION_URL" || true)"
 if [[ -z "$STREAMER_VERSION" ]]; then
-  STREAMER_VERSION="${ACTIVE_STREAMER_VERSION:-v0.1.0}"
+  STREAMER_VERSION="${ACTIVE_STREAMER_VERSION:-v0.1.3}"
 fi
 
 while [[ $# -gt 0 ]]; do

@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import os
 import time
 from typing import Optional
 
 import aiohttp
+from aiohttp import web
 from livekit import rtc
 
 from .client_state import logger
@@ -17,8 +19,102 @@ class ClientLifecycleMixin:
     def _get_session(self) -> aiohttp.ClientSession:
         """Return the shared HTTP session, creating it if necessary."""
         if self._http_session is None or self._http_session.closed:
-            self._http_session = aiohttp.ClientSession()
+            self._http_session = aiohttp.ClientSession(
+                timeout=aiohttp.ClientTimeout(total=None, connect=10, sock_read=30),
+            )
         return self._http_session
+
+    def _health_enabled(self) -> bool:
+        raw = os.getenv("BOTPARTY_HEALTH_ENABLED", "true").strip().lower()
+        return raw not in {"0", "false", "no", "off"}
+
+    def _health_host(self) -> str:
+        return os.getenv("BOTPARTY_HEALTH_HOST", "127.0.0.1").strip() or "127.0.0.1"
+
+    def _health_port(self) -> int:
+        raw = os.getenv("BOTPARTY_HEALTH_PORT", "9100").strip()
+        try:
+            port = int(raw)
+        except ValueError:
+            return 9100
+        return port if 1 <= port <= 65535 else 9100
+
+    def _build_health_snapshot(self) -> dict[str, object]:
+        active_cameras = 0
+        cameras: list[dict[str, object]] = []
+        for runtime in self._camera_runtimes:
+            task = runtime.task
+            active = task is not None and not task.done()
+            if active:
+                active_cameras += 1
+            cameras.append(
+                {
+                    "id": runtime.camera_id,
+                    "label": runtime.label,
+                    "role": runtime.role,
+                    "publishMode": runtime.publish_mode,
+                    "active": active,
+                    "frames": runtime.manager.frame_count,
+                    "restartCount": runtime.restart_count,
+                    "audioEnabled": runtime.include_audio,
+                }
+            )
+
+        status = "stopped"
+        if self._running:
+            status = "ok" if self._gateway.connected and self._livekit_connected else "degraded"
+
+        return {
+            "status": status,
+            "robotId": self._robot_id,
+            "gatewayConnected": self._gateway.connected,
+            "livekitConnected": self._livekit_connected,
+            "running": self._running,
+            "cameraCount": len(self._camera_runtimes),
+            "activeCameras": active_cameras,
+            "uptimeSec": self._get_uptime_sec(),
+            "httpSessionOpen": self._http_session is not None and not self._http_session.closed,
+            "stats": {
+                "commandsReceived": self.stats.commands_received,
+                "cameraFrames": self._total_camera_frames(),
+                "reconnectAttempts": self.stats.reconnect_attempts,
+                "cameraTaskRestarts": self.stats.camera_task_restarts,
+            },
+            "cameras": cameras,
+        }
+
+    async def _handle_health_request(self, _request: web.Request) -> web.Response:
+        return web.json_response(self._build_health_snapshot())
+
+    async def _run_health_server(self) -> None:
+        if not self._health_enabled():
+            return
+
+        host = self._health_host()
+        port = self._health_port()
+        app = web.Application()
+        app.router.add_get("/health", self._handle_health_request)
+
+        runner = web.AppRunner(app, access_log=None)
+        try:
+            await runner.setup()
+            site = web.TCPSite(runner, host, port)
+            await site.start()
+            logger.info("Local health endpoint listening on http://%s:%d/health", host, port)
+        except OSError as exc:
+            logger.warning("Failed to start local health endpoint on %s:%d: %s", host, port, exc)
+            with contextlib.suppress(Exception):
+                await runner.cleanup()
+            return
+
+        try:
+            while self._running:
+                await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            raise
+        finally:
+            with contextlib.suppress(Exception):
+                await runner.cleanup()
 
     async def run(self) -> None:
         self._running = True
@@ -144,6 +240,7 @@ class ClientLifecycleMixin:
             self._actions_task,
             self._diag_upload_task,
             self._gateway_task,
+            self._health_task,
             self._recovery_restart_task,
             self._livekit_reconnect_task,
             self._room_shutdown_task,
@@ -179,6 +276,8 @@ class ClientLifecycleMixin:
             self._tts_task = asyncio.create_task(self._tts_loop())
         if self._gateway_task is None or self._gateway_task.done():
             self._gateway_task = asyncio.create_task(self._gateway.run())
+        if self._health_task is None or self._health_task.done():
+            self._health_task = asyncio.create_task(self._run_health_server())
 
     def _consume_reconnect_delay(self, default_delay: float) -> float:
         planned_reconnect_at = self._planned_reconnect_at

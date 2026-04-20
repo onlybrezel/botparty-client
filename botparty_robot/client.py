@@ -58,23 +58,18 @@ class BotPartyClient(
         self._livekit_connected = False
         self._livekit_publish_token: Optional[str] = None
         self._livekit_publish_tokens: dict[str, str] = {}
-        self._camera_runtimes = self._build_camera_runtimes()
-        self._primary_camera_id = self._resolve_primary_camera_id()
-        self._camera = (
-            self._camera_runtimes[0].manager
-            if self._camera_runtimes
-            else CameraManager(config, create_video_profile(config))
-        )
-        self.video_profile = (
-            self._camera_runtimes[0].video_profile
-            if self._camera_runtimes
-            else create_video_profile(config)
-        )
+        (
+            self._camera_runtimes,
+            self._primary_camera_id,
+            self._camera,
+            self.video_profile,
+        ) = self._build_initial_camera_runtime_state()
         self._gateway = GatewayConnection(
             config,
             on_command=self._on_gateway_command,
             on_emergency_stop=self._on_gateway_emergency_stop,
             on_actions=self._apply_remote_actions_payload,
+            session_provider=self._get_session,
             on_shutdown=self._handle_gateway_shutdown,
             on_reconnected=self._handle_gateway_reconnected,
             on_disconnected=self._handle_gateway_disconnected,
@@ -88,6 +83,7 @@ class BotPartyClient(
         self._diag_upload_task: Optional[asyncio.Task] = None
         self._tts_task: Optional[asyncio.Task] = None
         self._gateway_task: Optional[asyncio.Task] = None
+        self._health_task: Optional[asyncio.Task] = None
         self._tts_queue: asyncio.Queue[tuple[str, dict[str, object] | None]] = asyncio.Queue(
             maxsize=20
         )

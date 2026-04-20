@@ -72,6 +72,8 @@ chmod 600 config.yaml  # claim_token is sensitive — restrict file permissions
 python3 -m botparty_robot
 ```
 
+This system-Python path is convenient on some Raspberry Pi images, but it weakens package isolation. Prefer `venv` unless you have a concrete reason to install with `--break-system-packages`.
+
 ## Minimal config
 
 Edit `config.yaml` and set at least:
@@ -92,6 +94,8 @@ hardware:
 ```
 
 Then switch `hardware.type` to your real adapter (for example `l298n`) once basic connectivity works.
+
+You can also override `server.claim_token` at runtime with `BOTPARTY_CLAIM_TOKEN`, which is useful for systemd units or secret injection without keeping the token in plaintext on disk.
 
 ## Documentation
 
@@ -115,6 +119,7 @@ Then switch `hardware.type` to your real adapter (for example `l298n`) once basi
 ## Notes
 
 - Keep your `claim_token` secret.
+- A local health endpoint is exposed on `http://127.0.0.1:9100/health` by default. Override it with `BOTPARTY_HEALTH_HOST`, `BOTPARTY_HEALTH_PORT`, or disable it with `BOTPARTY_HEALTH_ENABLED=false`.
 
 - `botparty-streamer` is our selfmade video transmitter for maximum performance, low CPU usage and low latency.
 - On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.

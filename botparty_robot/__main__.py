@@ -188,6 +188,9 @@ def _load_config_from(path_override: str | None) -> RobotConfig:
     raw = _apply_legacy_tts_defaults(raw)
     server = raw.get("server")
     if isinstance(server, dict):
+        claim_token_override = os.environ.get("BOTPARTY_CLAIM_TOKEN", "").strip()
+        if claim_token_override:
+            server["claim_token"] = claim_token_override
         device_key = server.get("device_key")
         if not isinstance(device_key, str) or not device_key.strip():
             device_key_path = Path(".botparty-device-key")
@@ -220,12 +223,17 @@ async def main() -> None:
         logger.error("Please set your claim_token in config.yaml!")
         sys.exit(1)
 
+    client = BotPartyClient(config)
+
     logger.info("🤖 BotParty Robot Client v%s", __version__)
     logger.info(f"   API: {config.server.api_url}")
     logger.info(f"   LiveKit: {config.server.livekit_url}")
     logger.info(f"   Hardware: {config.hardware.type}")
     logger.info(f"   Video: {config.video.type}")
     logger.info(f"   TTS: {config.tts.type} (enabled={config.tts.enabled})")
+    if os.environ.get("BOTPARTY_CLAIM_TOKEN", "").strip():
+        logger.info("   Claim token: using BOTPARTY_CLAIM_TOKEN override")
+    logger.info("   Health: http://%s:%d/health", client._health_host(), client._health_port())
     normalized_cameras = normalize_cameras(config)
     logger.info(f"   Cameras: {len(normalized_cameras)} configured")
     for camera in normalized_cameras:
@@ -239,8 +247,6 @@ async def main() -> None:
             camera.camera.fps,
             camera.video.type,
         )
-
-    client = BotPartyClient(config)
 
     # Graceful shutdown
     loop = asyncio.get_running_loop()

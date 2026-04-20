@@ -221,7 +221,7 @@ Today the main supported helper builds are:
 Example asset URL:
 
 ```text
-http://dl.botparty.live/botparty-streamer-v0.1.0-linux-arm64
+http://dl.botparty.live/botparty-streamer-v0.1.3-linux-arm64
 ```
 
 Install default version:
@@ -235,7 +235,7 @@ Default output path is `<repo>/.botparty/bin/botparty-streamer`.
 Install a specific version:
 
 ```bash
-./scripts/install-botparty-streamer.sh v0.1.0
+./scripts/install-botparty-streamer.sh v0.1.3
 ```
 
 Install with explicit architecture selection:

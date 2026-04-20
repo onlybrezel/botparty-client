@@ -59,11 +59,11 @@ class VideoProfile(BaseVideoProfile):
     def _resolve_streamer_expected_version(self) -> str:
         with self._streamer_state_lock:
             if self._active_streamer_version_resolved:
-                return self._cached_active_streamer_version or "v0.1.0"
+                return self._cached_active_streamer_version or "v0.1.3"
 
             active = self._fetch_active_streamer_version()
             if not active:
-                active = "v0.1.0"
+                active = "v0.1.3"
                 logger.warning(
                     "Could not resolve active botparty-streamer version from stats endpoint, using fallback=%s",
                     active,

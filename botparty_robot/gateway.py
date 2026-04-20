@@ -1,6 +1,7 @@
 """Control WebSocket connection to the BotParty gateway."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import random
@@ -10,6 +11,7 @@ from typing import Any, Callable, Coroutine, Optional
 import aiohttp
 
 from .config import RobotConfig
+from .ws_protocol import WS_EVENTS, WS_PROTOCOL_VERSION
 
 logger = logging.getLogger("botparty.gateway")
 
@@ -31,6 +33,7 @@ class GatewayConnection:
         on_emergency_stop: Callable[[], None],
         on_actions: Callable[[dict], Coroutine],
         running_fn: Callable[[], bool],
+        session_provider: Optional[Callable[[], aiohttp.ClientSession]] = None,
         on_shutdown: Optional[Callable[[str, str, float, str], Coroutine[Any, Any, None]]] = None,
         on_reconnected: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
         on_disconnected: Optional[Callable[[str], Coroutine[Any, Any, None]]] = None,
@@ -43,6 +46,7 @@ class GatewayConnection:
         self._on_reconnected = on_reconnected
         self._on_disconnected = on_disconnected
         self._running_fn = running_fn
+        self._session_provider = session_provider
         self._connected = False
         self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
         self._last_actions_pull_at = 0.0
@@ -87,7 +91,13 @@ class GatewayConnection:
             attempt += 1
             try:
                 timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_read=30)
-                async with aiohttp.ClientSession(timeout=timeout) as session:
+                owns_session = self._session_provider is None
+                session = (
+                    aiohttp.ClientSession(timeout=timeout)
+                    if owns_session
+                    else self._session_provider()
+                )
+                try:
                     async with session.ws_connect(ws_url, heartbeat=20) as ws:
                         self._ws = ws
                         attempt = 0
@@ -101,8 +111,11 @@ class GatewayConnection:
                         if not robot_auth_token:
                             raise RuntimeError("Missing robot auth token for websocket claim")
                         await ws.send_json({
-                            "event": "robot:claim",
-                            "data": {"robotAuthToken": robot_auth_token},
+                            "event": WS_EVENTS["ROBOT_CLAIM"],
+                            "data": {
+                                "robotAuthToken": robot_auth_token,
+                                "protocolVersion": WS_PROTOCOL_VERSION,
+                            },
                         })
                         await self._pull_actions(ws, force=True)
                         if self._pending_recovery_reason and self._on_reconnected is not None:
@@ -121,7 +134,7 @@ class GatewayConnection:
                             try:
                                 msg = await ws.receive(timeout=10)
                             except asyncio.TimeoutError:
-                                await ws.send_json({"event": "robot:heartbeat", "data": {}})
+                                await ws.send_json({"event": WS_EVENTS["ROBOT_HEARTBEAT"], "data": {}})
                                 await self._pull_actions(ws)
                                 continue
 
@@ -129,6 +142,10 @@ class GatewayConnection:
                                 await self._handle_message(msg.data)
                             elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
                                 break
+                finally:
+                    if owns_session and not session.closed:
+                        with contextlib.suppress(Exception):
+                            await session.close()
                 if self._running_fn() and self._pending_recovery_reason and self._on_disconnected is not None:
                     try:
                         await self._on_disconnected(self._pending_recovery_scope or "app")
@@ -156,19 +173,19 @@ class GatewayConnection:
         event = payload.get("event")
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
 
-        if event == "control:command":
+        if event == WS_EVENTS["CONTROL_COMMAND"]:
             self._on_command(
                 str(data.get("command", "")),
                 data.get("value"),
                 data.get("timestamp"),
                 data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
             )
-        elif event == "control:emergency-stop":
+        elif event == WS_EVENTS["CONTROL_EMERGENCY_STOP"]:
             logger.warning("Emergency stop received from gateway")
             self._on_emergency_stop()
-        elif event == "robot:actions":
+        elif event == WS_EVENTS["ROBOT_ACTIONS"]:
             await self._on_actions(data)
-        elif event == "server:shutdown":
+        elif event == WS_EVENTS["SERVER_SHUTDOWN"]:
             retry_after_ms = data.get("retryAfterMs")
             try:
                 retry_after_sec = max(1.0, float(retry_after_ms) / 1000.0)
@@ -201,7 +218,7 @@ class GatewayConnection:
         now = time.time()
         if not force and now - self._last_actions_pull_at < 2.5:
             return
-        await ws.send_json({"event": "robot:actions:pull", "data": {}})
+        await ws.send_json({"event": WS_EVENTS["ROBOT_ACTIONS_PULL"], "data": {}})
         self._last_actions_pull_at = now
 
     def _resolve_ws_url(self) -> str:
