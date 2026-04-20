@@ -3,6 +3,7 @@
 WS_PROTOCOL_VERSION = 1
 
 WS_EVENTS: dict[str, str] = {
+    "ERROR": "error",
     "ROBOT_CLAIM": "robot:claim",
     "ROBOT_HEARTBEAT": "robot:heartbeat",
     "ROBOT_TELEMETRY": "robot:telemetry",

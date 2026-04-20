@@ -4,7 +4,15 @@ from types import SimpleNamespace
 
 from botparty_robot.__main__ import _load_config_from
 from botparty_robot.client_commands import ClientCommandsMixin
-from botparty_robot.config import CameraConfig, CameraStreamConfig, RobotConfig, ServerConfig, VideoConfig, normalize_cameras
+from botparty_robot.config import (
+    CameraConfig,
+    CameraStreamConfig,
+    RobotConfig,
+    ServerConfig,
+    VideoConfig,
+    normalize_cameras,
+    normalize_livekit_url,
+)
 
 
 class _TTSStub:
@@ -66,6 +74,11 @@ def test_tts_command_enqueues_message_payload():
     assert metadata is None
 
 
+def test_normalize_livekit_url_strips_rtc_suffix():
+    assert normalize_livekit_url("wss://botparty.live/rtc") == "wss://botparty.live"
+    assert normalize_livekit_url("wss://botparty.live/proxy/rtc/") == "wss://botparty.live/proxy"
+
+
 def test_load_config_allows_claim_token_env_override(monkeypatch, tmp_path: Path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
@@ -84,6 +97,7 @@ def test_load_config_allows_claim_token_env_override(monkeypatch, tmp_path: Path
     config = _load_config_from(str(config_path))
 
     assert config.server.claim_token == "from-env"
+    assert config.server.livekit_url == "wss://botparty.live"
 
 
 def test_trigger_hardware_stop_applies_emergency_stop_safely() -> None:

@@ -1,16 +1,37 @@
 """Configuration models for the robot client."""
 
 from typing import Any
+from urllib.parse import urlsplit, urlunsplit
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+
+def normalize_livekit_url(url: str) -> str:
+    normalized = url.strip()
+    if not normalized:
+        return normalized
+
+    parsed = urlsplit(normalized)
+    path = parsed.path.rstrip("/")
+    if path.endswith("/rtc"):
+        path = path[:-4]
+
+    return urlunsplit((parsed.scheme, parsed.netloc, path, parsed.query, parsed.fragment))
 
 
 class ServerConfig(BaseModel):
     api_url: str = "https://botparty.live"
-    livekit_url: str = "wss://botparty.live/rtc"
+    livekit_url: str = "wss://botparty.live"
     claim_token: str
     device_key: str | None = None
     robot_auth_token: str | None = None
+
+    @field_validator("livekit_url", mode="before")
+    @classmethod
+    def _normalize_livekit_url(cls, value: Any) -> Any:
+        if isinstance(value, str):
+            return normalize_livekit_url(value)
+        return value
 
 
 class CameraConfig(BaseModel):

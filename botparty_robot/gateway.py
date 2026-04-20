@@ -101,12 +101,11 @@ class GatewayConnection:
                     async with session.ws_connect(ws_url, heartbeat=20) as ws:
                         self._ws = ws
                         attempt = 0
-                        self._connected = True
+                        self._connected = False
                         self._retry_after_override_sec = None
                         self._shutdown_reason = None
                         self._shutdown_message = None
                         self._shutdown_scope = None
-                        logger.info("Control websocket connected")
                         robot_auth_token = (self.config.server.robot_auth_token or "").strip()
                         if not robot_auth_token:
                             raise RuntimeError("Missing robot auth token for websocket claim")
@@ -117,6 +116,9 @@ class GatewayConnection:
                                 "protocolVersion": WS_PROTOCOL_VERSION,
                             },
                         })
+                        await self._await_robot_claim(ws)
+                        self._connected = True
+                        logger.info("Control websocket connected")
                         await self._pull_actions(ws, force=True)
                         if self._pending_recovery_reason and self._on_reconnected is not None:
                             try:
@@ -140,7 +142,17 @@ class GatewayConnection:
 
                             if msg.type == aiohttp.WSMsgType.TEXT:
                                 await self._handle_message(msg.data)
-                            elif msg.type in (aiohttp.WSMsgType.CLOSED, aiohttp.WSMsgType.ERROR):
+                            elif msg.type in (
+                                aiohttp.WSMsgType.CLOSED,
+                                aiohttp.WSMsgType.CLOSING,
+                                aiohttp.WSMsgType.ERROR,
+                            ):
+                                logger.warning(
+                                    "Control websocket closed by gateway (type=%s code=%s error=%s)",
+                                    msg.type.name,
+                                    ws.close_code,
+                                    ws.exception(),
+                                )
                                 break
                 finally:
                     if owns_session and not session.closed:
@@ -164,6 +176,44 @@ class GatewayConnection:
                 self._ws = None
                 self._connected = False
 
+    async def _await_robot_claim(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+        while self._running_fn():
+            try:
+                msg = await ws.receive(timeout=10)
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError("Timed out waiting for robot claim acknowledgement") from exc
+
+            if msg.type == aiohttp.WSMsgType.TEXT:
+                try:
+                    payload = json.loads(msg.data)
+                except Exception:
+                    continue
+
+                event = payload.get("event")
+                data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
+                if event == WS_EVENTS["ROBOT_CLAIM"]:
+                    if data.get("success") is True:
+                        return
+                    raise RuntimeError(str(data.get("message") or "Robot claim failed"))
+
+                if event == WS_EVENTS["ERROR"]:
+                    raise RuntimeError(str(data.get("message") or "Gateway rejected robot claim"))
+
+                await self._handle_message(msg.data)
+                continue
+
+            if msg.type in (
+                aiohttp.WSMsgType.CLOSED,
+                aiohttp.WSMsgType.CLOSING,
+                aiohttp.WSMsgType.ERROR,
+            ):
+                raise RuntimeError(
+                    "Gateway closed the websocket during robot claim "
+                    f"(type={msg.type.name} code={ws.close_code} error={ws.exception()})"
+                )
+
+        raise RuntimeError("Robot client stopped before websocket claim completed")
+
     async def _handle_message(self, raw: str) -> None:
         try:
             payload = json.loads(raw)
@@ -185,6 +235,9 @@ class GatewayConnection:
             self._on_emergency_stop()
         elif event == WS_EVENTS["ROBOT_ACTIONS"]:
             await self._on_actions(data)
+        elif event == WS_EVENTS["ERROR"]:
+            message = str(data.get("message") or "Gateway error")
+            logger.warning("Gateway error event: %s", message)
         elif event == WS_EVENTS["SERVER_SHUTDOWN"]:
             retry_after_ms = data.get("retryAfterMs")
             try:

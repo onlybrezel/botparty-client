@@ -22,7 +22,7 @@ server:
   api_url: "https://botparty.live"
 
   # Change this only if your server uses a different LiveKit URL.
-  livekit_url: "wss://botparty.live/rtc"
+  livekit_url: "wss://botparty.live"
 
   # Your robot's claim token from the BotParty dashboard.
   # SENSITIVE: treat this like a password - do not share or commit it.

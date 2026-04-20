@@ -13,6 +13,7 @@ from aiohttp import web
 from livekit import rtc
 
 from .client_state import logger
+from .config import normalize_livekit_url
 
 
 class ClientLifecycleMixin:
@@ -129,9 +130,11 @@ class ClientLifecycleMixin:
             self._livekit_publish_token = auth.token
             self._livekit_publish_tokens = auth.publish_tokens
             self.config.server.robot_auth_token = auth.robot_auth_token
-            if auth.livekit_url and auth.livekit_url != self.config.server.livekit_url:
-                logger.info("Using LiveKit URL from claim response: %s", auth.livekit_url)
-                self.config.server.livekit_url = auth.livekit_url
+            if auth.livekit_url:
+                livekit_url = normalize_livekit_url(auth.livekit_url)
+                if livekit_url != self.config.server.livekit_url:
+                    logger.info("Using LiveKit URL from claim response: %s", livekit_url)
+                    self.config.server.livekit_url = livekit_url
             logger.info("Authenticated as robot %s", auth.robot_id)
 
             if self._uses_direct_livekit_publisher():

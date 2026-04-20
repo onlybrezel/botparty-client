@@ -81,7 +81,7 @@ Edit `config.yaml` and set at least:
 ```yaml
 server:
   api_url: "https://botparty.live"
-  livekit_url: "wss://botparty.live/rtc"
+  livekit_url: "wss://botparty.live"
   claim_token: "YOUR_CLAIM_TOKEN"
 
 video:
