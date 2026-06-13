@@ -77,7 +77,7 @@ class HardwareAdapter(BaseHardware):
         pass
 ```
 
-The shipped template in [`botparty_robot/hardware/hardware_custom_example.py`](/home/julien/workspace/botparty-client/botparty_robot/hardware/hardware_custom_example.py) contains a fuller example including `self.command_context`.
+The shipped template in `botparty_robot/hardware/hardware_custom_example.py` (in the installed package or in the repo) contains a fuller example including `self.command_context`. You copy it to `hardware_custom.py` next to your `config.yaml`.
 
 ---
 

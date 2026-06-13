@@ -5,7 +5,7 @@ The `ffmpeg` profile is the normal default and now handles both paths automatica
 - preferred path: ffmpeg -> botparty-streamer -> LiveKit (direct, low-latency)
 - fallback path: ffmpeg -> Python SDK publish
 
-`botparty-streamer` is our selfmade video transmitter for maximum performance, low CPU usage and low latency.
+`botparty-streamer` is our self-made video transmitter for maximum performance, low CPU usage and low latency.
 
 You keep `video.type: "ffmpeg"` in both cases.
 

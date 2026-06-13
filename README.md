@@ -2,87 +2,61 @@
 
 Python client that runs on your robot and connects it to BotParty.
 
+![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+
 The README is intentionally short. Full documentation is in [docs/index.md](docs/index.md).
 
-## What this client does
+## Get it running
 
-- Connects your robot to the BotParty API using a claim token
-- Opens the control channel and receives movement commands
-- Publishes camera video
-- Optionally speaks chat messages via TTS
-
-## Requirements
-
-- Linux machine (Raspberry Pi, Jetson, or Ubuntu/Debian)
-- Python 3.10+
-- Camera device (`/dev/video0` or compatible)
-- Network connection
-
-## Quick Start
-
-One-command bootstrap (install deps + venv + optional service + streamer helper):
+One-command bootstrap (venv, deps, optional `botparty-streamer`, and systemd service):
 
 ```bash
 ./scripts/install-botparty-client.sh
 ```
 
-Then edit `config.yaml` and check logs with:
+Edit `config.yaml`, then follow logs:
 
 ```bash
 sudo journalctl -u botparty-robot.service -f
 ```
 
-Manual start (no `source .venv/bin/activate` needed):
+Manual run (no venv activation needed):
 
 ```bash
 ./scripts/start-botparty-robot.sh
 ```
 
-```bash
-# 0) Install base packages first
-sudo apt update
-sudo apt install -y git python3-pip python3-venv ffmpeg
+For the full apt + clone + venv steps and the system-Python install path (useful on some Pi images), see [Installation](docs/installation.md).
 
-# 1) Clone the repo and create a virtual environment
-git clone https://github.com/onlybrezel/botparty-client.git
-cd botparty-client
+## What this client does
 
-python3 -m venv .venv
-source .venv/bin/activate
+- Connects using a claim token from the BotParty dashboard
+- Receives drive commands over the control channel and forwards them to your hardware adapter
+- Publishes live camera video (ffmpeg + botparty-streamer by default)
+- Optionally speaks chat messages via a TTS profile
 
-# 2) Install dependencies
-pip install -e ".[all]"
+## Requirements
 
-# 3) Create config
-cp config.example.yaml config.yaml
-chmod 600 config.yaml  # claim_token is sensitive — restrict file permissions
-
-# 4) Run
-python -m botparty_robot
-```
-
-Without `venv`, you can also install and run it directly with system Python:
-
-```bash
-git clone https://github.com/onlybrezel/botparty-client.git
-cd botparty-client
-python3 -m pip install --break-system-packages -e ".[all]"
-cp config.example.yaml config.yaml
-chmod 600 config.yaml  # claim_token is sensitive — restrict file permissions
-python3 -m botparty_robot
-```
-
-This system-Python path is convenient on some Raspberry Pi images, but it weakens package isolation. Prefer `venv` unless you have a concrete reason to install with `--break-system-packages`.
+- Linux (Raspberry Pi, Jetson, Ubuntu/Debian, ...)
+- Python 3.10+
+- Camera device (`/dev/video0`, libcamera, or compatible)
+- Network connection (wired preferred)
 
 ## Minimal config
 
-Edit `config.yaml` and set at least:
+```bash
+cp config.example.yaml config.yaml
+chmod 600 config.yaml
+```
+
+Edit at least the claim token:
 
 ```yaml
 server:
   api_url: "https://botparty.live"
   livekit_url: "wss://botparty.live"
-  claim_token: "YOUR_CLAIM_TOKEN"
+  claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
 
 video:
   type: "ffmpeg"
@@ -93,9 +67,9 @@ hardware:
   options: {}
 ```
 
-Then switch `hardware.type` to your real adapter (for example `l298n`) once basic connectivity works.
+Start with `hardware.type: none` for first connection tests, then switch it to your board (e.g. `l298n`).
 
-You can also override `server.claim_token` at runtime with `BOTPARTY_CLAIM_TOKEN`, which is useful for systemd units or secret injection without keeping the token in plaintext on disk.
+You can also pass the token via the `BOTPARTY_CLAIM_TOKEN` environment variable. This is handy for systemd units and secret managers.
 
 ## Documentation
 
@@ -109,21 +83,13 @@ You can also override `server.claim_token` at runtime with `BOTPARTY_CLAIM_TOKEN
 - [TTS profiles](docs/tts/index.md)
 - [Troubleshooting](docs/troubleshooting.md)
 
-## Typical next setup steps
-
-1. Pick your hardware adapter in `config.yaml`.
-2. Pick your video profile (`ffmpeg` is the easiest default).
-3. Tune camera resolution/FPS for stable low latency.
-4. Enable TTS only if your audio output is configured.
-
 ## Notes
 
 - Keep your `claim_token` secret.
-- A local health endpoint is exposed on `http://127.0.0.1:9100/health` by default. Override it with `BOTPARTY_HEALTH_HOST`, `BOTPARTY_HEALTH_PORT`, or disable it with `BOTPARTY_HEALTH_ENABLED=false`.
-
-- `botparty-streamer` is our selfmade video transmitter for maximum performance, low CPU usage and low latency.
-- On Raspberry Pi OS Bookworm, `libatlas-base-dev` is not needed for the normal install path and may not exist anymore.
-- If `sudo apt install python3-rpi.gpio` wants to remove `python3-rpi-lgpio`, that is usually expected for BotParty's built-in GPIO adapters.
-- `venv` is the recommended default, but a no-`venv` system-Python install is also supported and can be convenient for GPIO-heavy Raspberry Pi setups.
-- For multi-camera robots, prefer stable camera device symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of `/dev/video0` and `/dev/video2`.
-- For optional adapter/profile dependencies, see the specific docs pages above.
+- Local health endpoint: `http://127.0.0.1:9100/health` (override with `BOTPARTY_HEALTH_*` vars or disable via `BOTPARTY_HEALTH_ENABLED=false`).
+- `botparty-streamer` is the self-made video transmitter for max performance, low CPU and low latency.
+- On Raspberry Pi OS Bookworm `libatlas-base-dev` is usually not required anymore.
+- `sudo apt install python3-rpi.gpio` may want to remove `python3-rpi-lgpio` — this is expected for the built-in GPIO adapters.
+- `venv` is the safer default, but a direct system-Python install (`--break-system-packages`) is supported and sometimes more convenient for GPIO work.
+- Multi-camera setups: use stable symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of plain `/dev/video0`.
+- Extra dependencies for specific hardware or TTS engines are listed in the docs linked above.

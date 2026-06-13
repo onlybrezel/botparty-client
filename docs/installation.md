@@ -120,7 +120,7 @@ This is the recommended high-performance path:
 
 - ffmpeg captures from the camera and encodes H.264
 - botparty-streamer publishes directly to LiveKit
-- botparty-streamer is our selfmade video transmitter for maximum performance, low CPU usage and low latency
+- botparty-streamer is our self-made video transmitter for maximum performance, low CPU usage and low latency
 
 ### 5. Run as a service (optional)
 
@@ -221,7 +221,7 @@ Today the main supported helper builds are:
 Example asset URL:
 
 ```text
-http://dl.botparty.live/botparty-streamer-v0.1.3-linux-arm64
+http://dl.botparty.live/botparty-streamer-v0.1.4-linux-arm64
 ```
 
 Install default version:
@@ -235,7 +235,7 @@ Default output path is `<repo>/.botparty/bin/botparty-streamer`.
 Install a specific version:
 
 ```bash
-./scripts/install-botparty-streamer.sh v0.1.3
+./scripts/install-botparty-streamer.sh v0.1.4
 ```
 
 Install with explicit architecture selection:
