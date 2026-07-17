@@ -8,7 +8,25 @@
 
 Install only the extras required by the configured profile. The default core supports `hardware:none`, FFmpeg video and disabled TTS. Hashed installer profiles are `vision`, `hardware`, `gpio`, `serial`, `mqtt`, `usb`, `telemetry`, `polly` and `google-tts`. `hardware` combines GPIO, serial, MQTT and USB when a device needs several buses.
 
-## Production install
+## Automatic production install
+
+```bash
+curl -fsSLo /tmp/install-botparty.sh \
+  https://raw.githubusercontent.com/onlybrezel/botparty-client/main/scripts/bootstrap-install.sh
+sudo bash /tmp/install-botparty.sh --device-groups video
+rm /tmp/install-botparty.sh
+sudoedit /etc/botparty/config.yaml
+sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
+  --config /etc/botparty/config.yaml doctor
+sudo systemctl enable --now botparty-robot.service
+```
+
+The bootstrap installs Git when it is missing, checks out the selected release source at
+`/opt/botparty/source` and runs the production installer. Set `BOTPARTY_INSTALL_REF` to a tag or
+branch and `BOTPARTY_INSTALL_SOURCE_DIR` to another absolute path when needed. An existing checkout
+is updated only when its origin matches and it contains no local changes.
+
+## Manual production install
 
 ```bash
 sudo apt-get update
@@ -32,10 +50,8 @@ The installer:
 - installs a systemd unit with readiness, watchdog and shutdown limits;
 - keeps the previous environment for rollback.
 
-The cloned repository is only the source for the first installation or a deliberate manual
-reinstall. The service does not run from the checkout. An OTA request from the BotParty server
-downloads a signed release into the inactive slot, validates it and switches slots atomically;
-it never runs `git pull` against a live robot process.
+The cloned repository is only the installation source. The service runs from the installed wheel
+in `/opt/botparty/venv`, not from the checkout.
 
 Add groups only for devices in use:
 
@@ -43,27 +59,6 @@ Add groups only for devices in use:
 sudo ./scripts/install-botparty-client.sh \
   --extras hardware --device-groups video,gpio,dialout
 ```
-
-## Client updates
-
-Automatic updates are started by an authorized `update_client` action from the BotParty server.
-The client downloads the signed release, installs it into the inactive A/B slot and restarts only
-after verification. A failed readiness check restores the previous slot.
-
-For a manual update, pull the installation checkout with fast-forward protection and rerun the
-installer with the same extras and device groups used for the first installation:
-
-```bash
-cd botparty-client
-git pull --ff-only
-sudo systemctl stop botparty-robot.service
-sudo ./scripts/install-botparty-client.sh --device-groups video
-sudo systemctl start botparty-robot.service
-```
-
-The installer validates the new environment before replacing `/opt/botparty/venv`, keeps the
-previous environment at `/opt/botparty/venv.previous` and preserves the existing configuration
-and device identity.
 
 ## Signed streamer
 

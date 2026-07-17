@@ -23,9 +23,8 @@ This project follows Semantic Versioning and Keep a Changelog structure.
   release-pinned hash catalog; custom signed manifests remain supported.
 - OTA uses a prefilled, disabled standard release channel and runs only after an authorized
   `update_client` action from the BotParty server.
-- Production setup now starts with an explicit shallow Git clone before running the installer.
-- Manual updates use a fast-forward Git pull followed by the same validated installer; automatic
-  updates continue to use the server-triggered signed A/B path.
+- Production setup supports an automatic Git/bootstrap installer and a documented manual checkout;
+  both paths install the verified streamer and the same hardened service.
 
 ### Removed
 

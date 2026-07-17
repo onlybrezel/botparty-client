@@ -4,8 +4,19 @@ BotParty's Python robot client connects a camera, control adapter and optional t
 
 ## Install
 
-The installer builds an immutable wheel, downloads the verified video streamer, creates the
-`botparty` service user and installs a hardened systemd service:
+The automatic bootstrap installs Git when needed, clones the client and runs the production
+installer:
+
+```bash
+curl -fsSLo /tmp/install-botparty.sh \
+  https://raw.githubusercontent.com/onlybrezel/botparty-client/main/scripts/bootstrap-install.sh
+sudo bash /tmp/install-botparty.sh --device-groups video
+rm /tmp/install-botparty.sh
+sudoedit /etc/botparty/config.yaml
+sudo systemctl enable --now botparty-robot.service
+```
+
+For a manual first installation, clone the repository yourself and run the same installer:
 
 ```bash
 sudo apt-get update
@@ -13,26 +24,11 @@ sudo apt-get install -y git
 git clone --depth 1 https://github.com/onlybrezel/botparty-client.git
 cd botparty-client
 sudo ./scripts/install-botparty-client.sh --device-groups video
-sudoedit /etc/botparty/config.yaml
-sudo systemctl enable --now botparty-robot.service
 ```
 
-The checkout is used only as the installation source. The installed service runs from
-`/opt/botparty`; server-triggered updates download a fresh signed release into an A/B slot and do
-not modify the checkout with `git pull`.
-
-For a manual update, refresh the checkout and rerun the installer with the same hardware options:
-
-```bash
-cd botparty-client
-git pull --ff-only
-sudo systemctl stop botparty-robot.service
-sudo ./scripts/install-botparty-client.sh --device-groups video
-sudo systemctl start botparty-robot.service
-```
-
-The existing configuration and device identity are preserved. Automatic updates use the
-server-triggered OTA path described below.
+Both paths build an immutable wheel, download the verified video streamer, create the `botparty`
+service user and install the hardened systemd service. The automatic bootstrap keeps its checkout
+at `/opt/botparty/source`; the installed service itself runs from `/opt/botparty/venv`.
 
 Start with `hardware.type: none`. Validate the host before enabling motors:
 
