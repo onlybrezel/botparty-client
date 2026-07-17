@@ -11,6 +11,10 @@ Install only the extras required by the configured profile. The default core sup
 ## Production install
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone --depth 1 https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
 sudo ./scripts/install-botparty-client.sh --device-groups video
 sudoedit /etc/botparty/config.yaml
 sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
@@ -27,6 +31,11 @@ The installer:
 - stores config in `/etc/botparty` and state in `/var/lib/botparty`;
 - installs a systemd unit with readiness, watchdog and shutdown limits;
 - keeps the previous environment for rollback.
+
+The cloned repository is only the source for the first installation or a deliberate manual
+reinstall. The service does not run from the checkout. An OTA request from the BotParty server
+downloads a signed release into the inactive slot, validates it and switches slots atomically;
+it never runs `git pull` against a live robot process.
 
 Add groups only for devices in use:
 

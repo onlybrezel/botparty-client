@@ -8,10 +8,18 @@ The installer builds an immutable wheel, downloads the verified video streamer, 
 `botparty` service user and installs a hardened systemd service:
 
 ```bash
+sudo apt-get update
+sudo apt-get install -y git
+git clone --depth 1 https://github.com/onlybrezel/botparty-client.git
+cd botparty-client
 sudo ./scripts/install-botparty-client.sh --device-groups video
 sudoedit /etc/botparty/config.yaml
 sudo systemctl enable --now botparty-robot.service
 ```
+
+The checkout is used only as the installation source. The installed service runs from
+`/opt/botparty`; server-triggered updates download a fresh signed release into an A/B slot and do
+not modify the checkout with `git pull`.
 
 Start with `hardware.type: none`. Validate the host before enabling motors:
 
