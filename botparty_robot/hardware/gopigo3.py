@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -30,19 +29,27 @@ class HardwareAdapter(BaseHardware):
             return
         speed = self.robot.get_speed()
         if self.matches(command, "left"):
-            self.robot.set_motor_dps(self.robot.MOTOR_LEFT, -speed)
-            self.robot.set_motor_dps(self.robot.MOTOR_RIGHT, speed)
-            time.sleep(self.turn_time)
+
+            def left() -> None:
+                self.robot.set_motor_dps(self.robot.MOTOR_LEFT, -speed)
+                self.robot.set_motor_dps(self.robot.MOTOR_RIGHT, speed)
+
+            self.guarded_write(left)
+            self.interruptible_sleep(self.turn_time)
         elif self.matches(command, "right"):
-            self.robot.set_motor_dps(self.robot.MOTOR_LEFT, speed)
-            self.robot.set_motor_dps(self.robot.MOTOR_RIGHT, -speed)
-            time.sleep(self.turn_time)
+
+            def right() -> None:
+                self.robot.set_motor_dps(self.robot.MOTOR_LEFT, speed)
+                self.robot.set_motor_dps(self.robot.MOTOR_RIGHT, -speed)
+
+            self.guarded_write(right)
+            self.interruptible_sleep(self.turn_time)
         elif self.matches(command, "forward"):
-            self.robot.forward()
-            time.sleep(self.drive_time)
+            self.guarded_write(self.robot.forward)
+            self.interruptible_sleep(self.drive_time)
         elif self.matches(command, "backward"):
-            self.robot.backward()
-            time.sleep(self.drive_time)
+            self.guarded_write(self.robot.backward)
+            self.interruptible_sleep(self.drive_time)
         else:
             return
         self.robot.stop()
@@ -50,4 +57,3 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         if self.robot is not None:
             self.robot.stop()
-

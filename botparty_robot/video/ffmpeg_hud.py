@@ -25,6 +25,9 @@ class VideoProfile(BaseVideoProfile):
         now = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         draw.rectangle((12, 12, 340, 84), fill=(0, 0, 0, 150))
         draw.text((24, 20), f"BotParty HUD  {now}", fill=(255, 255, 255, 255))
-        draw.text((24, 44), f"{self.config.hardware.type}  {frame_width}x{frame_height}", fill=(150, 220, 255, 255))
+        draw.text(
+            (24, 44),
+            f"{self.config.hardware.type}  {frame_width}x{frame_height}",
+            fill=(150, 220, 255, 255),
+        )
         return np.array(image)
-

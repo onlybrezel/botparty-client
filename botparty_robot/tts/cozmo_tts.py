@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .base import BaseTTSProfile
 from ..hardware.cozmo import get_cozmo_robot
+from .base import BaseTTSProfile
 
 
 class TTSProfile(BaseTTSProfile):

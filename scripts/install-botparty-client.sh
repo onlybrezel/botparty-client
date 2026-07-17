@@ -5,163 +5,57 @@ usage() {
   cat <<'EOF'
 usage: install-botparty-client.sh [options]
 
-Lightweight bootstrap installer for BotParty Robot Client.
+Builds one wheel from this checkout and installs it for a dedicated service user.
 
 Options:
-  --user <name>                 Service user (default: current user)
-  --repo-dir <path>             Repo path (default: detected repo or ~/botparty-client)
-  --repo-url <url>              Repo clone URL (default: https://github.com/onlybrezel/botparty-client)
-  --branch <name>               Clone branch/tag (optional)
-  --venv-dir <path>             Virtualenv path (default: <repo>/.venv)
-  --python <bin>                Python executable (default: python3)
-  --no-streamer                 Skip botparty-streamer install
-  --streamer-version <tag>      Streamer version (default: active from stats endpoint)
-  --streamer-dir <path>         Streamer install dir (default: <repo>/.botparty/bin)
-  --no-service                  Skip systemd service setup
-  --service-name <name>         Service name (default: botparty-robot)
-  --no-apt                      Do not install missing apt packages
-  --overwrite-config            Overwrite existing config.yaml from config.example.yaml
-  --non-interactive             Disable whiptail prompts
-  -h, --help                    Show this help
-
-Examples:
-  ./scripts/install-botparty-client.sh
-  ./scripts/install-botparty-client.sh --overwrite-config
-  ./scripts/install-botparty-client.sh --repo-dir "$HOME/botparty-client" --no-service
+  --user NAME                 Service account (default: botparty)
+  --prefix PATH               Install prefix (default: /opt/botparty)
+  --config PATH               Config path (default: /etc/botparty/config.yaml)
+  --state-dir PATH            State path (default: /var/lib/botparty)
+  --extras PROFILE            Locked profile: vision, hardware, gpio, serial,
+                              mqtt, usb, telemetry, polly or google-tts
+  --device-groups LIST        Explicit device groups (default: none)
+  --no-service                Do not create/start a systemd unit
+  --no-apt                    Do not install OS prerequisites
+  --no-streamer               Skip the verified video streamer download
+  --streamer-manifest URL     Custom signed streamer manifest URL
+  --streamer-public-key FILE  Public key for a custom streamer manifest
+  -h, --help                  Show this help
 EOF
 }
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SCRIPT_REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
-ACTIVE_CONTROLLER_VERSION_URL="${BOTPARTY_CONTROLLER_ACTIVE_VERSION_URL:-https://stats.botparty.live/get_active_version.php?app=controller}"
-ACTIVE_STREAMER_VERSION_URL="${BOTPARTY_STREAMER_ACTIVE_VERSION_URL:-https://stats.botparty.live/get_active_version.php?app=streamer}"
-CURRENT_USER="$(id -un)"
-INSTALL_USER="$CURRENT_USER"
-REPO_URL="https://github.com/onlybrezel/botparty-client"
-BRANCH=""
-if [[ -f "$SCRIPT_REPO_DIR/pyproject.toml" ]] && [[ -d "$SCRIPT_REPO_DIR/botparty_robot" ]]; then
-  REPO_DIR="$SCRIPT_REPO_DIR"
-else
-  REPO_DIR="/home/$CURRENT_USER/botparty-client"
-fi
-VENV_DIR=""
-PYTHON_BIN="python3"
-WITH_STREAMER="true"
+REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+INSTALL_USER="botparty"
+PREFIX="/opt/botparty"
+CONFIG_PATH="/etc/botparty/config.yaml"
+STATE_DIR="/var/lib/botparty"
+EXTRAS=""
+DEVICE_GROUPS=""
 WITH_SERVICE="true"
 WITH_APT="true"
-OVERWRITE_CONFIG="false"
-NON_INTERACTIVE="false"
-STREAMER_VERSION=""
-STREAMER_DIR=""
+STREAMER_MANIFEST=""
+STREAMER_PUBLIC_KEY=""
+WITH_STREAMER="true"
 SERVICE_NAME="botparty-robot"
-ARGS_COUNT=$#
-
-fetch_active_version() {
-  local url="$1"
-  local raw=""
-  raw="$(curl -fsSL --max-time 6 "$url" 2>/dev/null || true)"
-  raw="$(printf "%s" "$raw" | tr -d '\r' | head -n 1 | xargs || true)"
-  if [[ -z "$raw" ]]; then
-    return 1
-  fi
-  if [[ "$raw" =~ ^v[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9._]+)?$ ]]; then
-    printf "%s" "$raw"
-    return 0
-  fi
-  if [[ "$raw" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][A-Za-z0-9._]+)?$ ]]; then
-    printf "v%s" "$raw"
-    return 0
-  fi
-  return 1
-}
-
-ACTIVE_CONTROLLER_VERSION="$(fetch_active_version "$ACTIVE_CONTROLLER_VERSION_URL" || true)"
-ACTIVE_STREAMER_VERSION="$(fetch_active_version "$ACTIVE_STREAMER_VERSION_URL" || true)"
-if [[ -z "$STREAMER_VERSION" ]]; then
-  STREAMER_VERSION="${ACTIVE_STREAMER_VERSION:-v0.1.3}"
-fi
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
-    --user)
-      INSTALL_USER="${2:-}"
-      shift 2
-      ;;
-    --repo-dir)
-      REPO_DIR="${2:-}"
-      shift 2
-      ;;
-    --repo-url)
-      REPO_URL="${2:-}"
-      shift 2
-      ;;
-    --branch)
-      BRANCH="${2:-}"
-      shift 2
-      ;;
-    --venv-dir)
-      VENV_DIR="${2:-}"
-      shift 2
-      ;;
-    --python)
-      PYTHON_BIN="${2:-}"
-      shift 2
-      ;;
-    --no-streamer)
-      WITH_STREAMER="false"
-      shift
-      ;;
-    --streamer-version)
-      STREAMER_VERSION="${2:-}"
-      shift 2
-      ;;
-    --streamer-dir)
-      STREAMER_DIR="${2:-}"
-      shift 2
-      ;;
-    --no-service)
-      WITH_SERVICE="false"
-      shift
-      ;;
-    --service-name)
-      SERVICE_NAME="${2:-}"
-      shift 2
-      ;;
-    --no-apt)
-      WITH_APT="false"
-      shift
-      ;;
-    --overwrite-config)
-      OVERWRITE_CONFIG="true"
-      shift
-      ;;
-    --non-interactive)
-      NON_INTERACTIVE="true"
-      shift
-      ;;
-    -h|--help)
-      usage
-      exit 0
-      ;;
-    *)
-      echo "Unknown argument: $1" >&2
-      usage >&2
-      exit 1
-      ;;
+    --user) INSTALL_USER="${2:-}"; shift 2 ;;
+    --prefix) PREFIX="${2:-}"; shift 2 ;;
+    --config) CONFIG_PATH="${2:-}"; shift 2 ;;
+    --state-dir) STATE_DIR="${2:-}"; shift 2 ;;
+    --extras) EXTRAS="${2:-}"; shift 2 ;;
+    --device-groups) DEVICE_GROUPS="${2:-}"; shift 2 ;;
+    --no-service) WITH_SERVICE="false"; shift ;;
+    --no-apt) WITH_APT="false"; shift ;;
+    --no-streamer) WITH_STREAMER="false"; shift ;;
+    --streamer-manifest) STREAMER_MANIFEST="${2:-}"; shift 2 ;;
+    --streamer-public-key) STREAMER_PUBLIC_KEY="${2:-}"; shift 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "Unknown argument: $1" >&2; usage >&2; exit 1 ;;
   esac
 done
-
-if [[ -z "$VENV_DIR" ]]; then
-  VENV_DIR="$REPO_DIR/.venv"
-fi
-if [[ -z "$STREAMER_DIR" ]]; then
-  STREAMER_DIR="$REPO_DIR/.botparty/bin"
-fi
-
-if ! id "$INSTALL_USER" >/dev/null 2>&1; then
-  echo "Error: user does not exist: $INSTALL_USER" >&2
-  exit 1
-fi
 
 if [[ "$(id -u)" -eq 0 ]]; then
   SUDO=""
@@ -169,180 +63,166 @@ else
   SUDO="sudo"
 fi
 
-maybe_interactive_prompts() {
-  if [[ "$NON_INTERACTIVE" == "true" ]] || [[ "$ARGS_COUNT" -gt 0 ]] || [[ ! -t 0 ]]; then
-    return
-  fi
-  if ! command -v whiptail >/dev/null 2>&1; then
-    return
-  fi
-
-  if whiptail --yesno "Install botparty-streamer helper too?" 10 60; then
-    WITH_STREAMER="true"
-  else
-    WITH_STREAMER="false"
-  fi
-
-  if whiptail --yesno "Create and enable systemd service (${SERVICE_NAME})?" 10 60; then
-    WITH_SERVICE="true"
-  else
-    WITH_SERVICE="false"
-  fi
-  if [[ -f "$REPO_DIR/config.yaml" ]] && whiptail --yesno "Overwrite existing config.yaml with config.example.yaml?" 10 70; then
-    OVERWRITE_CONFIG="true"
-  fi
-}
-
-install_missing_apt_packages() {
-  if [[ "$WITH_APT" != "true" ]]; then
-    return
-  fi
-  if ! command -v apt-get >/dev/null 2>&1; then
-    echo "Warning: apt-get not found, skipping package install" >&2
-    return
-  fi
-
-  local packages=()
-  command -v git >/dev/null 2>&1 || packages+=(git)
-  command -v curl >/dev/null 2>&1 || packages+=(curl)
-  command -v ffmpeg >/dev/null 2>&1 || packages+=(ffmpeg)
-  command -v python3 >/dev/null 2>&1 || packages+=(python3)
-  if ! python3 -m venv --help >/dev/null 2>&1; then
-    packages+=(python3-venv)
-  fi
-  packages+=(python3-pip ca-certificates alsa-utils espeak mpg123)
-
-  # De-duplicate while preserving order.
-  local deduped=()
-  local seen=" "
-  local pkg
-  for pkg in "${packages[@]}"; do
-    if [[ "$seen" != *" $pkg "* ]]; then
-      deduped+=("$pkg")
-      seen+="$pkg "
-    fi
-  done
-
-  echo "==> Installing OS packages"
+if [[ "$WITH_APT" == "true" ]]; then
   $SUDO apt-get update
-  $SUDO apt-get install -y "${deduped[@]}"
-}
+  $SUDO apt-get install -y python3 python3-venv python3-pip ffmpeg ca-certificates
+fi
 
-ensure_repo_present() {
-  if [[ -d "$REPO_DIR/.git" ]] && [[ -f "$REPO_DIR/pyproject.toml" ]] && [[ -d "$REPO_DIR/botparty_robot" ]]; then
-    return
-  fi
-
-  if [[ -d "$REPO_DIR" ]] && [[ -n "$(ls -A "$REPO_DIR" 2>/dev/null || true)" ]]; then
-    echo "Error: $REPO_DIR exists but does not look like botparty-client" >&2
-    exit 1
-  fi
-
-  if ! command -v git >/dev/null 2>&1; then
-    if [[ "$WITH_APT" == "true" ]] && command -v apt-get >/dev/null 2>&1; then
-      echo "==> Installing git"
-      $SUDO apt-get update
-      $SUDO apt-get install -y git
-    else
-      echo "Error: git not found and cannot auto-install (use --no-apt only if git exists)" >&2
-      exit 1
-    fi
-  fi
-
-  echo "==> Cloning botparty-client to $REPO_DIR"
-  if [[ -z "$BRANCH" ]] && [[ -n "$ACTIVE_CONTROLLER_VERSION" ]]; then
-    BRANCH="$ACTIVE_CONTROLLER_VERSION"
-  fi
-
-  if [[ -n "$BRANCH" ]]; then
-    if ! git clone --branch "$BRANCH" --depth 1 "$REPO_URL" "$REPO_DIR"; then
-      if [[ "$BRANCH" == "$ACTIVE_CONTROLLER_VERSION" ]]; then
-        echo "Warning: active controller version $BRANCH is not available as git ref, cloning default branch" >&2
-        git clone "$REPO_URL" "$REPO_DIR"
-      else
-        echo "Error: failed to clone branch/tag $BRANCH" >&2
-        exit 1
-      fi
-    fi
-  else
-    git clone "$REPO_URL" "$REPO_DIR"
-  fi
-}
-
-maybe_interactive_prompts
-install_missing_apt_packages
-ensure_repo_present
-
-if ! command -v "$PYTHON_BIN" >/dev/null 2>&1; then
-  echo "Error: python binary not found: $PYTHON_BIN" >&2
+if ! id "$INSTALL_USER" >/dev/null 2>&1; then
+  $SUDO useradd --system --home-dir "$STATE_DIR" --shell /usr/sbin/nologin "$INSTALL_USER"
+fi
+if [[ "$(id -u "$INSTALL_USER")" -eq 0 ]]; then
+  echo "Refusing to install the service as root" >&2
   exit 1
 fi
 
-if [[ ! -x "$REPO_DIR/scripts/start-botparty-robot.sh" ]]; then
-  chmod +x "$REPO_DIR/scripts/start-botparty-robot.sh" 2>/dev/null || true
+IFS=',' read -r -a requested_groups <<< "$DEVICE_GROUPS"
+valid_groups=()
+for group in "${requested_groups[@]}"; do
+  group="$(printf '%s' "$group" | xargs)"
+  if [[ -n "$group" ]] && getent group "$group" >/dev/null; then
+    valid_groups+=("$group")
+  fi
+done
+if [[ ${#valid_groups[@]} -gt 0 ]]; then
+  group_list="$(IFS=,; printf '%s' "${valid_groups[*]}")"
+  $SUDO usermod -a -G "$group_list" "$INSTALL_USER"
 fi
 
-echo "==> BotParty bootstrap"
-echo "repo:        $REPO_DIR"
-echo "user:        $INSTALL_USER"
-echo "python:      $PYTHON_BIN"
-echo "venv:        $VENV_DIR"
-echo "controller:  ${ACTIVE_CONTROLLER_VERSION:-unknown (stats unavailable)}"
-echo "streamer:    ${STREAMER_VERSION}"
-echo "streamer dir: ${STREAMER_DIR}"
-echo "streamer:    $WITH_STREAMER"
-echo "service:     $WITH_SERVICE"
+$SUDO install -d -m 0755 -o root -g root "$PREFIX"
+$SUDO install -d -m 0700 -o "$INSTALL_USER" -g "$INSTALL_USER" "$STATE_DIR"
+$SUDO install -d -m 0750 -o root -g "$INSTALL_USER" "$(dirname "$CONFIG_PATH")"
 
-echo "==> Creating Python virtualenv"
-"$PYTHON_BIN" -m venv "$VENV_DIR"
+BUILD_DIR="$(mktemp -d)"
+trap 'rm -rf "$BUILD_DIR"' EXIT
+python3 -m venv "$BUILD_DIR/build-venv"
+"$BUILD_DIR/build-venv/bin/pip" install --upgrade "pip>=26.0" "build>=1.4.0"
+(cd "$REPO_DIR" && "$BUILD_DIR/build-venv/bin/python" -m build --wheel --outdir "$BUILD_DIR/dist")
+WHEEL_PATH="$(find "$BUILD_DIR/dist" -maxdepth 1 -name '*.whl' -print -quit)"
+if [[ -z "$WHEEL_PATH" ]]; then
+  echo "Wheel build produced no artifact" >&2
+  exit 1
+fi
+sha256sum "$WHEEL_PATH" | $SUDO tee "$PREFIX/installed-wheel.sha256" >/dev/null
 
-echo "==> Installing Python dependencies"
-"$VENV_DIR/bin/pip" install --upgrade pip
-(cd "$REPO_DIR" && "$VENV_DIR/bin/pip" install -e ".[all]")
+$SUDO rm -rf "$PREFIX/venv.new"
+$SUDO python3 -m venv "$PREFIX/venv.new"
+$SUDO "$PREFIX/venv.new/bin/pip" install --upgrade "pip>=26.0"
+LOCK_PROFILE="production"
+if [[ -n "$EXTRAS" ]]; then
+  case "$EXTRAS" in
+    vision|hardware|gpio|serial|mqtt|usb|telemetry|polly|google-tts) LOCK_PROFILE="$EXTRAS" ;;
+    *) echo "Unsupported extras profile: $EXTRAS" >&2; exit 1 ;;
+  esac
+fi
+$SUDO "$PREFIX/venv.new/bin/pip" install --require-hashes \
+  -r "$REPO_DIR/requirements/${LOCK_PROFILE}.txt"
+$SUDO "$PREFIX/venv.new/bin/pip" install --no-deps "$WHEEL_PATH"
+$SUDO "$PREFIX/venv.new/bin/botparty-robot" --version
+$SUDO rm -rf "$PREFIX/venv.previous"
+if [[ -d "$PREFIX/venv" ]]; then
+  $SUDO mv "$PREFIX/venv" "$PREFIX/venv.previous"
+fi
+$SUDO mv "$PREFIX/venv.new" "$PREFIX/venv"
+$SUDO install -m 0755 -o root -g root \
+  "$REPO_DIR/scripts/botparty-service-launcher.sh" "$PREFIX/botparty-service-launcher.sh"
 
-if [[ ! -f "$REPO_DIR/config.yaml" ]] || [[ "$OVERWRITE_CONFIG" == "true" ]]; then
-  echo "==> Writing config.yaml from config.example.yaml"
-  cp "$REPO_DIR/config.example.yaml" "$REPO_DIR/config.yaml"
-  chmod 600 "$REPO_DIR/config.yaml"
+if [[ ! -f "$CONFIG_PATH" ]]; then
+  $SUDO install -m 0600 -o "$INSTALL_USER" -g "$INSTALL_USER" \
+    "$REPO_DIR/config.example.yaml" "$CONFIG_PATH"
+fi
+
+if [[ -n "$STREAMER_MANIFEST" ]] || [[ -n "$STREAMER_PUBLIC_KEY" ]]; then
+  if [[ -z "$STREAMER_MANIFEST" ]] || [[ -z "$STREAMER_PUBLIC_KEY" ]]; then
+    echo "Both --streamer-manifest and --streamer-public-key are required" >&2
+    exit 1
+  fi
 fi
 
 if [[ "$WITH_STREAMER" == "true" ]]; then
-  echo "==> Installing botparty-streamer helper"
-  BOTPARTY_STREAMER_DIR="$STREAMER_DIR" \
-    "$REPO_DIR/scripts/install-botparty-streamer.sh" "$STREAMER_VERSION"
+  streamer_args=(--dir "$STATE_DIR/bin")
+  if [[ -n "$STREAMER_MANIFEST" ]]; then
+    streamer_args+=(--manifest-url "$STREAMER_MANIFEST" --public-key "$STREAMER_PUBLIC_KEY")
+  fi
+  $SUDO -u "$INSTALL_USER" "$PREFIX/venv/bin/python" -m botparty_robot.artifacts \
+    "${streamer_args[@]}"
 fi
 
 if [[ "$WITH_SERVICE" == "true" ]]; then
-  UNIT_PATH="/etc/systemd/system/${SERVICE_NAME}.service"
-  echo "==> Creating systemd unit: $UNIT_PATH"
-  UNIT_CONTENT="[Unit]
+  supplementary=""
+  if [[ ${#valid_groups[@]} -gt 0 ]]; then
+    supplementary="SupplementaryGroups=${valid_groups[*]}"
+  fi
+  device_allow=""
+  for group in "${valid_groups[@]}"; do
+    case "$group" in
+      video) device_allow+=$'DeviceAllow=/dev/video0 rw\nDeviceAllow=/dev/video1 rw\nDeviceAllow=/dev/video2 rw\n' ;;
+      audio) device_allow+=$'DeviceAllow=char-alsa rw\n' ;;
+      dialout) device_allow+=$'DeviceAllow=/dev/ttyUSB0 rw\nDeviceAllow=/dev/ttyACM0 rw\n' ;;
+      i2c) device_allow+=$'DeviceAllow=/dev/i2c-1 rw\n' ;;
+      gpio) device_allow+=$'DeviceAllow=/dev/gpiochip0 rw\n' ;;
+    esac
+  done
+  unit_path="/etc/systemd/system/${SERVICE_NAME}.service"
+  $SUDO tee "$unit_path" >/dev/null <<EOF
+[Unit]
 Description=BotParty Robot Client
 After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=simple
-User=${INSTALL_USER}
-WorkingDirectory=${REPO_DIR}
+Type=notify
+NotifyAccess=main
+User=$INSTALL_USER
+Group=$INSTALL_USER
+$supplementary
+WorkingDirectory=$(dirname "$CONFIG_PATH")
 Environment=PYTHONUNBUFFERED=1
-ExecStart=${REPO_DIR}/scripts/start-botparty-robot.sh
-Restart=always
+Environment=BOTPARTY_CONFIG=$CONFIG_PATH
+Environment=BOTPARTY_STATE_DIR=$STATE_DIR
+Environment=BOTPARTY_OTA_STATE_DIR=$STATE_DIR/ota
+Environment=BOTPARTY_STREAMER_DIR=$STATE_DIR/bin
+Environment=BOTPARTY_PYTHON=$PREFIX/venv/bin/python
+ExecStart=$PREFIX/botparty-service-launcher.sh --config $CONFIG_PATH
+Restart=on-failure
 RestartSec=5
-StandardOutput=journal
-StandardError=journal
+WatchdogSec=20
+TimeoutStopSec=20
+KillMode=mixed
+UMask=0077
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+DevicePolicy=closed
+$device_allow
+ReadWritePaths=$STATE_DIR
 
 [Install]
 WantedBy=multi-user.target
-"
-  printf "%s" "$UNIT_CONTENT" | $SUDO tee "$UNIT_PATH" >/dev/null
+EOF
   $SUDO systemctl daemon-reload
-  $SUDO systemctl enable --now "${SERVICE_NAME}.service"
-  echo "==> Service started: ${SERVICE_NAME}.service"
+  $SUDO systemctl enable "${SERVICE_NAME}.service"
 fi
 
-echo
-echo "Install complete."
-echo "Next:"
-echo "  1) Edit ${REPO_DIR}/config.yaml (claim token, hardware/video profile)"
-echo "  2) If service enabled: $SUDO journalctl -u ${SERVICE_NAME}.service -f"
-echo "  3) Manual run: ${REPO_DIR}/scripts/start-botparty-robot.sh"
+echo "Installed BotParty Robot Client for service user $INSTALL_USER"
+echo "Config: $CONFIG_PATH"
+echo "State:  $STATE_DIR"
+if [[ "$WITH_STREAMER" == "true" ]]; then
+  echo "Video streamer: $STATE_DIR/bin/botparty-streamer"
+fi
+if [[ "$WITH_SERVICE" == "true" ]]; then
+  echo "Edit and validate the config, then start ${SERVICE_NAME}.service"
+fi

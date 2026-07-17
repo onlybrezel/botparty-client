@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -11,6 +10,18 @@ from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = (
+        "forward",
+        "backward",
+        "left",
+        "right",
+        "lift_up",
+        "lift_down",
+        "open",
+        "close",
+        "stop",
+    )
+    motion_commands = supported_commands[:-1]
     profile_name = "motor_hat"
     description = "Adafruit Motor HAT adapter with optional accessory channels"
 
@@ -52,8 +63,12 @@ class HardwareAdapter(BaseHardware):
             motor = self._motor(channel)
             if motor is None:
                 continue
-            motor.setSpeed(speed)
-            motor.run(direction)
+
+            def apply(current_motor=motor) -> None:
+                current_motor.setSpeed(speed)
+                current_motor.run(direction)
+
+            self.guarded_write(apply)
 
     def _release_all(self) -> None:
         if self.mh is None:
@@ -62,21 +77,27 @@ class HardwareAdapter(BaseHardware):
             motor = self.mh.getMotor(channel)
             motor.run(self.module.Adafruit_MotorHAT.RELEASE)
 
-    def _pulse(self, left_direction: int, right_direction: int, speed: int, duration: float) -> None:
+    def _pulse(
+        self, left_direction: int, right_direction: int, speed: int, duration: float
+    ) -> None:
         if self.mh is None:
             return
         self._apply(self.left_motors, left_direction, speed)
         self._apply(self.right_motors, right_direction, speed)
-        time.sleep(duration)
+        self.interruptible_sleep(duration)
         self._release_all()
 
     def _pulse_single(self, channel: int, direction: int, speed: int, duration: float) -> None:
         motor = self._motor(channel)
         if motor is None:
             return
-        motor.setSpeed(speed)
-        motor.run(direction)
-        time.sleep(duration)
+
+        def apply() -> None:
+            motor.setSpeed(speed)
+            motor.run(direction)
+
+        self.guarded_write(apply)
+        self.interruptible_sleep(duration)
         motor.run(self.module.Adafruit_MotorHAT.RELEASE)
 
     def on_command(self, command: str, value: Any = None) -> None:

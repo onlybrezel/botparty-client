@@ -1,6 +1,7 @@
 """Unit tests for hardware adapter utility functions."""
 
 import pytest
+
 from botparty_robot.hardware.common import (
     command_matches,
     get_float,
@@ -9,7 +10,6 @@ from botparty_robot.hardware.common import (
     get_str,
     normalize_command,
 )
-
 
 # ---------- normalize_command ----------
 

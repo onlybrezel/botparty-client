@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-import time
+from contextlib import suppress
 from typing import Any
 
 from .base import BaseHardware
@@ -17,6 +17,18 @@ def get_cozmo_robot():
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = (
+        "forward",
+        "backward",
+        "left",
+        "right",
+        "lift_up",
+        "lift_down",
+        "head_up",
+        "head_down",
+        "stop",
+    )
+    motion_commands = supported_commands[:-1]
     profile_name = "cozmo"
     description = "Anki Cozmo control adapter"
 
@@ -27,6 +39,7 @@ class HardwareAdapter(BaseHardware):
         self.forward_speed = self.option_int("forward_speed", 75)
         self.volume = self.option_int("volume", 100)
         self.colour = bool(self.options.get("colour", True))
+        self._closing = threading.Event()
 
     def setup(self) -> None:
         if self.cozmo is None:
@@ -47,8 +60,8 @@ class HardwareAdapter(BaseHardware):
         self.robot.camera.color_image_enabled = self.colour
         self.robot.set_robot_volume(self.volume / 100)
         _COZMO_ROBOT = self.robot
-        while True:
-            time.sleep(1)
+        while not self._closing.wait(1):
+            continue
 
     def on_command(self, command: str, value: Any = None) -> None:
         if self.robot is None or self.cozmo is None:
@@ -59,24 +72,48 @@ class HardwareAdapter(BaseHardware):
         speed_mmps = self.cozmo.util.speed_mmps
         try:
             if self.matches(command, "forward"):
-                self.robot.drive_straight(distance_mm(10), speed_mmps(self.forward_speed), False, True).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.drive_straight(
+                        distance_mm(10), speed_mmps(self.forward_speed), False, True
+                    )
+                ).wait_for_completed()
             elif self.matches(command, "backward"):
-                self.robot.drive_straight(distance_mm(-10), speed_mmps(self.forward_speed), False, True).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.drive_straight(
+                        distance_mm(-10), speed_mmps(self.forward_speed), False, True
+                    )
+                ).wait_for_completed()
             elif self.matches(command, "left"):
-                self.robot.turn_in_place(degrees(15), False).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.turn_in_place(degrees(15), False)
+                ).wait_for_completed()
             elif self.matches(command, "right"):
-                self.robot.turn_in_place(degrees(-15), False).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.turn_in_place(degrees(-15), False)
+                ).wait_for_completed()
             elif self.matches(command, "lift_up"):
-                self.robot.set_lift_height(1.0).wait_for_completed()
+                self.guarded_write(lambda: self.robot.set_lift_height(1.0)).wait_for_completed()
             elif self.matches(command, "lift_down"):
-                self.robot.set_lift_height(0.0).wait_for_completed()
+                self.guarded_write(lambda: self.robot.set_lift_height(0.0)).wait_for_completed()
             elif self.matches(command, "head_down"):
-                self.robot.set_head_angle(degrees(0)).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.set_head_angle(degrees(0))
+                ).wait_for_completed()
             elif self.matches(command, "head_up"):
-                self.robot.set_head_angle(degrees(44.5)).wait_for_completed()
+                self.guarded_write(
+                    lambda: self.robot.set_head_angle(degrees(44.5))
+                ).wait_for_completed()
             elif command == "v":
                 self.robot.play_anim("anim_poked_giggle").wait_for_completed()
-            elif command in {"sayhi", "saywatch", "saylove", "saybye", "sayhappy", "saysad", "sayhowru"}:
+            elif command in {
+                "sayhi",
+                "saywatch",
+                "saylove",
+                "saybye",
+                "sayhappy",
+                "saysad",
+                "sayhowru",
+            }:
                 phrases = {
                     "sayhi": "hi! I'm Cozmo!",
                     "saywatch": "watch this",
@@ -114,7 +151,10 @@ class HardwareAdapter(BaseHardware):
 
     def emergency_stop(self) -> None:
         if self.robot is not None:
-            try:
+            with suppress(Exception):
                 self.robot.stop_all_motors()
-            except Exception:
-                pass
+
+    def _close_resources(self) -> None:
+        global _COZMO_ROBOT
+        self._closing.set()
+        _COZMO_ROBOT = None

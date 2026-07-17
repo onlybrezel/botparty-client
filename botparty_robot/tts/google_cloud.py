@@ -64,6 +64,7 @@ class TTSProfile(BaseTTSProfile):
             input=synthesis_input,
             voice=voice,
             audio_config=audio_config,
+            timeout=self.operation_timeout_sec,
         )
         wav_path = write_bytes_file(response.audio_content, ".wav")
         try:

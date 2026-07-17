@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -45,7 +44,7 @@ class HardwareAdapter(BaseHardware):
         if self.gpio is None:
             return
         for key in keys:
-            self.gpio.output(self.pins[key], self.gpio.HIGH)
+            self.guarded_write(lambda key=key: self.gpio.output(self.pins[key], self.gpio.HIGH))
 
     def _low_all(self) -> None:
         if self.gpio is None:
@@ -55,7 +54,7 @@ class HardwareAdapter(BaseHardware):
 
     def _pulse(self, *keys: str) -> None:
         self._high(*keys)
-        time.sleep(self.delay)
+        self.interruptible_sleep(self.delay)
         self._low_all()
 
     def on_command(self, command: str, value: Any = None) -> None:
@@ -63,16 +62,55 @@ class HardwareAdapter(BaseHardware):
             self.log.info("command=%s value=%s", command, value)
             return
         if self.matches(command, "forward"):
-            self._pulse("motor1b", "motor1enable", "motor2b", "motor2enable", "motor3a", "motor3enable", "motor4b", "motor4enable")
+            self._pulse(
+                "motor1b",
+                "motor1enable",
+                "motor2b",
+                "motor2enable",
+                "motor3a",
+                "motor3enable",
+                "motor4b",
+                "motor4enable",
+            )
         elif self.matches(command, "backward"):
-            self._pulse("motor1a", "motor1enable", "motor2a", "motor2enable", "motor3b", "motor3enable", "motor4a", "motor4enable")
+            self._pulse(
+                "motor1a",
+                "motor1enable",
+                "motor2a",
+                "motor2enable",
+                "motor3b",
+                "motor3enable",
+                "motor4a",
+                "motor4enable",
+            )
         elif self.matches(command, "left"):
-            self._pulse("motor3b", "motor3enable", "motor1a", "motor1enable", "motor2b", "motor2enable", "motor4b", "motor4enable")
+            self._pulse(
+                "motor3b",
+                "motor3enable",
+                "motor1a",
+                "motor1enable",
+                "motor2b",
+                "motor2enable",
+                "motor4b",
+                "motor4enable",
+            )
         elif self.matches(command, "right"):
-            self._pulse("motor3a", "motor3enable", "motor1b", "motor1enable", "motor2a", "motor2enable", "motor4a", "motor4enable")
+            self._pulse(
+                "motor3a",
+                "motor3enable",
+                "motor1b",
+                "motor1enable",
+                "motor2a",
+                "motor2enable",
+                "motor4a",
+                "motor4enable",
+            )
         elif self.matches(command, "stop"):
             self.emergency_stop()
 
     def emergency_stop(self) -> None:
         self._low_all()
 
+    def _close_resources(self) -> None:
+        if self.gpio is not None:
+            self.gpio.cleanup()

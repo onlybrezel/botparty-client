@@ -31,7 +31,7 @@ def normalize_profile_name(name: str) -> str:
 def create_tts_profile(config: RobotConfig) -> BaseTTSProfile:
     profile = normalize_profile_name(config.tts.type)
     module = importlib.import_module(f".{profile}", package=__name__)
-    adapter = module.TTSProfile(config)
+    adapter: BaseTTSProfile = module.TTSProfile(config)
     adapter.setup()
     return adapter
 

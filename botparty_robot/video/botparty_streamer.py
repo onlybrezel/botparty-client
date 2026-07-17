@@ -108,7 +108,8 @@ class VideoProfile(BaseVideoProfile):
                 return
 
             logger.info(
-                "Starting arecord capture for botparty-streamer: device=%s sample_rate=%d channels=%d",
+                "Starting arecord capture for botparty-streamer: "
+                "device=%s sample_rate=%d channels=%d",
                 current_audio_device,
                 sample_rate,
                 channels,
@@ -154,7 +155,9 @@ class VideoProfile(BaseVideoProfile):
             if proc.returncode in (None, 0):
                 return
 
-            last_error = f"arecord exited with code {proc.returncode} on device {current_audio_device}"
+            last_error = (
+                f"arecord exited with code {proc.returncode} on device {current_audio_device}"
+            )
             if idx + 1 < len(candidate_devices):
                 logger.warning("%s; trying fallback capture device", last_error)
                 continue
@@ -244,9 +247,7 @@ class VideoProfile(BaseVideoProfile):
                     )
                 return candidate
 
-        raise RuntimeError(
-            f"No free publisher TCP port in range [{base + 1}, {base + window}]"
-        )
+        raise RuntimeError(f"No free publisher TCP port in range [{base + 1}, {base + window}]")
 
     def _is_local_port_available(self, port: int) -> bool:
         sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -302,7 +303,7 @@ class VideoProfile(BaseVideoProfile):
         width = int(self.camera.width)
         height = int(self.camera.height)
         input_fps = max(1, int(self.camera.fps))
-        output_fps = max(1, int(round(self.output_fps())))
+        output_fps = max(1, round(self.output_fps()))
         bitrate = (
             int(target_bitrate_kbps)
             if isinstance(target_bitrate_kbps, int) and target_bitrate_kbps > 0
@@ -405,7 +406,7 @@ class VideoProfile(BaseVideoProfile):
                 "LK_TRACK_NAME": track_name,
                 "INPUT_LISTEN_ADDR": f"127.0.0.1:{port}",
                 "ALLOW_REMOTE_INPUT": "false",
-                "VIDEO_FPS": str(max(1, int(round(self.output_fps())))),
+                "VIDEO_FPS": str(max(1, round(self.output_fps()))),
                 "FRAME_CHAN_SIZE": str(int(self.options.get("frame_chan_size", 4))),
                 "MAX_PUBLISH_STALE_MS": str(int(self.options.get("max_publish_stale_ms", 250))),
                 "AU_MAX_NALUS": str(int(self.options.get("au_max_nalus", 64))),
@@ -430,7 +431,9 @@ class VideoProfile(BaseVideoProfile):
 
         if not self.command_exists(publisher_path):
             raise RuntimeError(
-                f"Missing botparty-streamer binary ({publisher_path}). Install it with ./scripts/install-botparty-streamer.sh or set video.options.publisher_binary"
+                f"Missing botparty-streamer binary ({publisher_path}). Install it with "
+                "./scripts/install-botparty-streamer.sh or set "
+                "video.options.publisher_binary"
             )
         if not self.command_exists(ffmpeg_path):
             raise RuntimeError("FFmpeg is missing. Install with: sudo apt install -y ffmpeg")
@@ -438,7 +441,8 @@ class VideoProfile(BaseVideoProfile):
         codec = str(self.options.get("video_codec") or self.detect_default_h264_codec()).strip()
         if codec != "libx264" and not self.ffmpeg_supports("encoder", codec):
             raise RuntimeError(
-                f"FFmpeg encoder '{codec}' is not available on this system. Choose a supported encoder or install codec packages."
+                f"FFmpeg encoder '{codec}' is unavailable. Choose a supported encoder or "
+                "install the required codec package."
             )
 
         port = self._tcp_port()
@@ -458,10 +462,10 @@ class VideoProfile(BaseVideoProfile):
             "}; "
             "trap cleanup EXIT INT TERM; "
             f"{shlex.join(publisher_cmd)} & "
-            'publisher_pid=$!; '
+            "publisher_pid=$!; "
             "sleep 0.4; "
             f"{shlex.join(ffmpeg_cmd)} & "
-            'ffmpeg_pid=$!; '
+            "ffmpeg_pid=$!; "
             "while true; do "
             'if ! kill -0 "$publisher_pid" 2>/dev/null; then '
             'wait "$publisher_pid"; publisher_status=$?; '

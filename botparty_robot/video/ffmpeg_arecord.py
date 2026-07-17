@@ -146,7 +146,9 @@ class VideoProfile(FFmpegVideoProfile):
             if proc.returncode in (None, 0):
                 return
 
-            last_error = f"arecord exited with code {proc.returncode} on device {current_audio_device}"
+            last_error = (
+                f"arecord exited with code {proc.returncode} on device {current_audio_device}"
+            )
             if idx + 1 < len(candidate_devices):
                 logger.warning("%s; trying fallback capture device", last_error)
                 continue

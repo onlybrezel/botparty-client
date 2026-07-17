@@ -54,6 +54,8 @@ class HardwareAdapter(BaseHardware):
 
     profile_name = "custom"
     description = "Custom hardware adapter loaded from hardware_custom.py"
+    support_level = "experimental"
+    safe_stop_capable = False
 
     def setup(self) -> None:
         """Run once at startup. Initialize GPIO, serial, or whatever your hardware needs."""
@@ -75,7 +77,8 @@ class HardwareAdapter(BaseHardware):
         robot_id = self.command_context.get("robotId")
 
         self.log.debug(
-            "Command from %s role=%s owner=%s site_admin=%s site_moderator=%s robot=%s: %s value=%s",
+            "Command from %s role=%s owner=%s site_admin=%s site_moderator=%s "
+            "robot=%s: %s value=%s",
             username,
             role,
             is_robot_owner,
@@ -100,7 +103,8 @@ class HardwareAdapter(BaseHardware):
 
         elif self.matches(command, "forward"):
             self.log.info("Moving forward")
-            # e.g. GPIO.output(FORWARD_PIN, GPIO.HIGH)
+            # Run every active output through the command-epoch guard:
+            # self.guarded_write(lambda: GPIO.output(FORWARD_PIN, GPIO.HIGH))
 
         elif self.matches(command, "backward"):
             self.log.info("Moving backward")

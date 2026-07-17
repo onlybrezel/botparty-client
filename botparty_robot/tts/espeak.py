@@ -24,10 +24,12 @@ class TTSProfile(BaseTTSProfile):
             return
         text_path = write_text_file(message)
         try:
+            voice = shell_quote(self.voice + "+" + self.voice_variant)
+            playback_device = shell_quote(self.playback_device)
             command = (
                 f"cat {shell_quote(str(text_path))} | "
-                f"{shell_quote(self.espeak_path)} -v {shell_quote(self.voice + '+' + self.voice_variant)} "
-                f"-s {self.speed} --stdout | {shell_quote(self.aplay_path)} -D {shell_quote(self.playback_device)}"
+                f"{shell_quote(self.espeak_path)} -v {voice} -s {self.speed} --stdout | "
+                f"{shell_quote(self.aplay_path)} -D {playback_device}"
             )
             run_shell(command)
         finally:

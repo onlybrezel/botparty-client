@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shlex
 import shutil
+import signal
 import subprocess
 import tempfile
+import threading
 import uuid
 from pathlib import Path
 from typing import Any
+
+_ACTIVE_PROCESSES: set[subprocess.Popen[bytes]] = set()
+_ACTIVE_PROCESSES_LOCK = threading.Lock()
 
 
 def make_temp_path(suffix: str) -> Path:
@@ -24,8 +30,51 @@ def command_exists(command: str) -> bool:
     return shutil.which(command) is not None
 
 
-def run_shell(command: str) -> int:
-    return subprocess.run(command, shell=True, check=False).returncode
+def run_shell(command: str, timeout_sec: float = 20.0) -> int:
+    process = subprocess.Popen(
+        command,
+        shell=True,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    with _ACTIVE_PROCESSES_LOCK:
+        _ACTIVE_PROCESSES.add(process)
+    try:
+        return process.wait(timeout=timeout_sec)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            return process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            return process.wait(timeout=2)
+    finally:
+        with _ACTIVE_PROCESSES_LOCK:
+            _ACTIVE_PROCESSES.discard(process)
+
+
+def terminate_active_tts_processes() -> None:
+    with _ACTIVE_PROCESSES_LOCK:
+        processes = list(_ACTIVE_PROCESSES)
+    for process in processes:
+        if process.poll() is not None:
+            continue
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        timer = threading.Timer(0.5, _kill_process_group_if_running, args=(process,))
+        timer.daemon = True
+        timer.start()
+
+
+def _kill_process_group_if_running(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is None:
+        with contextlib.suppress(ProcessLookupError):
+            os.killpg(process.pid, signal.SIGKILL)
 
 
 def write_text_file(message: str, suffix: str = ".txt") -> Path:

@@ -5,7 +5,7 @@ import contextlib
 import logging
 import re
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from livekit import rtc
 
@@ -39,20 +39,20 @@ class CameraManager:
         self.audio_enabled = audio_enabled
         self.camera_id = camera_id
         self._frame_count = 0
-        self._audio_task: Optional[asyncio.Task] = None
+        self._audio_task: asyncio.Task | None = None
 
     @property
     def frame_count(self) -> int:
         return self._frame_count
 
     @property
-    def audio_task(self) -> Optional[asyncio.Task]:
+    def audio_task(self) -> asyncio.Task | None:
         return self._audio_task
 
     async def run(
         self,
         room: rtc.Room,
-        target_bitrate_kbps: Optional[int],
+        target_bitrate_kbps: int | None,
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
@@ -80,7 +80,7 @@ class CameraManager:
                 try:
                     publish_options.video_encoding = rtc.VideoEncoding(
                         max_bitrate=target_bitrate_kbps * 1000,
-                        max_framerate=int(round(camera_fps)),
+                        max_framerate=round(camera_fps),
                     )
                     logger.info("Applying target bitrate: %d kbps", target_bitrate_kbps)
                 except Exception:
@@ -98,13 +98,17 @@ class CameraManager:
                 )
 
             if mode == "ffmpeg":
-                await self._loop_ffmpeg(source, frame_width, frame_height, camera_fps, running_fn, connected_fn)
+                await self._loop_ffmpeg(
+                    source, frame_width, frame_height, camera_fps, running_fn, connected_fn
+                )
             elif mode == "sdk":
                 await self.video_profile.capture_sdk_frames(
                     rtc, source, running_fn, lambda: self._inc_frame()
                 )
             else:
-                await self._loop_cv2(cap, source, frame_width, frame_height, camera_fps, running_fn, connected_fn)
+                await self._loop_cv2(
+                    cap, source, frame_width, frame_height, camera_fps, running_fn, connected_fn
+                )
 
         except asyncio.CancelledError:
             pass
@@ -315,9 +319,17 @@ class CameraManager:
         frames_since_yield = 0
 
         requested_publish_fps = float(self.video_profile.output_fps())
-        publish_fps = min(camera_fps, max(5.0, requested_publish_fps)) if camera_fps > 0 else max(5.0, requested_publish_fps)
+        publish_fps = (
+            min(camera_fps, max(5.0, requested_publish_fps))
+            if camera_fps > 0
+            else max(5.0, requested_publish_fps)
+        )
         effective_publish_fps = publish_fps
-        publish_interval = 1.0 / effective_publish_fps if effective_publish_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
+        publish_interval = (
+            1.0 / effective_publish_fps
+            if effective_publish_fps > 0
+            else 1.0 / max(self.config.camera.fps, 1)
+        )
         next_publish_at = time.monotonic()
         lag_overruns = 0
         stable_since = next_publish_at
@@ -326,7 +338,8 @@ class CameraManager:
         try:
             proc = await self.video_profile.spawn_ffmpeg_process()
             logger.info(
-                "Camera opened via %s: device=%s resolution=%dx%d fps=%.1f publish_fps=%.1f format=%s",
+                "Camera opened via %s: device=%s resolution=%dx%d "
+                "fps=%.1f publish_fps=%.1f format=%s",
                 self.config.video.type,
                 self.config.camera.device,
                 frame_width,
@@ -395,7 +408,13 @@ class CameraManager:
                     dropped_for_pacing += 1
                     continue
 
-                next_publish_at, publish_interval, lag_overruns, effective_publish_fps, stable_since = self._update_adaptive_publish_rate(
+                (
+                    next_publish_at,
+                    publish_interval,
+                    lag_overruns,
+                    effective_publish_fps,
+                    stable_since,
+                ) = self._update_adaptive_publish_rate(
                     now=now,
                     next_publish_at=next_publish_at,
                     publish_interval=publish_interval,
@@ -406,7 +425,9 @@ class CameraManager:
                     stable_since=stable_since,
                 )
 
-                lk_frame = rtc.VideoFrame(frame_width, frame_height, rtc.VideoBufferType.RGBA, frame)
+                lk_frame = rtc.VideoFrame(
+                    frame_width, frame_height, rtc.VideoBufferType.RGBA, frame
+                )
                 source.capture_frame(lk_frame)
                 self._inc_frame()
                 frames_since_report += 1
@@ -417,14 +438,16 @@ class CameraManager:
                     frames_since_yield = 0
                     await asyncio.sleep(0)
 
-                report_started_at, frames_since_report, dropped_for_pacing = self._maybe_log_ffmpeg_runtime(
-                    now=now,
-                    report_started_at=report_started_at,
-                    frames_since_report=frames_since_report,
-                    effective_publish_fps=effective_publish_fps,
-                    dropped_for_pacing=dropped_for_pacing,
-                    frame_width=frame_width,
-                    frame_height=frame_height,
+                report_started_at, frames_since_report, dropped_for_pacing = (
+                    self._maybe_log_ffmpeg_runtime(
+                        now=now,
+                        report_started_at=report_started_at,
+                        frames_since_report=frames_since_report,
+                        effective_publish_fps=effective_publish_fps,
+                        dropped_for_pacing=dropped_for_pacing,
+                        frame_width=frame_width,
+                        frame_height=frame_height,
+                    )
                 )
 
             if reader_error is not None:
@@ -494,10 +517,8 @@ class CameraManager:
     ) -> None:
         try:
             import cv2
-        except ImportError:
-            raise RuntimeError(
-                "OpenCV not installed: pip install opencv-python-headless"
-            )
+        except ImportError as exc:
+            raise RuntimeError("OpenCV not installed: pip install opencv-python-headless") from exc
 
         interval = 1.0 / camera_fps if camera_fps > 0 else 1.0 / max(self.config.camera.fps, 1)
         next_frame_at = time.monotonic()

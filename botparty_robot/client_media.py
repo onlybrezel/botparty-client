@@ -5,30 +5,24 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import Any, Optional
+from typing import Any
 
 from .camera import CameraManager
 from .client_state import (
-    CameraRuntime,
     GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC,
+    CameraRuntime,
     logger,
     suppress_livekit_reconnect_noise,
 )
 from .config import normalize_cameras
 from .publisher import LiveKitPublisherManager
 from .video import create_video_profile
-from .video.base import BaseVideoProfile
 
 
 class ClientMediaMixin:
     def _build_initial_camera_runtime_state(
         self,
-    ) -> tuple[
-        list[CameraRuntime],
-        str,
-        CameraManager | LiveKitPublisherManager,
-        BaseVideoProfile,
-    ]:
+    ) -> tuple[list[CameraRuntime], str]:
         camera_runtimes = self._build_camera_runtimes()
         if camera_runtimes:
             primary_runtime = next(
@@ -39,15 +33,9 @@ class ClientMediaMixin:
                 ),
                 camera_runtimes[0],
             )
-            return (
-                camera_runtimes,
-                primary_runtime.camera_id,
-                primary_runtime.manager,
-                primary_runtime.video_profile,
-            )
+            return camera_runtimes, primary_runtime.camera_id
 
-        video_profile = create_video_profile(self.config)
-        return [], "front", CameraManager(self.config, video_profile), video_profile
+        return [], "front"
 
     def _uses_direct_livekit_publisher(self) -> bool:
         return bool(self._camera_runtimes) and all(
@@ -59,15 +47,21 @@ class ClientMediaMixin:
         return self._uses_direct_livekit_publisher()
 
     def _validate_media_mode(self) -> None:
-        transports = {runtime.video_profile.publish_transport() for runtime in self._camera_runtimes}
+        transports = {
+            runtime.video_profile.publish_transport() for runtime in self._camera_runtimes
+        }
         if len(transports) > 1:
-            raise ValueError("External and legacy LiveKit camera profiles cannot be mixed in one client config")
+            raise ValueError(
+                "External and legacy LiveKit camera profiles cannot be mixed in one client config"
+            )
 
     def _build_camera_runtimes(self) -> list[CameraRuntime]:
         normalized = normalize_cameras(self.config)
         runtimes: list[CameraRuntime] = []
+        requested_audio_source = self.config.audio_source_camera_id
+        audio_source_selected = False
 
-        for index, entry in enumerate(normalized):
+        for entry in normalized:
             if not entry.enabled:
                 continue
 
@@ -79,10 +73,13 @@ class ClientMediaMixin:
                 },
             )
             video_profile = create_video_profile(derived_config)
-            include_audio = (
-                index == 0
-                and video_profile.has_audio()
+            include_audio = video_profile.has_audio() and (
+                entry.id == requested_audio_source
+                if requested_audio_source is not None
+                else not audio_source_selected
             )
+            if include_audio:
+                audio_source_selected = True
             track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
             if video_profile.publish_transport() == "livekit_direct":
                 manager = LiveKitPublisherManager(
@@ -117,6 +114,12 @@ class ClientMediaMixin:
                 )
             )
 
+        if requested_audio_source is not None and not audio_source_selected:
+            raise ValueError(
+                f"Camera {requested_audio_source!r} cannot be the audio source because its "
+                "video profile has no audio input"
+            )
+
         return runtimes
 
     def _resolve_primary_camera_id(self) -> str:
@@ -127,16 +130,7 @@ class ClientMediaMixin:
             return self._camera_runtimes[0].camera_id
         return "front"
 
-    def _sync_primary_runtime_aliases(self) -> None:
-        primary = self._get_primary_runtime()
-        if primary is None:
-            return
-        self._primary_camera_id = primary.camera_id
-        self._camera = primary.manager
-        self.video_profile = primary.video_profile
-        self._camera_task = primary.task
-
-    def _get_primary_runtime(self) -> Optional[CameraRuntime]:
+    def _get_primary_runtime(self) -> CameraRuntime | None:
         if not self._camera_runtimes:
             return None
         for runtime in self._camera_runtimes:
@@ -155,14 +149,18 @@ class ClientMediaMixin:
             lambda: self._livekit_connected,
         )
 
-    def _parse_target_bitrate_kbps(self, value: Any) -> Optional[int]:
+    def _parse_target_bitrate_kbps(self, value: Any) -> int | None:
         if isinstance(value, (int, float)) and 150 <= value <= 3000:
             return int(value)
         return None
 
     def _default_target_bitrate_kbps(self, runtime: CameraRuntime | None = None) -> int:
         active_config = runtime.config if runtime is not None else self.config
-        pixels_per_second = active_config.camera.width * active_config.camera.height * max(active_config.camera.fps, 1)
+        pixels_per_second = (
+            active_config.camera.width
+            * active_config.camera.height
+            * max(active_config.camera.fps, 1)
+        )
         if pixels_per_second <= 7_500_000:
             return 800
         if pixels_per_second <= 28_000_000:
@@ -172,12 +170,12 @@ class ClientMediaMixin:
     def _resolve_target_bitrate_kbps(
         self,
         *,
-        remote: Optional[int],
-        configured: Optional[int],
+        remote: int | None,
+        configured: int | None,
         default: int,
     ) -> int:
         if remote is not None and configured is not None:
-            return max(remote, configured)
+            return min(remote, configured)
         return remote or configured or default
 
     def _effective_target_bitrate_kbps(self) -> int:
@@ -188,7 +186,9 @@ class ClientMediaMixin:
         )
 
     def _target_bitrate_for_runtime(self, runtime: CameraRuntime) -> int | None:
-        configured = self._parse_target_bitrate_kbps(runtime.config.video.options.get("target_bitrate_kbps"))
+        configured = self._parse_target_bitrate_kbps(
+            runtime.config.video.options.get("target_bitrate_kbps")
+        )
         if len(self._camera_runtimes) <= 1 or runtime.camera_id == self._primary_camera_id:
             return self._resolve_target_bitrate_kbps(
                 remote=self._remote_target_bitrate_kbps,
@@ -199,8 +199,13 @@ class ClientMediaMixin:
 
     async def _start_all_cameras(self) -> None:
         for runtime in self._camera_runtimes:
+            runtime.restart_count = 0
+            runtime.started_at_monotonic = time.monotonic()
+            runtime.last_frame_at_monotonic = 0.0
+            runtime.last_frame_count = 0
+            runtime.state = "starting"
+            runtime.last_error = None
             runtime.task = asyncio.create_task(self._start_camera(runtime))
-        self._sync_primary_runtime_aliases()
 
     async def _cancel_camera_task(self, runtime: CameraRuntime, timeout_sec: float = 6.5) -> None:
         task = runtime.task
@@ -208,23 +213,27 @@ class ClientMediaMixin:
             return
 
         task.cancel()
-        try:
-            await asyncio.wait_for(task, timeout=timeout_sec)
-        except asyncio.TimeoutError:
+        done, pending = await asyncio.wait({task}, timeout=timeout_sec)
+        if pending:
+            runtime.state = "failed"
+            runtime.last_error = "publisher did not stop before its deadline"
             logger.warning(
                 "Camera task did not shut down within %.1fs; waiting for device release",
                 timeout_sec,
             )
-        except asyncio.CancelledError:
-            pass
+            return
 
-        await asyncio.sleep(0.5)
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await next(iter(done))
+
         runtime.task = None
-        self._sync_primary_runtime_aliases()
+        runtime.state = "stopped"
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
         async with self._camera_restart_lock:
-            if not self._livekit_connected or (not self._uses_external_media_transport() and self._room is None):
+            if not self._livekit_connected or (
+                not self._uses_external_media_transport() and self._room is None
+            ):
                 logger.info(
                     "Skipping camera pipeline restart while media transport is not ready: %s%s",
                     reason,
@@ -232,7 +241,9 @@ class ClientMediaMixin:
                 )
                 return
 
-            logger.info("Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else "")
+            logger.info(
+                "Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else ""
+            )
             targets = (
                 [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
                 if camera_id
@@ -241,11 +252,17 @@ class ClientMediaMixin:
 
             for runtime in targets:
                 await self._cancel_camera_task(runtime)
+                if runtime.task is not None and not runtime.task.done():
+                    logger.error(
+                        "Camera %s still owns its publisher; restart is blocked",
+                        runtime.camera_id,
+                    )
+                    continue
                 runtime.video_profile = create_video_profile(runtime.config)
                 runtime.manager.video_profile = runtime.video_profile
+                runtime.started_at_monotonic = time.monotonic()
+                runtime.state = "starting"
                 runtime.task = asyncio.create_task(self._start_camera(runtime))
-
-            self._sync_primary_runtime_aliases()
 
     async def _stop_media_tasks(self) -> None:
         for runtime in self._camera_runtimes:
@@ -304,10 +321,14 @@ class ClientMediaMixin:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_disconnected(self, scope: str) -> None:
+        await self._trigger_hardware_stop("control_disconnected")
+        self.stats.control_disconnects += 1
+        self.stats.last_control_disconnect_reason = scope
         if scope != "app":
             return
         if self._gateway_outage_started_at <= 0:
             self._gateway_outage_started_at = time.time()
+        self._gateway_outage_scope = scope
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
         outage_started_at = self._gateway_outage_started_at
@@ -327,7 +348,8 @@ class ClientMediaMixin:
         if self._uses_external_media_transport():
             if outage_duration_sec < GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC:
                 logger.info(
-                    "Control gateway recovered after %s in %.1fs; keeping direct publishers running",
+                    "Control gateway recovered after %s in %.1fs; "
+                    "keeping direct publishers running",
                     reason,
                     outage_duration_sec,
                 )
@@ -348,14 +370,16 @@ class ClientMediaMixin:
 
         if livekit_disconnected:
             logger.info(
-                "Control gateway recovered after %s; skipping camera recovery because LiveKit disconnected during the outage",
+                "Control gateway recovered after %s; skipping camera recovery because "
+                "LiveKit disconnected during the outage",
                 reason,
             )
             return
 
         if outage_duration_sec < GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC:
             logger.info(
-                "Control gateway recovered after %s in %.1fs; keeping existing camera publish because the stream likely survived",
+                "Control gateway recovered after %s in %.1fs; keeping existing camera publish "
+                "because the stream likely survived",
                 reason,
                 outage_duration_sec,
             )
@@ -376,9 +400,14 @@ class ClientMediaMixin:
     async def _recover_direct_publish_after_gateway_reconnect(self, reason: str) -> None:
         try:
             await asyncio.sleep(3)
-            if not self._running or not self._livekit_connected or not self._uses_external_media_transport():
+            if (
+                not self._running
+                or not self._livekit_connected
+                or not self._uses_external_media_transport()
+            ):
                 logger.info(
-                    "Skipping delayed direct publisher recovery after %s because direct publishing is no longer ready",
+                    "Skipping delayed direct publisher recovery after %s because direct "
+                    "publishing is no longer ready",
                     reason,
                 )
                 return
@@ -392,7 +421,8 @@ class ClientMediaMixin:
             await asyncio.sleep(5)
             if not self._running or not self._livekit_connected or self._room is None:
                 logger.info(
-                    "Skipping delayed LiveKit recovery after %s because the room is no longer ready",
+                    "Skipping delayed LiveKit recovery after %s because the room is no longer "
+                    "ready",
                     reason,
                 )
                 return

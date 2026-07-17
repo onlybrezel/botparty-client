@@ -7,15 +7,16 @@ import os
 import re
 import shutil
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, ClassVar
 
 from ..config import RobotConfig
 
 
 class BaseVideoProfile:
     profile_name = "base"
-    _ffmpeg_feature_cache: dict[tuple[str, str, str], bool] = {}
+    _ffmpeg_feature_cache: ClassVar[dict[tuple[str, str, str], bool]] = {}
     _streamer_version_pattern = re.compile(r"v?\d+\.\d+\.\d+(?:[-.][A-Za-z0-9._]+)?")
 
     def __init__(self, config: RobotConfig) -> None:
@@ -77,7 +78,7 @@ class BaseVideoProfile:
             "/proc/device-tree/model",
         ):
             try:
-                with open(path, "r", encoding="utf-8", errors="ignore") as handle:
+                with open(path, encoding="utf-8", errors="ignore") as handle:
                     value = handle.read().replace("\x00", "").strip()
                 if value:
                     return value
@@ -91,7 +92,9 @@ class BaseVideoProfile:
     async def spawn_ffmpeg_process(self):
         raise NotImplementedError
 
-    async def capture_sdk_frames(self, rtc, source, running: Callable[[], bool], on_frame: Callable[[], None]) -> None:
+    async def capture_sdk_frames(
+        self, rtc, source, running: Callable[[], bool], on_frame: Callable[[], None]
+    ) -> None:
         raise NotImplementedError
 
     async def run_disabled(self, running: Callable[[], bool]) -> None:
@@ -108,6 +111,12 @@ class BaseVideoProfile:
         return Path(__file__).resolve().parents[2]
 
     def managed_streamer_dir(self) -> Path:
+        configured = os.getenv("BOTPARTY_STREAMER_DIR", "").strip()
+        if configured:
+            return Path(configured).expanduser()
+        state_dir = os.getenv("BOTPARTY_STATE_DIR", "").strip()
+        if state_dir:
+            return Path(state_dir).expanduser() / "bin"
         return self.repo_root() / ".botparty" / "bin"
 
     def managed_streamer_binary_path(self) -> Path:
@@ -116,7 +125,9 @@ class BaseVideoProfile:
     def managed_streamer_version_file(self) -> Path:
         return self.managed_streamer_dir() / "botparty-streamer.version"
 
-    def read_streamer_version_for_binary(self, binary_path: str | os.PathLike[str] | None) -> str | None:
+    def read_streamer_version_for_binary(
+        self, binary_path: str | os.PathLike[str] | None
+    ) -> str | None:
         if not binary_path:
             return None
 
@@ -153,7 +164,8 @@ class BaseVideoProfile:
             if normalized:
                 return normalized
 
-        # Last resort: version embedded in the file name (e.g. botparty-streamer-v0.1.0-linux-arm64).
+        # Last resort: version embedded in the file name, for example
+        # botparty-streamer-v0.1.0-linux-arm64.
         match = self._streamer_version_pattern.search(path.name)
         if match:
             return self.normalize_streamer_version(match.group(0))
@@ -194,6 +206,7 @@ class BaseVideoProfile:
                 capture_output=True,
                 text=True,
                 check=False,
+                timeout=5,
             )
             supported = result.returncode == 0 and name in result.stdout
         except Exception:

@@ -13,4 +13,3 @@ from .espeak import TTSProfile as EspeakProfile
 
 class TTSProfile(EspeakProfile):
     profile_name = "espeak_loop"
-

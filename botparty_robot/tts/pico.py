@@ -15,7 +15,9 @@ class TTSProfile(BaseTTSProfile):
         self.voice = str(self.options.get("voice", "en-US"))
 
     def can_handle(self) -> bool:
-        return self.enabled and command_exists(self.pico2wave_path) and command_exists(self.aplay_path)
+        return (
+            self.enabled and command_exists(self.pico2wave_path) and command_exists(self.aplay_path)
+        )
 
     def say(self, message: str, metadata=None) -> None:
         if not self.can_handle():

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -24,17 +23,17 @@ class HardwareAdapter(BaseHardware):
             self.log.info("command=%s value=%s", command, value)
             return
         if self.matches(command, "left"):
-            self.gopigo.left_rot()
-            time.sleep(self.turn_time)
+            self.guarded_write(self.gopigo.left_rot)
+            self.interruptible_sleep(self.turn_time)
         elif self.matches(command, "right"):
-            self.gopigo.right_rot()
-            time.sleep(self.turn_time)
+            self.guarded_write(self.gopigo.right_rot)
+            self.interruptible_sleep(self.turn_time)
         elif self.matches(command, "forward"):
-            self.gopigo.forward()
-            time.sleep(self.drive_time)
+            self.guarded_write(self.gopigo.forward)
+            self.interruptible_sleep(self.drive_time)
         elif self.matches(command, "backward"):
-            self.gopigo.backward()
-            time.sleep(self.drive_time)
+            self.guarded_write(self.gopigo.backward)
+            self.interruptible_sleep(self.drive_time)
         else:
             return
         self.gopigo.stop()
@@ -42,4 +41,3 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         if self.gopigo is not None:
             self.gopigo.stop()
-

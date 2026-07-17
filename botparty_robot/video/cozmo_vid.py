@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import asyncio
 
-from .base import BaseVideoProfile
 from ..hardware.cozmo import get_cozmo_robot
+from .base import BaseVideoProfile
 
 
 class VideoProfile(BaseVideoProfile):
@@ -35,4 +35,3 @@ class VideoProfile(BaseVideoProfile):
             source.capture_frame(frame)
             on_frame()
             await asyncio.sleep(1.0 / max(self.camera.fps, 1))
-

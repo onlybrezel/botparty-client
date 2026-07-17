@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -30,7 +29,9 @@ class HardwareAdapter(BaseHardware):
             return
         self.board = self.module.ThunderBorg()
         if self.address is not None:
-            self.board.i2cAddress = int(str(self.address), 16) if isinstance(self.address, str) else int(self.address)
+            self.board.i2cAddress = (
+                int(str(self.address), 16) if isinstance(self.address, str) else int(self.address)
+            )
         self.board.Init()
         if not getattr(self.board, "foundChip", True):
             self.log.warning("No ThunderBorg board detected")
@@ -39,9 +40,13 @@ class HardwareAdapter(BaseHardware):
     def _run(self, left: float, right: float) -> None:
         if self.board is None:
             return
-        self.board.SetMotor1(left)
-        self.board.SetMotor2(right)
-        time.sleep(self.sleep_time)
+
+        def start() -> None:
+            self.board.SetMotor1(left)
+            self.board.SetMotor2(right)
+
+        self.guarded_write(start)
+        self.interruptible_sleep(self.sleep_time)
         self.board.SetMotors(0.0)
 
     def on_command(self, command: str, value: Any = None) -> None:

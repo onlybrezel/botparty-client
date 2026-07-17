@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import contextlib
 import logging
-from typing import Iterable
+from collections.abc import Iterable
 
 logger = logging.getLogger("botparty.hardware.gpio")
 
@@ -30,4 +30,3 @@ def set_low(gpio, pins: Iterable[int]) -> None:
     for pin in pins:
         with contextlib.suppress(Exception):
             gpio.output(pin, gpio.LOW)
-

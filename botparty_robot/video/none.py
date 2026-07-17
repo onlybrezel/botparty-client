@@ -8,4 +8,3 @@ class VideoProfile(BaseVideoProfile):
 
     def capture_mode(self) -> str:
         return "none"
-

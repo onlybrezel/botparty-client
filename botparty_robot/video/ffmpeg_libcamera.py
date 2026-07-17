@@ -17,6 +17,7 @@ class VideoProfile(BaseVideoProfile):
     async def spawn_ffmpeg_process(self):
         libcam = shlex.quote(str(self.options.get("libcamera_path", "libcamera-vid")))
         ffmpeg = shlex.quote(str(self.options.get("ffmpeg_path", "ffmpeg")))
+        output_fps = round(self.camera.fps)
         cmd = (
             f"{libcam} -t 0 "
             f"--width {self.camera.width} --height {self.camera.height} "
@@ -27,7 +28,8 @@ class VideoProfile(BaseVideoProfile):
             f"-f rawvideo -pixel_format yuv420p "
             f"-video_size {self.camera.width}x{self.camera.height} -framerate {self.camera.fps} "
             f"-use_wallclock_as_timestamps 1 -i - "
-            f"-vf scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,fps={int(round(self.camera.fps))},format=rgba "
+            f"-vf scale={self.camera.width}:{self.camera.height}:flags=fast_bilinear,"
+            f"fps={output_fps},format=rgba "
             f"-pix_fmt rgba -f rawvideo pipe:1"
         )
         return await asyncio.create_subprocess_shell(
@@ -35,4 +37,3 @@ class VideoProfile(BaseVideoProfile):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-

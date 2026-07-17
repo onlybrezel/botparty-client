@@ -16,8 +16,14 @@ def list_alsa_devices(kind: DeviceKind = "playback") -> list[dict[str, str]]:
         return []
 
     try:
-        output = subprocess.run(command, check=False, capture_output=True, text=True).stdout
-    except Exception:
+        output = subprocess.run(
+            command,
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=3,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
         return []
 
     devices: list[dict[str, str]] = []
@@ -107,13 +113,16 @@ def set_alsa_volume(spec: str | None, level: int) -> bool:
 
     target = f"{max(0, min(level, 100))}%"
     for control in ("PCM", "Speaker", "Master"):
-        result = subprocess.run(
-            ["amixer", "-c", str(card), "sset", control, target],
-            check=False,
-            capture_output=True,
-            text=True,
-        )
+        try:
+            result = subprocess.run(
+                ["amixer", "-c", str(card), "sset", control, target],
+                check=False,
+                capture_output=True,
+                text=True,
+                timeout=3,
+            )
+        except (OSError, subprocess.SubprocessError):
+            continue
         if result.returncode == 0:
             return True
     return False
-

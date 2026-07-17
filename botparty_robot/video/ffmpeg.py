@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import logging
 import os
 import shutil
 import subprocess
-from threading import Lock
-from pathlib import Path
 
 from .base import BaseVideoProfile
 
@@ -18,67 +17,17 @@ FFMPEG_INPUT_FORMAT_MAP = {
 }
 
 logger = logging.getLogger("botparty.video.ffmpeg")
-ACTIVE_STREAMER_VERSION_URL = "https://stats.botparty.live/get_active_version.php?app=streamer"
 
 
 class VideoProfile(BaseVideoProfile):
     profile_name = "ffmpeg"
-    _streamer_state_lock = Lock()
-    _cached_active_streamer_version: str | None = None
-    _active_streamer_version_resolved = False
-    _streamer_install_results: dict[str, bool] = {}
 
     def __init__(self, config) -> None:
         super().__init__(config)
         self._direct_profile: BaseVideoProfile | None = None
         self._streamer_binary_path: str | None = None
         self._installed_streamer_version: str | None = None
-        self._streamer_expected_version = self._resolve_streamer_expected_version()
         self._maybe_enable_direct_publisher()
-
-    def _fetch_active_streamer_version(self) -> str | None:
-        try:
-            result = subprocess.run(
-                ["curl", "-fsSL", "--max-time", "6", ACTIVE_STREAMER_VERSION_URL],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=8,
-            )
-        except Exception:
-            return None
-
-        if result.returncode != 0:
-            return None
-
-        raw = (result.stdout or "").strip().splitlines()
-        if not raw:
-            return None
-        return self.normalize_streamer_version(raw[0].strip())
-
-    def _resolve_streamer_expected_version(self) -> str:
-        with self._streamer_state_lock:
-            if self._active_streamer_version_resolved:
-                return self._cached_active_streamer_version or "v0.1.3"
-
-            active = self._fetch_active_streamer_version()
-            if not active:
-                active = "v0.1.3"
-                logger.warning(
-                    "Could not resolve active botparty-streamer version from stats endpoint, using fallback=%s",
-                    active,
-                )
-            self._cached_active_streamer_version = active
-            self._active_streamer_version_resolved = True
-            return active
-
-    def _cached_install_result(self, version: str) -> bool | None:
-        with self._streamer_state_lock:
-            return self._streamer_install_results.get(version)
-
-    def _set_cached_install_result(self, version: str, success: bool) -> None:
-        with self._streamer_state_lock:
-            self._streamer_install_results[version] = success
 
     def _resolve_streamer_binary_path(self) -> str | None:
         explicit = (
@@ -93,9 +42,7 @@ class VideoProfile(BaseVideoProfile):
         if managed.is_file() and os.access(managed, os.X_OK):
             return str(managed)
 
-        for candidate in (
-            "/usr/local/bin/botparty-streamer",
-        ):
+        for candidate in ("/usr/local/bin/botparty-streamer",):
             if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
                 return candidate
 
@@ -119,137 +66,37 @@ class VideoProfile(BaseVideoProfile):
             return True
         return result.returncode == 0
 
-    def _maybe_install_streamer_binary(self) -> bool:
-        install_script = Path(__file__).resolve().parents[2] / "scripts" / "install-botparty-streamer.sh"
-        if not install_script.exists():
-            logger.debug("botparty-streamer install script not found: %s", install_script)
+    def _verify_streamer_binary(self, binary_path: str) -> bool:
+        expected = str(self.options.get("publisher_binary_sha256") or "").strip().lower()
+        if not expected:
+            sidecar = self.managed_streamer_dir() / "botparty-streamer.sha256"
+            if os.path.abspath(binary_path) == os.path.abspath(self.managed_streamer_binary_path()):
+                try:
+                    expected = sidecar.read_text(encoding="ascii").strip().lower()
+                except OSError:
+                    expected = ""
+        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            logger.warning("Ignoring unverified botparty-streamer binary: %s", binary_path)
             return False
-
-        target_dir = str(self.managed_streamer_dir())
-
-        cmd = [
-            str(install_script),
-            self._streamer_expected_version,
-            "--dir",
-            target_dir,
-        ]
-
-        logger.info(
-            "Installing or updating botparty-streamer: version=%s dir=%s",
-            self._streamer_expected_version,
-            target_dir,
-        )
+        digest = hashlib.sha256()
         try:
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=90,
-            )
-        except Exception as exc:
-            logger.warning("botparty-streamer install failed: %s", exc)
+            with open(binary_path, "rb") as handle:
+                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+                    digest.update(chunk)
+        except OSError:
             return False
-
-        if result.returncode != 0:
-            tail = (result.stderr or result.stdout or "").strip().splitlines()[-3:]
-            if tail:
-                logger.warning("botparty-streamer install failed: %s", " | ".join(tail))
-            else:
-                logger.warning("botparty-streamer install failed with exit code %d", result.returncode)
-            return False
-
-        self._streamer_binary_path = f"{target_dir.rstrip('/')}/botparty-streamer"
-        self.options["publisher_binary"] = self._streamer_binary_path
-        self._installed_streamer_version = self.read_streamer_version_for_binary(self._streamer_binary_path)
-        return True
-
-    def _should_refresh_managed_streamer(self, current_binary: str | None) -> bool:
-        managed_binary = self.managed_streamer_binary_path()
-        managed_version = self.read_streamer_version_for_binary(managed_binary)
-        managed_healthy = managed_binary.is_file() and os.access(managed_binary, os.X_OK) and self._probe_streamer_binary(str(managed_binary))
-
-        if managed_healthy and managed_version == self._streamer_expected_version:
-            self._installed_streamer_version = managed_version
-            logger.info(
-                "botparty-streamer %s is up to date [%s]",
-                managed_version,
-                managed_binary,
-            )
-            return False
-
-        current_version = self.read_streamer_version_for_binary(current_binary)
-        if current_version:
-            self._installed_streamer_version = current_version
-
-        if current_version and current_version == self._streamer_expected_version:
-            # Correct version but not in the managed path – accept it without reinstalling.
-            logger.info(
-                "botparty-streamer %s is up to date [%s]",
-                current_version,
-                current_binary,
-            )
-            return False
-
-        if current_version and current_version != self._streamer_expected_version:
-            logger.info(
-                "botparty-streamer %s found at %s, active version is %s – updating now",
-                current_version,
-                current_binary,
-                self._streamer_expected_version,
-            )
-        else:
-            logger.info(
-                "botparty-streamer not found or version unknown – installing %s",
-                self._streamer_expected_version,
-            )
-
-        return True
+        return digest.hexdigest() == expected
 
     def _maybe_enable_direct_publisher(self) -> None:
-        logger.info(
-            "Initialising botparty-streamer (active version: %s)",
-            self._streamer_expected_version,
-        )
-
         streamer_binary = self._resolve_streamer_binary_path()
-        healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
+        verified = bool(streamer_binary and self._verify_streamer_binary(streamer_binary))
+        healthy = bool(
+            verified and streamer_binary and self._probe_streamer_binary(streamer_binary)
+        )
         self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
-        install_attempted = False
-
-        if self._should_refresh_managed_streamer(streamer_binary):
-            cached_result = self._cached_install_result(self._streamer_expected_version)
-            if cached_result is False:
-                logger.info(
-                    "botparty-streamer update for %s already failed earlier in this session; skipping retry",
-                    self._streamer_expected_version,
-                )
-            elif cached_result is True:
-                streamer_binary = self._resolve_streamer_binary_path()
-                healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
-                self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
-            else:
-                install_attempted = True
-                install_ok = self._maybe_install_streamer_binary()
-                self._set_cached_install_result(self._streamer_expected_version, install_ok)
-                if install_ok:
-                    streamer_binary = self._resolve_streamer_binary_path()
-                    healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
-                    self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
-                    if self._installed_streamer_version:
-                        logger.info("botparty-streamer updated to %s", self._installed_streamer_version)
-                else:
-                    logger.warning("botparty-streamer update/install failed; continuing with existing video path")
-
-        if not healthy and not install_attempted:
-            if not self._maybe_install_streamer_binary():
-                logger.info("botparty-streamer unavailable; using legacy ffmpeg SDK transport")
-                return
-            streamer_binary = self._resolve_streamer_binary_path()
-            healthy = bool(streamer_binary and self._probe_streamer_binary(streamer_binary))
 
         if not healthy or not streamer_binary:
-            logger.info("botparty-streamer health check failed; using legacy ffmpeg SDK transport")
+            logger.info("Verified botparty-streamer unavailable; using legacy ffmpeg SDK transport")
             return
 
         self._streamer_binary_path = streamer_binary
@@ -260,7 +107,7 @@ class VideoProfile(BaseVideoProfile):
         self._direct_profile = BotPartyStreamerProfile(self.config)
         logger.info(
             "botparty-streamer direct transport active: version=%s binary=%s",
-            self._installed_streamer_version or self._streamer_expected_version,
+            self._installed_streamer_version or "unknown",
             streamer_binary,
         )
 
@@ -295,7 +142,7 @@ class VideoProfile(BaseVideoProfile):
     async def spawn_ffmpeg_process(self):
         configured_input_format = str(self.options.get("input_format", "")).strip().lower()
         fourcc = (self.camera.fourcc or "").strip().upper()
-        output_fps = max(1, int(round(self.output_fps())))
+        output_fps = max(1, round(self.output_fps()))
 
         input_format: str | None = None
         if configured_input_format and configured_input_format != "auto":
@@ -349,7 +196,10 @@ class VideoProfile(BaseVideoProfile):
         ]
 
         if input_format:
-            cmd[cmd.index("-video_size"):cmd.index("-video_size")] = ["-input_format", input_format]
+            cmd[cmd.index("-video_size") : cmd.index("-video_size")] = [
+                "-input_format",
+                input_format,
+            ]
 
         return await asyncio.create_subprocess_exec(
             *cmd,

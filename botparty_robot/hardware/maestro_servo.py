@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -37,9 +36,13 @@ class HardwareAdapter(BaseHardware):
     def _set(self, left: int, right: int, duration: float) -> None:
         if self.controller is None:
             return
-        self.controller.setTarget(self.left_channel, left)
-        self.controller.setTarget(self.right_channel, right)
-        time.sleep(duration)
+
+        def start() -> None:
+            self.controller.setTarget(self.left_channel, left)
+            self.controller.setTarget(self.right_channel, right)
+
+        self.guarded_write(start)
+        self.interruptible_sleep(duration)
         self.controller.setTarget(self.left_channel, self.center)
         self.controller.setTarget(self.right_channel, self.center)
 
@@ -63,3 +66,6 @@ class HardwareAdapter(BaseHardware):
             self.controller.setTarget(self.left_channel, self.center)
             self.controller.setTarget(self.right_channel, self.center)
 
+    def _close_resources(self) -> None:
+        if self.controller is not None and hasattr(self.controller, "close"):
+            self.controller.close()

@@ -4,123 +4,75 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import json
 import os
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any
 
 import aiohttp
+from pydantic import ValidationError
 
-from . import __version__
+from . import __build_id__, __version__
+from .auth import AuthFailure, AuthResult, ClientAuthenticator
 from .client_state import LOCAL_GIT_STATUS_IGNORE_PATHS, TELEMETRY_INTERVAL_SEC, logger
+from .protocol import MAX_WEBSOCKET_MESSAGE_BYTES, RemoteAction
+from .systemd import notify_systemd
 from .ws_protocol import WS_EVENTS
 
 try:
     import psutil as _psutil  # type: ignore
+
     _PSUTIL_AVAILABLE = True
 except Exception:
     _psutil = None  # type: ignore
     _PSUTIL_AVAILABLE = False
 
 
-@dataclass(slots=True)
-class AuthResult:
-    token: str | None
-    robot_id: str | None
-    livekit_url: str | None
-    ingress: dict[str, object] | None
-    publish_tokens: dict[str, str]
-    robot_auth_token: str | None
-
-
 class ClientOpsMixin:
-    def _env_bool(self, name: str, default: bool) -> bool:
-        raw = os.getenv(name)
-        if raw is None:
-            return default
-        normalized = raw.strip().lower()
-        if normalized in {"1", "true", "yes", "on"}:
-            return True
-        if normalized in {"0", "false", "no", "off"}:
-            return False
-        return default
+    _ALLOWED_PRODUCT_MILESTONES = frozenset(
+        {
+            "install_validated",
+            "claimed",
+            "control_ready",
+            "first_media",
+            "first_command_ack",
+            "reboot_healthy",
+        }
+    )
 
-    def _allowed_update_remotes(self) -> list[str]:
-        raw = os.getenv("BOTPARTY_CLIENT_UPDATE_ALLOWED_REMOTES", "").strip()
-        if not raw:
-            return [
-                "https://github.com/onlybrezel/botparty-client.git",
-                "git@github.com:onlybrezel/botparty-client.git",
-            ]
-        return [entry.strip() for entry in raw.split(",") if entry.strip()]
-
-    def _is_allowed_update_remote(self, remote_url: str) -> bool:
-        allowed = self._allowed_update_remotes()
-        if not allowed:
-            return False
-        return any(remote_url == entry for entry in allowed)
-
-    async def _read_git_head_commit(self) -> str | None:
-        process = await asyncio.create_subprocess_exec(
-            "git",
-            "rev-parse",
-            "HEAD",
-            cwd=str(self._repo_root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await process.communicate()
-        if process.returncode != 0:
-            return None
-        if not stdout:
-            return None
-        head = stdout.decode("utf-8", errors="replace").strip()
-        return head or None
-
-    def _mask_remote_url(self, value: str) -> str:
-        if "://" not in value or "@" not in value:
-            return value
-
-        scheme, rest = value.split("://", 1)
-        credentials, tail = rest.split("@", 1)
-        if not credentials:
-            return value
-        return f"{scheme}://***@{tail}"
-
-    def _sanitize_update_log_line(self, line: str) -> str:
-        remote_url = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
-        if not remote_url:
-            return line
-
-        return line.replace(remote_url, self._mask_remote_url(remote_url))
-
-    def _build_git_pull_argv(self) -> list[str]:
-        """Build git pull argv, optionally using an authenticated remote URL from env."""
-        remote_url = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
-        remote_ref = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_REF", "").strip()
-        if not remote_url:
-            return ["git", "pull", "--ff-only"]
-
-        argv = ["git", "pull", "--ff-only", remote_url]
-        if remote_ref:
-            argv.append(remote_ref)
-        return argv
+    def _record_product_milestone(self, name: str) -> None:
+        if (
+            self.config.telemetry.product_analytics_enabled
+            and name in self._ALLOWED_PRODUCT_MILESTONES
+        ):
+            self._product_milestones.add(name)
 
     async def _supervisor(self) -> None:
         logger.info("Supervisor started")
-        timeout_sec = self.config.safety.max_run_time_ms / 1000.0
-
         while self._running:
-            await asyncio.sleep(5)
+            await asyncio.sleep(1)
+            notify_systemd("WATCHDOG=1")
 
             for runtime in self._camera_runtimes:
                 task = runtime.task
+                frame_count = runtime.manager.frame_count
+                if frame_count > runtime.last_frame_count:
+                    runtime.last_frame_count = frame_count
+                    runtime.last_frame_at_monotonic = time.monotonic()
+                    runtime.state = "streaming"
+                    runtime.last_error = None
+                    if (
+                        runtime.restart_count > 0
+                        and time.monotonic() - runtime.started_at_monotonic >= 60
+                    ):
+                        runtime.restart_count = 0
                 if task and task.done():
                     exc = task.exception() if not task.cancelled() else None
                     if exc:
+                        runtime.last_error = str(exc)[:240]
                         logger.error("Camera task died (%s): %s", runtime.camera_id, exc)
                     if self._livekit_connected:
                         runtime.restart_count += 1
@@ -136,7 +88,10 @@ class ClientOpsMixin:
                                 camera_id=runtime.camera_id,
                             )
                         else:
-                            logger.error("Camera %s restarted 5 times - giving up", runtime.camera_id)
+                            runtime.state = "failed"
+                            logger.error(
+                                "Camera %s restarted 5 times - giving up", runtime.camera_id
+                            )
 
                 audio = runtime.manager.audio_task
                 if (
@@ -148,7 +103,9 @@ class ClientOpsMixin:
                 ):
                     exc = audio.exception() if not audio.cancelled() else None
                     if exc:
-                        logger.warning("Audio task died - restarting (%s): %s", runtime.camera_id, exc)
+                        logger.warning(
+                            "Audio task died - restarting (%s): %s", runtime.camera_id, exc
+                        )
                     runtime.manager.restart_audio(self._room, lambda: self._running)
 
             if self._tts_task and self._tts_task.done():
@@ -167,12 +124,24 @@ class ClientOpsMixin:
                     logger.warning("Gateway task died - restarting: %s", exc)
                 self._gateway_task = asyncio.create_task(self._gateway.run())
 
-            if self.stats.last_command_at > 0:
-                elapsed = time.time() - self.stats.last_command_at
-                if elapsed > timeout_sec:
-                    logger.info("Command timeout (%.0fs) - auto-stopping motors", elapsed)
-                    await self._trigger_hardware_stop("command_timeout")
-                    self.stats.last_command_at = 0
+            if self._gateway.connected:
+                self._record_product_milestone("control_ready")
+            if self._total_camera_frames() > 0:
+                self._record_product_milestone("first_media")
+
+            if (
+                self._update_manager is not None
+                and not self._ota_confirmed
+                and self._gateway.connected
+                and (
+                    not self._media_required()
+                    or (self._media_operational() and self._total_camera_frames() > 0)
+                )
+            ):
+                await asyncio.to_thread(self._update_manager.confirm)
+                self._ota_confirmed = True
+                self._record_product_milestone("reboot_healthy")
+                logger.info("OTA release confirmed ready")
 
             age = time.time() - self.stats.last_heartbeat_at
             if age > 60:
@@ -194,9 +163,12 @@ class ClientOpsMixin:
                 else:
                     session = self._get_session()
                     headers = {"Content-Type": "application/json"}
-                    robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                    robot_auth_token = (self.config.server.robot_auth_token_value() or "").strip()
                     if robot_auth_token:
                         headers["Authorization"] = f"Bearer {robot_auth_token}"
+                    else:
+                        await asyncio.sleep(1)
+                        continue
                     async with session.post(
                         f"{self.config.server.api_url}/api/v1/robots/heartbeat",
                         json={},
@@ -214,6 +186,8 @@ class ClientOpsMixin:
             await asyncio.sleep(15)
 
     async def _send_telemetry(self) -> None:
+        if not self.config.telemetry.operational_enabled:
+            return
         streamer_version: str | None = None
         for runtime in self._camera_runtimes:
             version = runtime.video_profile.botparty_streamer_version()
@@ -230,6 +204,7 @@ class ClientOpsMixin:
 
         payload: dict[str, Any] = {
             "clientVersion": __version__,
+            "buildId": __build_id__,
             "gitBranch": self._client_git_branch,
             "gitCommit": self._client_git_commit,
             "gitDirty": self._client_git_dirty,
@@ -242,9 +217,19 @@ class ClientOpsMixin:
             "livekitConnected": self._livekit_connected,
             "commandsReceived": self.stats.commands_received,
             "cameraFrames": self._total_camera_frames(),
+            "controlReconnects": self.stats.reconnect_attempts,
+            "mediaReconnects": self.stats.media_reconnects,
+            "controlDisconnects": self.stats.control_disconnects,
+            "safetyStops": self.stats.safety_stops,
+            "watchdogStops": self.stats.watchdog_stops,
+            "emergencyStops": self.stats.emergency_stops,
+            "commandQueueDrops": self.stats.command_queue_drops,
+            "staleCommands": self.stats.stale_commands,
         }
         if streamer_version:
             payload["botpartyStreamerVersion"] = streamer_version
+        if self.config.telemetry.product_analytics_enabled:
+            payload["productMilestones"] = sorted(self._product_milestones)
         if _PSUTIL_AVAILABLE:
             try:
                 payload["cpuPercent"] = float(_psutil.cpu_percent(interval=None))
@@ -258,17 +243,20 @@ class ClientOpsMixin:
         if not sent:
             session = self._get_session()
             headers = {"Content-Type": "application/json"}
-            robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+            robot_auth_token = (self.config.server.robot_auth_token_value() or "").strip()
             if robot_auth_token:
                 headers["Authorization"] = f"Bearer {robot_auth_token}"
-            await session.post(
+            if not robot_auth_token:
+                return
+            async with session.post(
                 f"{self.config.server.api_url}/api/v1/robots/telemetry",
                 json=payload,
                 headers=headers,
                 timeout=aiohttp.ClientTimeout(total=5),
-            )
+            ) as response:
+                await response.content.read(4_096)
 
-    def _read_temperature_c(self) -> Optional[float]:
+    def _read_temperature_c(self) -> float | None:
         for path in (
             "/sys/class/thermal/thermal_zone0/temp",
             "/sys/class/hwmon/hwmon0/temp1_input",
@@ -284,7 +272,7 @@ class ClientOpsMixin:
                 continue
         return None
 
-    def _get_uptime_sec(self) -> Optional[int]:
+    def _get_uptime_sec(self) -> int | None:
         try:
             with open("/proc/uptime", encoding="utf-8") as fh:
                 return max(0, int(float(fh.read().split()[0])))
@@ -302,7 +290,7 @@ class ClientOpsMixin:
         except Exception:
             pass
 
-    def _read_cpu_percent(self) -> Optional[float]:
+    def _read_cpu_percent(self) -> float | None:
         try:
             with open("/proc/stat", encoding="utf-8") as fh:
                 parts = fh.readline().split()
@@ -329,10 +317,10 @@ class ClientOpsMixin:
         except Exception:
             return None
 
-    def _read_memory_percent(self) -> Optional[float]:
+    def _read_memory_percent(self) -> float | None:
         try:
             meminfo: dict[str, int] = {}
-            with open("/proc/meminfo", "r", encoding="utf-8") as handle:
+            with open("/proc/meminfo", encoding="utf-8") as handle:
                 for line in handle:
                     key, value = line.split(":", 1)
                     meminfo[key] = int(value.strip().split()[0])
@@ -357,9 +345,11 @@ class ClientOpsMixin:
 
                 session = self._get_session()
                 headers = {"Content-Type": "application/json"}
-                robot_auth_token = (self.config.server.robot_auth_token or "").strip()
-                if robot_auth_token:
-                    headers["Authorization"] = f"Bearer {robot_auth_token}"
+                robot_auth_token = (self.config.server.robot_auth_token_value() or "").strip()
+                if not robot_auth_token:
+                    await asyncio.sleep(3)
+                    continue
+                headers["Authorization"] = f"Bearer {robot_auth_token}"
                 async with session.post(
                     f"{self.config.server.api_url}/api/v1/robots/actions/poll",
                     json={},
@@ -367,7 +357,12 @@ class ClientOpsMixin:
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status in (200, 201):
-                        data = await resp.json()
+                        raw = await resp.content.read(MAX_WEBSOCKET_MESSAGE_BYTES + 1)
+                        if len(raw) > MAX_WEBSOCKET_MESSAGE_BYTES:
+                            logger.warning("Rejected oversized action poll response")
+                            await asyncio.sleep(3)
+                            continue
+                        data = json.loads(raw)
                         if isinstance(data, dict):
                             await self._apply_remote_actions_payload(data)
             except Exception as e:
@@ -379,23 +374,29 @@ class ClientOpsMixin:
         if isinstance(stream, dict):
             next_remote_bitrate = self._remote_target_bitrate_kbps
             if "targetBitrateKbps" in stream:
-                next_remote_bitrate = self._parse_target_bitrate_kbps(stream.get("targetBitrateKbps"))
+                next_remote_bitrate = self._parse_target_bitrate_kbps(
+                    stream.get("targetBitrateKbps")
+                )
             active_camera = stream.get("activeCameraId")
             if isinstance(active_camera, str) and active_camera.strip():
                 self._primary_camera_id = active_camera.strip()
-                self._sync_primary_runtime_aliases()
 
             next_effective_bitrate = (
-                max(next_remote_bitrate, self._configured_target_bitrate_kbps)
-                if next_remote_bitrate is not None and self._configured_target_bitrate_kbps is not None
+                min(next_remote_bitrate, self._configured_target_bitrate_kbps)
+                if next_remote_bitrate is not None
+                and self._configured_target_bitrate_kbps is not None
                 else next_remote_bitrate
                 or self._configured_target_bitrate_kbps
                 or self._default_target_bitrate_kbps()
             )
-            if next_effective_bitrate != self._effective_target_bitrate_kbps() or next_remote_bitrate != self._remote_target_bitrate_kbps:
+            if (
+                next_effective_bitrate != self._effective_target_bitrate_kbps()
+                or next_remote_bitrate != self._remote_target_bitrate_kbps
+            ):
                 self._remote_target_bitrate_kbps = next_remote_bitrate
                 logger.info(
-                    "Remote stream policy: remoteTargetBitrateKbps=%s effectiveTargetBitrateKbps=%d",
+                    "Remote stream policy: remoteTargetBitrateKbps=%s "
+                    "effectiveTargetBitrateKbps=%d",
                     self._remote_target_bitrate_kbps,
                     self._effective_target_bitrate_kbps(),
                 )
@@ -404,121 +405,54 @@ class ClientOpsMixin:
 
         for action in payload.get("actions", []) if isinstance(payload, dict) else []:
             if isinstance(action, dict):
-                await self._execute_action(action)
+                try:
+                    validated_action = RemoteAction.model_validate(action)
+                except ValidationError as exc:
+                    logger.warning("Rejected invalid remote action: %s", exc)
+                    continue
+                await self._execute_action(
+                    validated_action.model_dump(by_alias=True, exclude_none=True)
+                )
 
     async def _diagnostics_upload_loop(self) -> None:
         while self._running:
             try:
-                if time.time() < self._diag_enabled_until:
-                    lines = list(self._diag_buffer)
-                    if self._diag_last_sent_idx >= len(lines):
-                        self._diag_last_sent_idx = 0
-                    if self._diag_last_sent_idx < len(lines):
-                        batch = lines[self._diag_last_sent_idx:self._diag_last_sent_idx + 50]
-                        self._diag_last_sent_idx += len(batch)
-                        session = self._get_session()
-                        headers = {"Content-Type": "application/json"}
-                        robot_auth_token = (self.config.server.robot_auth_token or "").strip()
-                        if robot_auth_token:
-                            headers["Authorization"] = f"Bearer {robot_auth_token}"
-                        await session.post(
-                            f"{self.config.server.api_url}/api/v1/robots/logs",
-                            json={
-                                "lines": batch,
-                            },
-                            headers=headers,
-                            timeout=aiohttp.ClientTimeout(total=5),
-                        )
+                await self._diagnostics_uploader.upload_once(self._diag_enabled_until)
             except Exception as e:
                 logger.debug("Diagnostics upload error (non-fatal): %s", e)
             await asyncio.sleep(2)
 
-    async def _authenticate(
-        self,
-    ) -> AuthResult:
-        try:
-            publish_camera_ids = (
-                [runtime.camera_id for runtime in self._camera_runtimes]
-                if self._uses_direct_livekit_publisher()
-                else []
-            )
-            session = self._get_session()
-            async with session.post(
-                f"{self.config.server.api_url}/api/v1/robots/claim",
-                json={
-                    "claimToken": self.config.server.claim_token,
-                    "deviceKey": self.config.server.device_key,
-                    "publishCameraIds": publish_camera_ids,
-                },
-                headers={"Content-Type": "application/json"},
-                timeout=aiohttp.ClientTimeout(total=10),
-                allow_redirects=False,
-            ) as resp:
-                if resp.status in (301, 302, 307, 308):
-                    location = resp.headers.get("Location", "")
-                    logger.error(
-                        "Server redirected (%d) to: %s - check api_url (http vs https)",
-                        resp.status,
-                        location,
-                    )
-                    return AuthResult(None, None, None, None, {}, None)
-                if resp.status not in (200, 201):
-                    text = await resp.text()
-                    logger.error("Claim failed (%d): %s", resp.status, text)
-                    if resp.status == 404 and self.config.server.api_url.startswith("http://"):
-                        logger.error("Hint: try https:// if your server has SSL enabled")
-                        return AuthResult(None, None, None, None, {}, None)
+    async def _authenticate(self) -> AuthResult | None:
+        authenticator = getattr(self, "_authenticator", None)
+        if authenticator is None:
+            authenticator = ClientAuthenticator(self.config, self._get_session)
+            self._authenticator = authenticator
+        publish_camera_ids = (
+            [runtime.camera_id for runtime in self._camera_runtimes]
+            if self._uses_direct_livekit_publisher()
+            else []
+        )
+        outcome = await authenticator.claim(
+            publish_camera_ids=publish_camera_ids,
+            capabilities=self._capability_manifest,
+        )
+        if isinstance(outcome, AuthFailure):
+            logger.error("Authentication failed (%s): %s", outcome.code, outcome.detail)
+            return None
+        self._remote_target_bitrate_kbps = outcome.target_bitrate_kbps
+        logger.info(
+            "Video target bitrate: remote=%s configured=%s effective=%d kbps",
+            self._remote_target_bitrate_kbps,
+            self._configured_target_bitrate_kbps,
+            self._effective_target_bitrate_kbps(),
+        )
+        return outcome
 
-                data = await resp.json()
-                stream = data.get("stream") if isinstance(data, dict) else None
-                if isinstance(stream, dict):
-                    self._remote_target_bitrate_kbps = self._parse_target_bitrate_kbps(
-                        stream.get("targetBitrateKbps")
-                    )
-                else:
-                    self._remote_target_bitrate_kbps = None
-
-                logger.info(
-                    "Video target bitrate: remote=%s configured=%s effective=%d kbps",
-                    self._remote_target_bitrate_kbps,
-                    self._configured_target_bitrate_kbps,
-                    self._effective_target_bitrate_kbps(),
-                )
-
-                livekit_url = data.get("livekitUrl")
-                if not isinstance(livekit_url, str):
-                    livekit_url = None
-                ingress = data.get("ingress")
-                if not isinstance(ingress, dict):
-                    ingress = None
-                publish_tokens_raw = data.get("publishTokens")
-                publish_tokens = (
-                    {
-                        str(key).strip(): str(value).strip()
-                        for key, value in publish_tokens_raw.items()
-                        if str(key).strip() and isinstance(value, str) and value.strip()
-                    }
-                    if isinstance(publish_tokens_raw, dict)
-                    else {}
-                )
-                robot_auth_token = data.get("robotAuthToken")
-                return AuthResult(
-                    data.get("token"),
-                    data.get("robotId"),
-                    livekit_url,
-                    ingress,
-                    publish_tokens,
-                    robot_auth_token.strip() if isinstance(robot_auth_token, str) and robot_auth_token.strip() else None,
-                )
-        except Exception as e:
-            logger.error("Authentication error: %s", e)
-            return AuthResult(None, None, None, None, {}, None)
-
-    def _read_git_metadata(self) -> tuple[Optional[str], Optional[str], bool]:
+    def _read_git_metadata(self) -> tuple[str | None, str | None, bool]:
         if not (self._repo_root / ".git").exists():
             return None, None, False
 
-        def read_git_output(args: list[str]) -> Optional[str]:
+        def read_git_output(args: list[str]) -> str | None:
             try:
                 result = subprocess.run(
                     args,
@@ -526,8 +460,9 @@ class ClientOpsMixin:
                     capture_output=True,
                     text=True,
                     check=False,
+                    timeout=3,
                 )
-            except Exception:
+            except (OSError, subprocess.SubprocessError):
                 return None
 
             if result.returncode != 0:
@@ -556,83 +491,35 @@ class ClientOpsMixin:
 
         return branch, commit, bool(relevant_changes)
 
-    async def _run_update_command(self, argv: list[str], label: str) -> None:
-        process = await asyncio.create_subprocess_exec(
-            *argv,
-            cwd=str(self._repo_root),
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.STDOUT,
-        )
-        stdout, _ = await process.communicate()
-        output = stdout.decode("utf-8", errors="replace").strip() if stdout else ""
-        if output:
-            for line in output.splitlines()[-20:]:
-                logger.info("%s: %s", label, self._sanitize_update_log_line(line))
-        if process.returncode != 0:
-            raise RuntimeError(f"{label} failed with exit code {process.returncode}")
-
-    async def _perform_client_update(self) -> None:
+    async def _perform_client_update(self, action_id: str | None = None) -> None:
         if self._update_in_progress:
             logger.info("Client update already in progress - ignoring duplicate action")
             return
 
-        if self._env_bool("BOTPARTY_DISABLE_REMOTE_UPDATE", False):
-            logger.warning("Skipping update_client: remote updates disabled by BOTPARTY_DISABLE_REMOTE_UPDATE")
-            return
-
-        if not (self._repo_root / ".git").exists():
-            logger.warning("Skipping update_client: repository is not a git checkout at %s", self._repo_root)
-            return
-
-        configured_remote = os.getenv("BOTPARTY_CLIENT_UPDATE_REMOTE_URL", "").strip()
-        if configured_remote and not self._is_allowed_update_remote(configured_remote):
-            logger.error(
-                "Skipping update_client: BOTPARTY_CLIENT_UPDATE_REMOTE_URL is not allowlisted (%s)",
-                self._mask_remote_url(configured_remote),
-            )
+        if self._update_manager is None:
+            logger.warning("Skipping update_client: signed transactional OTA is not enabled")
             return
 
         self._update_in_progress = True
-        snapshot_commit: str | None = None
         try:
-            snapshot_commit = await self._read_git_head_commit()
-
-            await self._run_update_command(self._build_git_pull_argv(), "git pull --ff-only")
-            if self._env_bool("BOTPARTY_CLIENT_UPDATE_VERIFY_SIGNATURE", True):
-                await self._run_update_command(
-                    ["git", "verify-commit", "HEAD"],
-                    "git verify-commit HEAD",
-                )
-            await self._run_update_command(
-                [sys.executable, "-m", "pip", "install", "-e", ".[all]"],
-                "pip install -e .[all]",
+            await self._trigger_hardware_stop("ota_update")
+            config_path = Path(os.getenv("BOTPARTY_CONFIG", "config.yaml")).resolve()
+            executable = await asyncio.to_thread(
+                self._update_manager.install,
+                config_path,
             )
-            (
-                self._client_git_branch,
-                self._client_git_commit,
-                self._client_git_dirty,
-            ) = self._read_git_metadata()
-            logger.info(
-                "Client update complete: version=%s branch=%s commit=%s dirty=%s",
-                __version__,
-                self._client_git_branch or "-",
-                self._client_git_commit or "-",
-                self._client_git_dirty,
-            )
-            await self._restart_process_after_update()
+            logger.info("Verified OTA release installed; activating new slot")
+            if action_id is not None:
+                self._emit_remote_action_result(action_id, "completed", "installed")
+            await self._restart_process_after_update(executable)
         except Exception as exc:
             logger.error("Client update failed: %s", exc)
-            if snapshot_commit:
-                with contextlib.suppress(Exception):
-                    await self._run_update_command(
-                        ["git", "reset", "--hard", snapshot_commit],
-                        f"git reset --hard {snapshot_commit[:12]}",
-                    )
-                    logger.warning("Rolled back failed client update to snapshot %s", snapshot_commit[:12])
+            if action_id is not None:
+                self._emit_remote_action_result(action_id, "failed", "update_failed")
         finally:
             self._update_in_progress = False
 
-    async def _restart_process_after_update(self) -> None:
+    async def _restart_process_after_update(self, executable: Path | None = None) -> None:
         logger.info("Restarting client process after successful update")
         self._planned_disconnect_notice_sent = True
         self._livekit_connected = False
@@ -656,4 +543,5 @@ class ClientOpsMixin:
         # Brief pause to let the event loop flush any final callbacks
         await asyncio.sleep(0.1)
 
-        os.execv(sys.executable, [sys.executable, "-m", "botparty_robot"])
+        target = str(executable or Path(sys.executable))
+        os.execv(target, [target, "-m", "botparty_robot", *sys.argv[1:]])

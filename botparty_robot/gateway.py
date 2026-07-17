@@ -6,11 +6,13 @@ import json
 import logging
 import random
 import time
-from typing import Any, Callable, Coroutine, Optional
+from collections.abc import Awaitable, Callable
+from typing import Any
 
 import aiohttp
 
 from .config import RobotConfig
+from .protocol import MAX_WEBSOCKET_MESSAGE_BYTES, ControlCommand
 from .ws_protocol import WS_EVENTS, WS_PROTOCOL_VERSION
 
 logger = logging.getLogger("botparty.gateway")
@@ -31,12 +33,13 @@ class GatewayConnection:
         config: RobotConfig,
         on_command: Callable[[str, Any, Any, dict[str, Any] | None], None],
         on_emergency_stop: Callable[[], None],
-        on_actions: Callable[[dict], Coroutine],
+        on_actions: Callable[[dict[str, Any]], Awaitable[None]],
         running_fn: Callable[[], bool],
-        session_provider: Optional[Callable[[], aiohttp.ClientSession]] = None,
-        on_shutdown: Optional[Callable[[str, str, float, str], Coroutine[Any, Any, None]]] = None,
-        on_reconnected: Optional[Callable[[str, str], Coroutine[Any, Any, None]]] = None,
-        on_disconnected: Optional[Callable[[str], Coroutine[Any, Any, None]]] = None,
+        session_provider: Callable[[], aiohttp.ClientSession] | None = None,
+        on_shutdown: Callable[[str, str, float, str], Awaitable[None]] | None = None,
+        on_reconnected: Callable[[str, str], Awaitable[None]] | None = None,
+        on_disconnected: Callable[[str], Awaitable[None]] | None = None,
+        on_reconnect_attempt: Callable[[], None] | None = None,
     ) -> None:
         self.config = config
         self._on_command = on_command
@@ -45,10 +48,11 @@ class GatewayConnection:
         self._on_shutdown = on_shutdown
         self._on_reconnected = on_reconnected
         self._on_disconnected = on_disconnected
+        self._on_reconnect_attempt = on_reconnect_attempt
         self._running_fn = running_fn
         self._session_provider = session_provider
         self._connected = False
-        self._ws: Optional[aiohttp.ClientWebSocketResponse] = None
+        self._ws: aiohttp.ClientWebSocketResponse[bool] | None = None
         self._last_actions_pull_at = 0.0
         self._retry_after_override_sec: float | None = None
         self._shutdown_reason: str | None = None
@@ -56,6 +60,8 @@ class GatewayConnection:
         self._shutdown_scope: str | None = None
         self._pending_recovery_reason: str | None = None
         self._pending_recovery_scope: str | None = None
+        self._disconnect_notified = False
+        self._has_attempted_connection = False
 
     @property
     def connected(self) -> bool:
@@ -67,11 +73,10 @@ class GatewayConnection:
         self._connected = False
         self._ws = None
         if ws is not None:
-            import contextlib
             with contextlib.suppress(Exception):
                 await ws.close()
 
-    async def send_event(self, event: str, data: dict) -> bool:
+    async def send_event(self, event: str, data: dict[str, Any]) -> bool:
         """Send an event over the active WebSocket. Returns False if not connected."""
         ws = self._ws
         if not self._connected or ws is None:
@@ -89,16 +94,27 @@ class GatewayConnection:
 
         while self._running_fn():
             attempt += 1
+            reconnect_callback = self._on_reconnect_attempt
+            if self._has_attempted_connection and reconnect_callback is not None:
+                reconnect_callback()
+            self._has_attempted_connection = True
+            connected_this_attempt = False
+            reconnect_delay = min(2 ** min(attempt, 6), 30) + random.uniform(0, 2)
             try:
                 timeout = aiohttp.ClientTimeout(total=None, connect=10, sock_read=30)
-                owns_session = self._session_provider is None
+                session_provider = self._session_provider
+                owns_session = session_provider is None
                 session = (
                     aiohttp.ClientSession(timeout=timeout)
-                    if owns_session
-                    else self._session_provider()
+                    if session_provider is None
+                    else session_provider()
                 )
                 try:
-                    async with session.ws_connect(ws_url, heartbeat=20) as ws:
+                    async with session.ws_connect(
+                        ws_url,
+                        heartbeat=20,
+                        max_msg_size=MAX_WEBSOCKET_MESSAGE_BYTES,
+                    ) as ws:
                         self._ws = ws
                         attempt = 0
                         self._connected = False
@@ -106,18 +122,24 @@ class GatewayConnection:
                         self._shutdown_reason = None
                         self._shutdown_message = None
                         self._shutdown_scope = None
-                        robot_auth_token = (self.config.server.robot_auth_token or "").strip()
+                        robot_auth_token = (
+                            self.config.server.robot_auth_token_value() or ""
+                        ).strip()
                         if not robot_auth_token:
                             raise RuntimeError("Missing robot auth token for websocket claim")
-                        await ws.send_json({
-                            "event": WS_EVENTS["ROBOT_CLAIM"],
-                            "data": {
-                                "robotAuthToken": robot_auth_token,
-                                "protocolVersion": WS_PROTOCOL_VERSION,
-                            },
-                        })
+                        await ws.send_json(
+                            {
+                                "event": WS_EVENTS["ROBOT_CLAIM"],
+                                "data": {
+                                    "robotAuthToken": robot_auth_token,
+                                    "protocolVersion": WS_PROTOCOL_VERSION,
+                                },
+                            }
+                        )
                         await self._await_robot_claim(ws)
                         self._connected = True
+                        connected_this_attempt = True
+                        self._disconnect_notified = False
                         logger.info("Control websocket connected")
                         await self._pull_actions(ws, force=True)
                         if self._pending_recovery_reason and self._on_reconnected is not None:
@@ -131,12 +153,15 @@ class GatewayConnection:
                             finally:
                                 self._pending_recovery_reason = None
                                 self._pending_recovery_scope = None
+                                self._disconnect_notified = False
 
                         while self._running_fn():
                             try:
                                 msg = await ws.receive(timeout=10)
                             except asyncio.TimeoutError:
-                                await ws.send_json({"event": WS_EVENTS["ROBOT_HEARTBEAT"], "data": {}})
+                                await ws.send_json(
+                                    {"event": WS_EVENTS["ROBOT_HEARTBEAT"], "data": {}}
+                                )
                                 await self._pull_actions(ws)
                                 continue
 
@@ -148,7 +173,8 @@ class GatewayConnection:
                                 aiohttp.WSMsgType.ERROR,
                             ):
                                 logger.warning(
-                                    "Control websocket closed by gateway (type=%s code=%s error=%s)",
+                                    "Control websocket closed by gateway "
+                                    "(type=%s code=%s error=%s)",
                                     msg.type.name,
                                     ws.close_code,
                                     ws.exception(),
@@ -158,25 +184,38 @@ class GatewayConnection:
                     if owns_session and not session.closed:
                         with contextlib.suppress(Exception):
                             await session.close()
-                if self._running_fn() and self._pending_recovery_reason and self._on_disconnected is not None:
+                reconnect_delay = self._consume_reconnect_delay(default_delay=1)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                reconnect_delay = self._consume_reconnect_delay(default_delay=reconnect_delay)
+                logger.warning(
+                    "Control websocket disconnected (%s); retrying in %ds",
+                    exc,
+                    int(reconnect_delay),
+                )
+            finally:
+                self._ws = None
+                self._connected = False
+                should_notify = connected_this_attempt or self._pending_recovery_reason is not None
+                if (
+                    self._running_fn()
+                    and should_notify
+                    and not self._disconnect_notified
+                    and self._on_disconnected is not None
+                ):
                     try:
                         await self._on_disconnected(self._pending_recovery_scope or "app")
                     except Exception as exc:
                         logger.warning("Disconnect callback failed: %s", exc)
-                if self._running_fn():
-                    delay = self._consume_reconnect_delay(default_delay=1)
-                    self._log_reconnect_delay(delay)
-                    await asyncio.sleep(delay)
-            except Exception as e:
-                self._connected = False
-                delay = self._consume_reconnect_delay(default_delay=min(2 ** min(attempt, 6), 30) + random.uniform(0, 2))
-                logger.warning("Control websocket disconnected (%s); retrying in %ds", e, int(delay))
-                await asyncio.sleep(delay)
-            finally:
-                self._ws = None
-                self._connected = False
+                    finally:
+                        self._disconnect_notified = True
 
-    async def _await_robot_claim(self, ws: aiohttp.ClientWebSocketResponse) -> None:
+            if self._running_fn():
+                self._log_reconnect_delay(reconnect_delay)
+                await asyncio.sleep(reconnect_delay)
+
+    async def _await_robot_claim(self, ws: aiohttp.ClientWebSocketResponse[bool]) -> None:
         while self._running_fn():
             try:
                 msg = await ws.receive(timeout=10)
@@ -215,6 +254,9 @@ class GatewayConnection:
         raise RuntimeError("Robot client stopped before websocket claim completed")
 
     async def _handle_message(self, raw: str) -> None:
+        if len(raw.encode("utf-8", errors="replace")) > MAX_WEBSOCKET_MESSAGE_BYTES:
+            logger.warning("Rejected websocket message larger than 64 KiB")
+            return
         try:
             payload = json.loads(raw)
         except Exception:
@@ -224,11 +266,24 @@ class GatewayConnection:
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
 
         if event == WS_EVENTS["CONTROL_COMMAND"]:
+            try:
+                command = ControlCommand.model_validate(data)
+            except Exception as exc:
+                logger.warning("Rejected invalid control command: %s", exc)
+                return
+            metadata = dict(command.metadata or {})
+            metadata["actionId"] = command.command_id
+            metadata["commandId"] = command.command_id
+            metadata["ackRequired"] = command.ack_required
+            if command.button_id:
+                metadata["buttonId"] = command.button_id
+            if command.user_id:
+                metadata["userId"] = command.user_id
             self._on_command(
-                str(data.get("command", "")),
-                data.get("value"),
-                data.get("timestamp"),
-                data.get("metadata") if isinstance(data.get("metadata"), dict) else None,
+                command.command,
+                command.value,
+                command.timestamp,
+                metadata or None,
             )
         elif event == WS_EVENTS["CONTROL_EMERGENCY_STOP"]:
             logger.warning("Emergency stop received from gateway")
@@ -241,6 +296,8 @@ class GatewayConnection:
         elif event == WS_EVENTS["SERVER_SHUTDOWN"]:
             retry_after_ms = data.get("retryAfterMs")
             try:
+                if not isinstance(retry_after_ms, (str, int, float)):
+                    raise TypeError
                 retry_after_sec = max(1.0, float(retry_after_ms) / 1000.0)
             except (TypeError, ValueError):
                 retry_after_sec = 12.0
@@ -267,7 +324,11 @@ class GatewayConnection:
                 except Exception as exc:
                     logger.warning("Shutdown callback failed: %s", exc)
 
-    async def _pull_actions(self, ws: aiohttp.ClientWebSocketResponse, force: bool = False) -> None:
+    async def _pull_actions(
+        self,
+        ws: aiohttp.ClientWebSocketResponse[bool],
+        force: bool = False,
+    ) -> None:
         now = time.time()
         if not force and now - self._last_actions_pull_at < 2.5:
             return
@@ -279,9 +340,9 @@ class GatewayConnection:
         if api_url.endswith("/api/v1"):
             api_url = api_url[:-7]
         if api_url.startswith("https://"):
-            return f"wss://{api_url[len('https://'):]}/ws"
+            return f"wss://{api_url[len('https://') :]}/ws"
         if api_url.startswith("http://"):
-            return f"ws://{api_url[len('http://'):]}/ws"
+            return f"ws://{api_url[len('http://') :]}/ws"
         return f"ws://{api_url}/ws"
 
     def _consume_reconnect_delay(self, default_delay: float) -> float:

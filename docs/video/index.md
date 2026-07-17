@@ -32,7 +32,8 @@ video:
     target_bitrate_kbps: 1200
 ```
 
-`ffmpeg` auto-selects `botparty-streamer` when healthy, prefers hardware H.264 when available, updates the helper to the active version when needed, and falls back to SDK publish if direct mode is not usable.
+`ffmpeg` auto-selects the verified `botparty-streamer` installed by the main installer, prefers
+hardware H.264 when available and falls back to SDK publish if direct mode is not usable.
 
 ## Multi-camera quick rule
 

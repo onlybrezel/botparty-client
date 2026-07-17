@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from ..safety import CommandPermit, HardwareCommandCancelled
 from .base import BaseHardware
 from .common import optional_import
 
@@ -42,20 +43,33 @@ class HardwareAdapter(BaseHardware):
                 if state.is_connected:
                     break
             await self.rover.action.arm()
-            await self.rover.offboard.set_attitude(self.mavsdk.offboard.Attitude(0.0, 0.0, 0.0, 0.0))
+            await self.rover.offboard.set_attitude(
+                self.mavsdk.offboard.Attitude(0.0, 0.0, 0.0, 0.0)
+            )
             await self.rover.offboard.start()
             self._ready = True
             self.log.info("connected on %s", self.system_address)
         except Exception as exc:
             self.log.warning("setup failed: %s", exc)
 
-    async def _drive(self, yaw: float, thrust: float, duration: float) -> None:
+    async def _drive(
+        self,
+        yaw: float,
+        thrust: float,
+        duration: float,
+        permit: CommandPermit | None = None,
+    ) -> None:
         if self.rover is None or not self._ready:
             return
+        if permit is not None:
+            permit.ensure_active()
         attitude = self.mavsdk.offboard.Attitude(0.0, 0.0, yaw, thrust)
         await self.rover.offboard.set_attitude(attitude)
-        if duration > 0:
-            await asyncio.sleep(duration)
+        deadline = asyncio.get_running_loop().time() + duration
+        while duration > 0 and asyncio.get_running_loop().time() < deadline:
+            await asyncio.sleep(min(0.05, deadline - asyncio.get_running_loop().time()))
+            if permit is not None:
+                permit.ensure_active()
         await self.rover.offboard.set_attitude(self.mavsdk.offboard.Attitude(0.0, 0.0, yaw, 0.0))
 
     def _schedule(self, coro) -> None:
@@ -63,20 +77,31 @@ class HardwareAdapter(BaseHardware):
         if self._loop is None:
             self.log.warning("no event loop stored; NavQ command dropped")
             return
-        asyncio.run_coroutine_threadsafe(coro, self._loop)
+        future = asyncio.run_coroutine_threadsafe(coro, self._loop)
+
+        def _consume_result(done) -> None:
+            try:
+                done.result()
+            except HardwareCommandCancelled:
+                return
+            except Exception as exc:
+                self.log.warning("scheduled NavQ operation failed: %s", exc)
+
+        future.add_done_callback(_consume_result)
 
     def on_command(self, command: str, value: Any = None) -> None:
         if self.rover is None:
             self.log.info("command=%s value=%s", command, value)
             return
+        permit = self.current_command_permit()
         if self.matches(command, "forward"):
-            self._schedule(self._drive(0.0, self.thrust, 1.0))
+            self._schedule(self._drive(0.0, self.thrust, 1.0, permit))
         elif self.matches(command, "backward"):
-            self._schedule(self._drive(0.0, -self.thrust, 1.0))
+            self._schedule(self._drive(0.0, -self.thrust, 1.0, permit))
         elif self.matches(command, "left"):
-            self._schedule(self._drive(-self.yaw_step, self.thrust, 1.0))
+            self._schedule(self._drive(-self.yaw_step, self.thrust, 1.0, permit))
         elif self.matches(command, "right"):
-            self._schedule(self._drive(self.yaw_step, self.thrust, 1.0))
+            self._schedule(self._drive(self.yaw_step, self.thrust, 1.0, permit))
         elif self.matches(command, "stop"):
             self.emergency_stop()
 

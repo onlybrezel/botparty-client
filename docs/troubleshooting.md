@@ -101,16 +101,7 @@ Check that:
 2. Your motor driver board is powered
 3. For GPIO adapters: `sudo usermod -aG gpio $USER` was run and you re-logged in
 
-Test GPIO with Python:
-
-```python
-import RPi.GPIO as GPIO
-GPIO.setmode(GPIO.BCM)
-GPIO.setup(17, GPIO.OUT)
-GPIO.output(17, GPIO.HIGH)   # should activate motor
-import time; time.sleep(0.5)
-GPIO.output(17, GPIO.LOW)
-```
+Run `botparty-robot --config config.yaml doctor` for a non-moving device and permission check. Perform active GPIO tests only with the robot lifted, the area clear and a hard-wired cutoff within reach.
 
 ### GPIO permission denied
 
@@ -199,7 +190,8 @@ tts:
 ### Robot commands feel laggy
 
 - Check your internet connection speed from the Pi: `speedtest-cli`
-- Control latency is primarily determined by network, not CPU
+- Check `/health` for stale commands, queue drops, control reconnects and safety stops.
+- Keep CPU and memory within the device-class budget in [Performance](performance.md).
 
 ---
 

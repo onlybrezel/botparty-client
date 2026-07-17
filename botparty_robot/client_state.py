@@ -4,16 +4,15 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
+import threading
 import time
 from collections import deque
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Any, Optional
+from typing import Any, Protocol
 
-from .camera import CameraManager
 from .config import RobotConfig
-
-if TYPE_CHECKING:
-    from .publisher import LiveKitPublisherManager
 
 logger = logging.getLogger("botparty.client")
 _SUPPRESS_LIVEKIT_NOISE_UNTIL = 0.0
@@ -30,6 +29,16 @@ LOCAL_GIT_STATUS_IGNORE_PATHS = (
     ".venv/",
     "__pycache__/",
 )
+
+
+class MediaManager(Protocol):
+    @property
+    def frame_count(self) -> int: ...
+
+    @property
+    def audio_task(self) -> asyncio.Task[None] | None: ...
+
+    def restart_audio(self, room: Any, running_fn: Callable[[], bool]) -> None: ...
 
 
 def suppress_livekit_reconnect_noise(duration_sec: float) -> None:
@@ -49,25 +58,64 @@ def should_emit_runtime_log(record: logging.LogRecord) -> bool:
         return False
 
     message = record.getMessage()
-    if logger_name == "root" and (
-        "error running user callback for local_track_" in message
-        or "KeyError:" in message
-    ):
-        return False
+    return not (
+        logger_name == "root"
+        and ("error running user callback for local_track_" in message or "KeyError:" in message)
+    )
 
-    return True
+
+@dataclass(frozen=True, slots=True)
+class DiagnosticRecord:
+    sequence: int
+    created_at: float
+    line: str
+
+
+_REDACTION_PATTERNS = (
+    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+"),
+    re.compile(r"(?i)((?:claim|auth|device)[_-]?token\s*[:=]\s*)[^\s,;]+"),
+    re.compile(r"(?i)((?:secret|access)[_-]?key\s*[:=]\s*)[^\s,;]+"),
+    re.compile(r"(?i)(https?://)[^/@\s]+@"),
+    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
+)
+
+
+def redact_text(value: str, literals: tuple[str, ...] = ()) -> str:
+    redacted = value
+    for pattern in _REDACTION_PATTERNS:
+        if pattern.pattern.startswith("\\bAKIA"):
+            redacted = pattern.sub("[REDACTED_AWS_KEY]", redacted)
+        elif "https?" in pattern.pattern:
+            redacted = pattern.sub(r"\1[REDACTED]@", redacted)
+        else:
+            redacted = pattern.sub(r"\1[REDACTED]", redacted)
+    for literal in literals:
+        redacted = re.sub(re.escape(literal), "[REDACTED_OPERATOR_TERM]", redacted, flags=re.I)
+    return redacted
 
 
 class DiagnosticsBufferHandler(logging.Handler):
-    def __init__(self, storage: deque[str], default_maxlen: int = 1000) -> None:
+    def __init__(
+        self,
+        storage: deque[DiagnosticRecord],
+        default_maxlen: int = 1000,
+        redaction_literals: tuple[str, ...] = (),
+    ) -> None:
         super().__init__(level=logging.INFO)
         self.storage = (
             storage if storage.maxlen is not None else deque(storage, maxlen=default_maxlen)
         )
+        self._next_sequence = 1
+        self._lock = threading.Lock()
+        self._redaction_literals = redaction_literals
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
-            self.storage.append(self.format(record))
+            line = redact_text(self.format(record), self._redaction_literals)
+            with self._lock:
+                sequence = self._next_sequence
+                self._next_sequence += 1
+                self.storage.append(DiagnosticRecord(sequence, time.time(), line))
         except Exception:
             pass
 
@@ -82,6 +130,16 @@ class WatchdogStats:
     last_heartbeat_at: float = field(default_factory=time.time)
     last_command_at: float = 0.0
     camera_task_restarts: int = 0
+    control_disconnects: int = 0
+    media_reconnects: int = 0
+    safety_stops: int = 0
+    watchdog_stops: int = 0
+    emergency_stops: int = 0
+    command_queue_drops: int = 0
+    command_queue_high_watermark: int = 0
+    stale_commands: int = 0
+    last_command_ack_at: float = 0.0
+    last_control_disconnect_reason: str | None = None
 
 
 @dataclass
@@ -92,7 +150,20 @@ class CameraRuntime:
     publish_mode: str
     config: RobotConfig
     video_profile: Any
-    manager: CameraManager | LiveKitPublisherManager
+    manager: MediaManager
     include_audio: bool = False
-    task: Optional[asyncio.Task] = None
+    task: asyncio.Task[None] | None = None
     restart_count: int = 0
+    started_at_monotonic: float = 0.0
+    last_frame_at_monotonic: float = 0.0
+    last_frame_count: int = 0
+    state: str = "stopped"
+    last_error: str | None = None
+
+
+@dataclass(slots=True)
+class QueuedHardwareCommand:
+    command: str
+    value: Any
+    metadata: dict[str, Any] | None
+    motion_command_id: int | None

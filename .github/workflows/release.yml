@@ -1,0 +1,73 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+      - name: Require a signed annotated tag
+        run: git verify-tag "$GITHUB_REF_NAME"
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - name: Match tag to package version
+        run: test "$GITHUB_REF_NAME" = "v$(python -c 'import botparty_robot; print(botparty_robot.__version__)')"
+      - run: pytest -q
+      - run: python -m build
+      - run: twine check dist/*
+      - run: pip-audit -r requirements/production.txt
+      - name: Build offline OTA bundle
+        id: ota
+        run: |
+          bundle="$(python scripts/build-ota-bundle.py \
+            --wheel "$(find dist -maxdepth 1 -name '*.whl' -print -quit)" \
+            --lock requirements/production.txt)"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+      - name: Sign OTA manifest
+        env:
+          OTA_ED25519_PRIVATE_KEY: ${{ secrets.OTA_ED25519_PRIVATE_KEY }}
+        run: |
+          bundle="${{ steps.ota.outputs.bundle }}"
+          python scripts/sign-ota-manifest.py \
+            --bundle "$bundle" \
+            --bundle-url "https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/$(basename "$bundle")" \
+            --version "${GITHUB_REF_NAME#v}" \
+            --output dist/ota-manifest.json
+      - name: Install immutable release artifact
+        run: |
+          python -m venv /tmp/release-artifact
+          /tmp/release-artifact/bin/pip install --require-hashes -r requirements/production.txt
+          /tmp/release-artifact/bin/pip install --no-deps dist/*.whl
+          /tmp/release-artifact/bin/botparty-robot --version
+      - name: Generate release-profile SBOM
+        run: >-
+          cyclonedx-py environment /tmp/release-artifact/bin/python
+          --pyproject pyproject.toml
+          --output-reproducible
+          --output-file dist/sbom.cdx.json
+      - run: >-
+          python scripts/generate-license-inventory.py
+          --python /tmp/release-artifact/bin/python
+          --output dist/THIRD_PARTY_NOTICES.md
+      - run: sha256sum dist/* > dist/SHA256SUMS
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: dist/*
+      - name: Publish immutable GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -23,8 +22,8 @@ class HardwareAdapter(BaseHardware):
     def _run(self, left: int, right: int) -> None:
         if self.motors is None:
             return
-        self.motors.setSpeeds(left, right)
-        time.sleep(self.drive_time)
+        self.guarded_write(lambda: self.motors.setSpeeds(left, right))
+        self.interruptible_sleep(self.drive_time)
         self.motors.setSpeeds(0, 0)
 
     def on_command(self, command: str, value: Any = None) -> None:
@@ -46,4 +45,3 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         if self.motors is not None:
             self.motors.setSpeeds(0, 0)
-

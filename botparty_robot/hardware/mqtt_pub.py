@@ -60,7 +60,12 @@ class HardwareAdapter(BaseHardware):
             self.log.info("topic=%s payload=%s", self.topic, payload)
             return
 
-        self.client.publish(self.topic, payload)
+        self.guarded_write(lambda: self.client.publish(self.topic, payload))
 
     def emergency_stop(self) -> None:
         self.on_command(self.stop_command)
+
+    def _close_resources(self) -> None:
+        if self.client is not None:
+            self.client.loop_stop()
+            self.client.disconnect()

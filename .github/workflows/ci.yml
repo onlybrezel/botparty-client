@@ -1,0 +1,92 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: ruff check .
+      - run: ruff format --check .
+      - run: mypy
+      - run: python scripts/check-secrets.py
+      - run: python scripts/check-doc-links.py
+      - run: python scripts/adapter-inventory.py --check
+      - run: python scripts/check-hil-reports.py
+      - run: bash -n scripts/*.sh
+      - run: BOTPARTY_CLAIM_TOKEN=test-claim-token botparty-robot --config config.example.yaml config validate
+
+  test:
+    name: Test Python ${{ matrix.python-version }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: pytest -q
+
+  package:
+    name: Package and audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install -e ".[dev]"
+      - run: pip-audit -r requirements/production.txt
+      - run: python -m build
+      - run: twine check dist/*
+      - run: python -c "import zipfile; p=next(__import__('pathlib').Path('dist').glob('*.whl')); assert any(n.endswith('.dist-info/licenses/LICENSE') for n in zipfile.ZipFile(p).namelist())"
+      - name: Installed-wheel smoke test
+        run: |
+          python -m venv /tmp/wheel-smoke
+          /tmp/wheel-smoke/bin/pip install --require-hashes -r requirements/production.txt
+          /tmp/wheel-smoke/bin/pip install --no-deps dist/*.whl
+          /tmp/wheel-smoke/bin/botparty-robot --help
+          /tmp/wheel-smoke/bin/botparty-robot --version
+          /tmp/wheel-smoke/bin/python -m botparty_robot --help
+      - name: Generate release-profile SBOM
+        run: >-
+          cyclonedx-py environment /tmp/wheel-smoke/bin/python
+          --pyproject pyproject.toml
+          --output-reproducible
+          --output-file dist/sbom.cdx.json
+      - run: >-
+          python scripts/generate-license-inventory.py
+          --python /tmp/wheel-smoke/bin/python
+          --output dist/THIRD_PARTY_NOTICES.md
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: package
+          path: dist/
+          if-no-files-found: error

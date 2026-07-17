@@ -1,95 +1,86 @@
 # BotParty Robot Client
 
-Python client that runs on your robot and connects it to BotParty.
+BotParty's Python robot client connects a camera, control adapter and optional text-to-speech engine to the BotParty platform.
 
-![Python](https://img.shields.io/badge/python-3.10%2B-3776AB?logo=python&logoColor=white)
-![License](https://img.shields.io/badge/license-MIT-blue.svg)
+## Install
 
-The README is intentionally short. Full documentation is in [docs/index.md](docs/index.md).
-
-## Get it running
-
-One-command bootstrap (venv, deps, optional `botparty-streamer`, and systemd service):
+The installer builds an immutable wheel, downloads the verified video streamer, creates the
+`botparty` service user and installs a hardened systemd service:
 
 ```bash
-./scripts/install-botparty-client.sh
+sudo ./scripts/install-botparty-client.sh --device-groups video
+sudoedit /etc/botparty/config.yaml
+sudo systemctl enable --now botparty-robot.service
 ```
 
-Edit `config.yaml`, then follow logs:
+Start with `hardware.type: none`. Validate the host before enabling motors:
 
 ```bash
-sudo journalctl -u botparty-robot.service -f
+sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
+  --config /etc/botparty/config.yaml config validate
+sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
+  --config /etc/botparty/config.yaml doctor
 ```
 
-Manual run (no venv activation needed):
+For a local development environment:
 
 ```bash
-./scripts/start-botparty-robot.sh
+python3 -m venv .venv
+.venv/bin/pip install -e '.[dev]'
+.venv/bin/botparty-robot --config config.example.yaml config validate
 ```
 
-For the full apt + clone + venv steps and the system-Python install path (useful on some Pi images), see [Installation](docs/installation.md).
+## Safety contract
 
-## What this client does
+- Every control-plane disconnect, watchdog expiry, update and shutdown latches a local stop.
+- A latched robot accepts no movement until an authorized `reset_safety` action with `safety:reset` scope arrives.
+- Stop bypasses the normal command queue. Old command epochs cannot perform later actuator writes.
+- Movement is rejected while media is degraded by default. Stop remains available.
+- Community adapters require a hardware-in-the-loop stop-latency check before production use.
 
-- Connects using a claim token from the BotParty dashboard
-- Receives drive commands over the control channel and forwards them to your hardware adapter
-- Publishes live camera video (ffmpeg + botparty-streamer by default)
-- Optionally speaks chat messages via a TTS profile
+The local endpoints are `http://127.0.0.1:9100/live`, `/ready` and `/health`. Non-loopback binding requires `BOTPARTY_HEALTH_AUTH_TOKEN_FILE`.
 
-## Requirements
+## Signed components
 
-- Linux (Raspberry Pi, Jetson, Ubuntu/Debian, ...)
-- Python 3.10+
-- Camera device (`/dev/video0`, libcamera, or compatible)
-- Network connection (wired preferred)
-
-## Minimal config
+The main installer downloads the official streamer automatically. The bundled release catalog
+pins the exact URL, architecture, size and SHA-256; ELF and version checks run before atomic
+activation. The standalone installer uses the same verified default:
 
 ```bash
-cp config.example.yaml config.yaml
-chmod 600 config.yaml
+sudo -u botparty BOTPARTY_PYTHON=/opt/botparty/venv/bin/python \
+  BOTPARTY_STREAMER_DIR=/var/lib/botparty/bin \
+  ./scripts/install-botparty-streamer.sh
 ```
 
-Edit at least the claim token:
+Private release channels can override the default with an Ed25519-signed manifest and pinned
+public key. `--no-streamer` is available only for intentionally headless installations.
 
-```yaml
-server:
-  api_url: "https://botparty.live"
-  livekit_url: "wss://botparty.live"
-  claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
+OTA updates use signed, immutable A/B release bundles. Failed readiness rolls back to the previous slot.
 
-video:
-  type: "ffmpeg"
-  options: {}
+## Operator commands
 
-hardware:
-  type: "none"
-  options: {}
+```bash
+botparty-robot --config config.yaml config validate
+botparty-robot --config config.yaml doctor --network
+botparty-robot --config config.yaml support-bundle --output support.zip
+botparty-robot setup --output config.yaml
+botparty-robot --config config.yaml config export --output config.redacted.yaml
+botparty-robot --config config.yaml backup generate-key --key backup.key
 ```
-
-Start with `hardware.type: none` for first connection tests, then switch it to your board (e.g. `l298n`).
-
-You can also pass the token via the `BOTPARTY_CLAIM_TOKEN` environment variable. This is handy for systemd units and secret managers.
 
 ## Documentation
 
-- [Docs home](docs/index.md)
-- [Installation](docs/installation.md)
+- [Installation and recovery](docs/installation.md)
 - [Configuration reference](docs/configuration.md)
-- [Client mixins architecture](docs/client-mixins.md)
-- [Multi-camera](docs/multi-camera.md)
-- [Hardware adapters](docs/hardware/index.md)
-- [Video profiles](docs/video/index.md)
-- [TTS profiles](docs/tts/index.md)
-- [Troubleshooting](docs/troubleshooting.md)
+- [Security and threat model](docs/security.md)
+- [Operations, SLOs and runbooks](docs/operations.md)
+- [Release and OTA process](docs/release.md)
+- [Privacy, data flows and retention](docs/privacy.md)
+- [Adapter support matrix](docs/adapter-support.md)
+- [Performance budgets](docs/performance.md)
+- [Backup and restore](docs/backup.md)
+- [Protocol](docs/protocol.md)
 
-## Notes
+## Support and security
 
-- Keep your `claim_token` secret.
-- Local health endpoint: `http://127.0.0.1:9100/health` (override with `BOTPARTY_HEALTH_*` vars or disable via `BOTPARTY_HEALTH_ENABLED=false`).
-- `botparty-streamer` is the self-made video transmitter for max performance, low CPU and low latency.
-- On Raspberry Pi OS Bookworm `libatlas-base-dev` is usually not required anymore.
-- `sudo apt install python3-rpi.gpio` may want to remove `python3-rpi-lgpio` — this is expected for the built-in GPIO adapters.
-- `venv` is the safer default, but a direct system-Python install (`--break-system-packages`) is supported and sometimes more convenient for GPIO work.
-- Multi-camera setups: use stable symlinks from `/dev/v4l/by-id/` or `/dev/v4l/by-path/` instead of plain `/dev/video0`.
-- Extra dependencies for specific hardware or TTS engines are listed in the docs linked above.
+Use [SUPPORT.md](SUPPORT.md) for support requests and [SECURITY.md](SECURITY.md) for private vulnerability reports. The project is licensed under the [MIT License](LICENSE).

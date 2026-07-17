@@ -1,309 +1,104 @@
-# BotParty Robot Client - Configuration File
-# ============================================
-#
-# SECURITY: This file contains your claim_token which acts like a password.
-#   After creating config.yaml, restrict its permissions:
-#     chmod 600 config.yaml
-#   Never commit this file to version control or share it publicly.
-#
-# QUICK START:
-#   1. Set server.claim_token  (copy it from the BotParty web dashboard)
-#   2. Set server.api_url      (address of your BotParty server)
-#   3. Pick your hardware type in the "hardware" section below
-#   4. Run:  python -m botparty_robot
-#
-# Everything has sensible defaults - only change what you actually need.
-
-
-# -- Server connection ---------------------------------------------------------
+# BotParty robot configuration. Keep this file mode 0600.
 
 server:
-  # No need for change.
   api_url: "https://botparty.live"
-
-  # No need for change.
   livekit_url: "wss://botparty.live"
-
-  # Your robot's claim token from the BotParty dashboard.
-  # SENSITIVE: treat this like a password - do not share or commit it.
-  # Protect with: chmod 600 config.yaml
   claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
-
-
-# -- Camera --------------------------------------------------------------------
+  allow_insecure_dev_transport: false
+  # Enable only after the server claim endpoint supports capability manifests.
+  report_capabilities_in_claim: false
 
 camera:
-  # Video device. /dev/video0 is fine for simple single-camera setups.
-  # Run "ls /dev/video*" to list available cameras.
   device: "/dev/video0"
-
-  # Resolution. Lower values reduce encoding latency significantly on slower hardware.
-  # 640x480@15 is a good starting point for Raspberry Pi 3.
-  # 1280x720@25 is a good starting point for Raspberry Pi 4.
   width: 1280
   height: 720
   fps: 25
-
-
-# -- Video pipeline ------------------------------------------------------------
-#
-# Controls how the camera feed is captured and streamed.
-#
-# Available types:
-#   ffmpeg            - standard choice for most robots  [RECOMMENDED]
-#                       auto-manages botparty-streamer in .botparty/bin
-#                       and falls back to Python SDK publish path otherwise
-#                       botparty-streamer is our selfmade video transmitter for
-#                       maximum performance, low CPU usage and low latency
-#                       requires: sudo apt install ffmpeg
-#   ffmpeg_arecord    - same as ffmpeg + microphone audio
-#                       same auto botparty-streamer handling, plus ALSA mic capture
-#                       requires: sudo apt install ffmpeg alsa-utils
-#   ffmpeg_libcamera  - Raspberry Pi Camera Module v2/v3 (libcamera stack)
-#                       requires: libcamera-vid installed
-#   opencv            - pure Python fallback, no extra dependencies
-#                       slower and lower quality than ffmpeg
+  backend: "v4l2"
+  fourcc: "MJPG"
+  buffer_size: 1
+  warmup_frames: 4
 
 video:
   type: "ffmpeg"
-  options: {}
-  # options:
-  #   publish_fps: 15            # strongly recommended on Raspberry Pi 3
+  options:
+    target_bitrate_kbps: 1200
 
-# -- Optional multi-camera setup ----------------------------------------------
-#
-# Keep the top-level "camera" + "video" blocks for simple single-camera robots.
-# If you add "cameras", each enabled entry becomes its own video track in the
-# same BotParty room. A front + rear pair is the recommended starting point.
-# For multi-camera robots, prefer stable symlinks from /dev/v4l/by-id/ or
-# /dev/v4l/by-path/ because /dev/video0 and /dev/video2 can swap after reboots.
-# Run "ls -l /dev/v4l/by-id /dev/v4l/by-path" to list stable camera paths.
-#
+# Optional multi-camera example. Every enabled camera is published continuously.
 # cameras:
 #   - id: "front"
 #     label: "Front"
 #     role: "primary"
 #     enabled: true
 #     publish_mode: "always_on"
-#     device: "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C930e-video-index0"
+#     device: "/dev/v4l/by-id/replace-with-front-camera"
 #     width: 1280
 #     height: 720
 #     fps: 24
-#     fourcc: "MJPG"
 #     video:
 #       type: "ffmpeg"
 #       options:
 #         target_bitrate_kbps: 1200
-#
 #   - id: "rear"
 #     label: "Rear"
 #     role: "secondary"
 #     enabled: true
-#     publish_mode: "preview_only"
-#     device: "/dev/v4l/by-id/usb-046d_Logitech_Webcam_C270-video-index0"
+#     publish_mode: "always_on"
+#     device: "/dev/v4l/by-id/replace-with-rear-camera"
 #     width: 640
 #     height: 360
 #     fps: 12
-#     fourcc: "MJPG"
 #     video:
 #       type: "ffmpeg"
 #       options:
 #         target_bitrate_kbps: 350
-
-# -- With microphone audio (USB mic or Pi audio hat): -------------------------
-# video:
-#   type: "ffmpeg_arecord"
-#   options:
-#     audio_device: "default"      # run "arecord -l" to list ALSA devices
-#     audio_sample_rate: 48000
-#     audio_channels: 1
-#     audio_chunk_ms: 40           # increase to 60-80 if you see "Audio capture backlog" warnings
-
-# -- Raspberry Pi Camera Module (libcamera, not v4l2): -----------------------
-# video:
-#   type: "ffmpeg_libcamera"
-#   options: {}
-
-# -- Pure Python fallback (no ffmpeg needed): ---------------------------------
-# video:
-#   type: "opencv"
-#   options: {}
-
-
-# -- Hardware / Motor controller -----------------------------------------------
-#
-# Set "type" to match your motor controller board.
-# Options under "options" are specific to each hardware type.
-#
-# Available types:
-#   none          - no movement (safe default, good for testing video)
-#   l298n         - L298N dual H-bridge (the most common cheap driver)
-#   adafruit_pwm  - Adafruit 16-channel PWM/Servo Hat
-#   motor_hat     - Adafruit DC + Stepper Motor Hat
-#   serial_board  - Arduino / Parallax board over USB serial
-#   mqtt_pub      - publish commands to a local MQTT broker (e.g. ROS2 bridge)
-#   pololu        - Pololu DRV8835 / MC33926 dual motor driver
-#   mc33926       - Pololu dual MC33926 motor driver
-#   mdd10         - Cytron MDD10 10A motor driver
-#   motozero      - MotoZero 4-motor controller
-#   thunderborg   - PiBorg ThunderBorg
-#   gopigo2       - GoPiGo 2
-#   gopigo3       - GoPiGo 3
-#   megapi_board  - Makeblock MegaPi tracked robot
-#   telly         - Telly serial controller (serial_board preset)
-#   max7219       - MAX7219 LED matrix / face display
-#   cozmo         - Anki Cozmo
-#   vector        - Anki Vector
-#   owi_arm       - OWI 535 USB Robotic Arm
-#   custom        - your own Python class (see the "custom" example below)
+# audio_source_camera_id: "front"
 
 hardware:
   type: "none"
   options: {}
 
-# -- L298N dual H-bridge (BCM GPIO pin numbers): ------------------------------
-# hardware:
-#   type: "l298n"
-#   options:
-#     forward_pins: [17]       # GPIO pins to activate for forward
-#     backward_pins: [18]      # GPIO pins to activate for backward
-#     left_pins: [22]          # GPIO pins to activate for left turn
-#     right_pins: [23]         # GPIO pins to activate for right turn
-#     drive_seconds: 0.35      # how long one drive command lasts (seconds)
-#     turn_seconds: 0.20       # how long one turn command lasts (seconds)
-
-# -- Arduino / USB serial board: ----------------------------------------------
-# hardware:
-#   type: "serial_board"
-#   options:
-#     device: "/dev/ttyUSB0"   # run "ls /dev/ttyUSB*" to find your Arduino
-#     baud_rate: 115200
-
-# -- MQTT (e.g. bridge to ROS2 or Home Assistant): ----------------------------
-# hardware:
-#   type: "mqtt_pub"
-#   options:
-#     host: "localhost"
-#     port: 1883
-#     topic: "botparty/robot/command"
-
-# -- Custom hardware (write your own driver): ---------------------------------
-#
-# Steps:
-#   1. Copy  botparty_robot/hardware/hardware_custom_example.py
-#      to the same folder as this config.yaml and rename it
-#      to hardware_custom.py
-#   2. Open hardware_custom.py and fill in your motor logic
-#   3. Optional: read self.command_context for metadata from BotParty
-#      Example keys: user.username, user.role, user.isGuest,
-#      user.isRobotOwner, user.isSiteAdmin, user.isSiteModerator, robotId
-#      Chat commands also include message/sender in the command value
-#   4. Run as usual - the client finds hardware_custom.py automatically
-#
-# hardware:
-#   type: "custom"
-#   options:
-#     # Any extra keys here are available as self.options inside your class:
-#     speed: 50
-
-
-# -- Text-to-Speech ------------------------------------------------------------
-#
-# When enabled, chat messages typed by viewers are spoken aloud through the
-# robot's speaker.
-#
-# Available TTS engines:
-#   none         - TTS disabled
-#   espeak       - eSpeak (free, offline)
-#                  install: sudo apt install espeak
-#   pico         - SVOX Pico (better voice quality, still offline)
-#                  install: sudo apt install libttspico-utils
-#   festival     - Festival Speech Synthesis
-#                  install: sudo apt install festival
-#   polly        - Amazon Polly (cloud, requires AWS credentials)
-#   google_cloud - Google Cloud TTS (cloud, requires credentials JSON)
-#   custom       - import your own Python TTS class via tts.options.class
-#   espeak_loop  - legacy alias for espeak
-#   cozmo_tts    - speak via an attached Cozmo robot
-#   vector_tts   - speak via an attached Vector robot
-
 tts:
-  # Set to true to activate text-to-speech.
   enabled: false
-
-  # TTS engine (see list above).
   type: "none"
-
-  # ALSA playback device.  Run "aplay -l" to list available sound cards.
-  # Common values: "default", "Headphones", "plughw:1,0"
   playback_device: "default"
-
-  # Speaker volume (0-100).
   volume: 70
-
-  # Speak everything users type in chat when TTS is enabled.
-  # Set to false to only speak explicit "say" commands sent by the controller UI.
   chat_to_tts: true
-
-  # Skip messages that contain URLs (prevents link spam).
-  filter_urls: false
-
-  # Allow viewers who are not logged in to trigger TTS.
-  allow_anonymous: true
-
-  # Extra options passed to the selected TTS engine (engine-specific).
+  filter_urls: true
+  allow_anonymous: false
+  blocked_senders: []
+  delay_ms: 0
+  max_characters: 300
+  rate_limit_count: 5
+  rate_limit_window_sec: 60
+  daily_character_budget: 20000
+  operation_timeout_sec: 20
   options: {}
 
-# -- eSpeak example: ----------------------------------------------------------
-# tts:
-#   enabled: true
-#   type: "espeak"
-#   playback_device: "default"
-#   volume: 75
-#   chat_to_tts: true
-#   filter_urls: true
-#   options:
-#     voice: "en"              # language - run "espeak --voices" for the full list
-#     speed: 165               # words per minute
-
-# -- SVOX Pico example (better quality): --------------------------------------
-# tts:
-#   enabled: true
-#   type: "pico"
-#   playback_device: "default"
-#   volume: 80
-#   options:
-#     voice: "en-US"           # en-US  en-GB  de-DE  fr-FR  es-ES  it-IT
-
-# -- Amazon Polly (cloud, requires AWS credentials): --------------------------
-# tts:
-#   enabled: true
-#   type: "polly"
-#   playback_device: "default"
-#   options:
-#     region_name: "us-east-1"
-#     # Optional secret files (safer than plaintext in config):
-#     # access_key_file: "/run/secrets/aws_access_key_id"
-#     # secret_key_file: "/run/secrets/aws_secret_access_key"
-#     robot_voice: "Joanna"    # run "aws polly describe-voices" for available voices
-
-# -- Google Cloud TTS (cloud, requires service-account JSON): -----------------
-# tts:
-#   enabled: true
-#   type: "google_cloud"
-#   playback_device: "default"
-#   options:
-#     key_file: "/home/pi/google-tts.json"
-#     # Alternative via environment:
-#     # GOOGLE_APPLICATION_CREDENTIALS_FILE=/run/secrets/google_tts_sa_json_path
-#     voice: "en-US-Neural2-F"
-
-
-# -- Safety limits -------------------------------------------------------------
-#
-# These protect the robot from runaway commands.  Safe to leave at defaults.
-
 safety:
-  # Auto-stop motors if no new drive command arrives within this time (ms).
-  # Keeps the robot from driving off if the browser tab is closed mid-drive.
   max_run_time_ms: 2000
+  command_ttl_ms: 2000
+  stop_timeout_ms: 1000
+  command_queue_size: 64
+  require_media_for_motion: true
+
+state:
+  # Defaults to $XDG_STATE_HOME/botparty or ~/.local/state/botparty.
+  directory: null
+  device_key_file: "device-key"
+
+diagnostics:
+  upload_enabled: false
+  buffer_lines: 400
+  batch_lines: 50
+  retention_sec: 900
+  redaction_literals: []
+
+telemetry:
+  operational_enabled: false
+  product_analytics_enabled: false
+
+ota:
+  enabled: false
+  manifest_url: null
+  public_key_file: null
+  state_directory: null

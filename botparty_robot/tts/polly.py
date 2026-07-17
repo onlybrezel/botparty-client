@@ -12,6 +12,7 @@ class TTSProfile(BaseTTSProfile):
     def setup(self) -> None:
         try:
             import boto3
+            from botocore.config import Config
         except ImportError:
             self.boto3 = None
             return
@@ -19,13 +20,20 @@ class TTSProfile(BaseTTSProfile):
         self.mpg123_path = str(self.options.get("mpg123_path", "mpg123"))
         self.output_module = str(self.options.get("output_module", "")).strip().lower()
         self.voice = str(self.options.get("robot_voice", "Amy"))
-        self.region_name = getenv_or_option(self.options, "region_name", "AWS_REGION", "eu-central-1")
+        self.region_name = getenv_or_option(
+            self.options, "region_name", "AWS_REGION", "eu-central-1"
+        )
         access_key = getenv_or_option(self.options, "access_key", "AWS_ACCESS_KEY_ID")
         secret_key = getenv_or_option(self.options, "secret_key", "AWS_SECRET_ACCESS_KEY")
         session_kwargs = {"region_name": self.region_name}
         if access_key and secret_key:
             session_kwargs["aws_access_key_id"] = access_key
             session_kwargs["aws_secret_access_key"] = secret_key
+        session_kwargs["config"] = Config(
+            connect_timeout=min(5, self.operation_timeout_sec),
+            read_timeout=self.operation_timeout_sec,
+            retries={"max_attempts": 2, "mode": "standard"},
+        )
         self.client = self.boto3.client("polly", **session_kwargs)
 
     def can_handle(self) -> bool:
@@ -62,8 +70,6 @@ class TTSProfile(BaseTTSProfile):
                 command.extend(["-a", shell_quote(self.playback_device)])
 
             command.extend(["-q", shell_quote(str(mp3_path))])
-            run_shell(
-                " ".join(command)
-            )
+            run_shell(" ".join(command))
         finally:
             mp3_path.unlink(missing_ok=True)

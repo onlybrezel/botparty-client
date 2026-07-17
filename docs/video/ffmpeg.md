@@ -19,8 +19,8 @@ video:
 
 ## How it works
 
-1. On startup, the client checks the managed helper in `.botparty/bin/botparty-streamer`.
-2. If it is missing or older than the active version, it downloads the current release automatically.
+1. The main installer downloads and verifies the managed helper in the device state directory.
+2. On startup, the client verifies the installed binary against its SHA-256 sidecar.
 3. If the binary is healthy, the direct path is used with automatic H.264 encoder selection.
 4. If direct mode is unavailable or invalid, the client falls back to the SDK publish path automatically.
 
@@ -77,7 +77,7 @@ Most modern USB webcams support MJPG at 1280x720@30fps. Switch to YUYV only if t
 
 Use `ffmpeg_arecord` to capture and stream audio from a USB microphone or onboard sound card alongside the video.
 
-The video side keeps the same automatic `botparty-streamer` update/direct/fallback behavior as plain `ffmpeg`.
+The video side keeps the same verified `botparty-streamer` direct/fallback behavior as plain `ffmpeg`.
 
 ```yaml
 video:
@@ -126,7 +126,7 @@ video:
     target_bitrate_kbps: 1200
 ```
 
-Install the helper binary manually (optional, auto-install also exists):
+The main installer includes the helper. To reinstall it manually:
 
 ```bash
 ./scripts/install-botparty-streamer.sh

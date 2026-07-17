@@ -18,6 +18,8 @@ LED_PATTERNS = {
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = tuple(sorted(set(LED_PATTERNS) | {"LED_LOW", "LED_MED"}))
+    motion_commands: tuple[str, ...] = ()
     profile_name = "max7219"
     description = "SPI LED matrix expressions and brightness"
 
@@ -36,7 +38,13 @@ class HardwareAdapter(BaseHardware):
         device = self.option_int("device", 0)
         self.spi.open(bus, device)
         self.spi.max_speed_hz = self.option_int("max_speed_hz", 1_000_000)
-        for register, value in ((0x09, 0x00), (0x0A, 0x03), (0x0B, 0x07), (0x0C, 0x01), (0x0F, 0x00)):
+        for register, value in (
+            (0x09, 0x00),
+            (0x0A, 0x03),
+            (0x0B, 0x07),
+            (0x0C, 0x01),
+            (0x0F, 0x00),
+        ):
             self.spi.writebytes([register])
             self.spi.writebytes([value])
         self._draw("LED_OFF")
@@ -75,3 +83,6 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         self._draw("LED_OFF")
 
+    def _close_resources(self) -> None:
+        if self.spi is not None:
+            self.spi.close()

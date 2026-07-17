@@ -8,7 +8,7 @@ import logging
 import re
 import time
 from collections import deque
-from typing import Callable, Optional
+from collections.abc import Callable
 
 from livekit import rtc
 
@@ -36,7 +36,7 @@ class LiveKitPublisherManager:
         self._audio_token_fn = audio_token_fn
         self._livekit_url_fn = livekit_url_fn
         self._audio_enabled = audio_enabled
-        self._audio_task: Optional[asyncio.Task] = None
+        self._audio_task: asyncio.Task | None = None
         self._audio_room: rtc.Room | None = None
         self._frame_count = 0
         self._last_reported_frame_count = 0
@@ -53,20 +53,26 @@ class LiveKitPublisherManager:
         return self._frame_count
 
     @property
-    def audio_task(self) -> Optional[asyncio.Task]:
+    def audio_task(self) -> asyncio.Task | None:
         return self._audio_task
 
     def restart_audio(self, room, running_fn):
-        if not self._audio_enabled or not self.video_profile.has_audio() or self._audio_room is None:
+        if (
+            not self._audio_enabled
+            or not self.video_profile.has_audio()
+            or self._audio_room is None
+        ):
             return None
-        task = asyncio.create_task(self.video_profile.start_audio(rtc, self._audio_room, running_fn))
+        task = asyncio.create_task(
+            self.video_profile.start_audio(rtc, self._audio_room, running_fn)
+        )
         self._audio_task = task
         return task
 
     async def run(
         self,
         room,
-        target_bitrate_kbps: Optional[int],
+        target_bitrate_kbps: int | None,
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
@@ -82,7 +88,8 @@ class LiveKitPublisherManager:
                     audio_fallback_attempted = True
                     self.video_profile.options["direct_audio_enabled"] = False
                     logger.warning(
-                        "Direct publisher exited after %.1fs with inline audio; retrying without direct audio branch to keep ffmpeg video backend",
+                        "Direct publisher exited after %.1fs with inline audio; retrying without "
+                        "direct audio to keep the ffmpeg video backend",
                         uptime,
                     )
                     continue
@@ -94,7 +101,8 @@ class LiveKitPublisherManager:
                     ).strip()
                     self.video_profile.options["video_codec"] = "libx264"
                     logger.warning(
-                        "Direct publisher exited after %.1fs on ffmpeg backend (codec=%s); retrying with codec=libx264",
+                        "Direct publisher exited after %.1fs on ffmpeg backend (codec=%s); "
+                        "retrying with codec=libx264",
                         uptime,
                         previous_codec,
                     )
@@ -103,7 +111,7 @@ class LiveKitPublisherManager:
 
     async def _run_once(
         self,
-        target_bitrate_kbps: Optional[int],
+        target_bitrate_kbps: int | None,
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
@@ -130,12 +138,13 @@ class LiveKitPublisherManager:
                 audio_token = str(self._audio_token_fn() or "").strip()
                 if not audio_token:
                     logger.warning(
-                        "Direct audio requested for %s but no base publish token is available; skipping audio",
+                        "Direct audio requested for %s but no base publish token is available; "
+                        "skipping audio",
                         self.camera_id,
                     )
                 elif audio_token == token:
                     logger.warning(
-                        "Direct audio skipped for %s because audio token equals camera publish token; "
+                        "Direct audio skipped for %s because its token equals the camera token; "
                         "this would cause participant SID collisions",
                         self.camera_id,
                     )
@@ -191,7 +200,9 @@ class LiveKitPublisherManager:
                     audio_done_logged = True
                     audio_error = audio_task.exception() if not audio_task.cancelled() else None
                     if audio_error is not None:
-                        logger.warning("Direct audio task failed for %s: %s", self.camera_id, audio_error)
+                        logger.warning(
+                            "Direct audio task failed for %s: %s", self.camera_id, audio_error
+                        )
                     else:
                         logger.warning("Direct audio task stopped for %s", self.camera_id)
                 self._log_runtime_stats_if_due()
@@ -253,9 +264,7 @@ class LiveKitPublisherManager:
             "token",
             "permission denied",
         )
-        if any(marker in message for marker in non_retryable):
-            return False
-        return True
+        return not any(marker in message for marker in non_retryable)
 
     def _should_retry_with_libx264(
         self,
@@ -268,10 +277,14 @@ class LiveKitPublisherManager:
         if uptime_sec > 8.0:
             return False
 
-        configured_codec = str(
-            self.video_profile.options.get("video_codec")
-            or self.video_profile.detect_default_h264_codec()
-        ).strip().lower()
+        configured_codec = (
+            str(
+                self.video_profile.options.get("video_codec")
+                or self.video_profile.detect_default_h264_codec()
+            )
+            .strip()
+            .lower()
+        )
         if configured_codec == "libx264":
             return False
 
@@ -282,9 +295,7 @@ class LiveKitPublisherManager:
             "token",
             "permission denied",
         )
-        if any(marker in message for marker in non_retryable):
-            return False
-        return True
+        return not any(marker in message for marker in non_retryable)
 
     async def _drain_logs(self, stream) -> None:
         while True:
@@ -337,7 +348,9 @@ class LiveKitPublisherManager:
             return
 
         # Old JSON format: published track {"name": "...", "source": "..."}
-        json_track_match = re.search(r'published track\s+\{"name":\s*"[^"]*",\s*"source":\s*"([^"]+)"', message)
+        json_track_match = re.search(
+            r'published track\s+\{"name":\s*"[^"]*",\s*"source":\s*"([^"]+)"', message
+        )
         if json_track_match:
             source = json_track_match.group(1)
             self._published_tracks.append(source)
@@ -490,7 +503,10 @@ class LiveKitPublisherManager:
         if elapsed < 10:
             return
         # Skip if ffmpeg progress events are coming in — they already log combined stats.
-        if self._last_ffmpeg_progress_at > 0 and now - self._last_ffmpeg_progress_at < elapsed * 1.5:
+        if (
+            self._last_ffmpeg_progress_at > 0
+            and now - self._last_ffmpeg_progress_at < elapsed * 1.5
+        ):
             self._last_reported_at = now
             self._last_reported_frame_count = self._frame_count
             return

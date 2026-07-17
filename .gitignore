@@ -4,6 +4,7 @@ hardware_custom.py
 # Your local config - keep credentials out of git
 config.yaml
 .botparty/
+.botparty-device-key
 
 # Python
 __pycache__/
@@ -14,9 +15,6 @@ build/
 .venv/
 venv/
 *.egg
-
-#IDE
-.github/
 
 # Editor
 .vscode/

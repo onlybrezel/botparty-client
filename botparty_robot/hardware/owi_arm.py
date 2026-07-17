@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -33,11 +32,11 @@ class HardwareAdapter(BaseHardware):
         if self.arm is None:
             return
         payload[2] = self.led
-        self.arm.ctrl_transfer(0x40, 6, 0x100, 0, payload, 3)
+        self.guarded_write(lambda: self.arm.ctrl_transfer(0x40, 6, 0x100, 0, payload, 3))
 
     def _move(self, payload: list[int]) -> None:
         self._send(payload)
-        time.sleep(self.step_seconds)
+        self.interruptible_sleep(self.step_seconds)
         self._send([0, 0, self.led])
 
     def on_command(self, command: str, value: Any = None) -> None:
@@ -72,3 +71,8 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         self._send([0, 0, self.led])
 
+    def _close_resources(self) -> None:
+        if self.arm is not None:
+            dispose = getattr(self.usb, "dispose_resources", None)
+            if callable(dispose):
+                dispose(self.arm)

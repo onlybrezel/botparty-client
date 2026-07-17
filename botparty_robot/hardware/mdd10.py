@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -44,11 +43,15 @@ class HardwareAdapter(BaseHardware):
         if self.gpio is None or self.p1 is None or self.p2 is None:
             return
         speed = self.max_speed_percent if self.max_speed_enabled else self.speed_percent
-        self.gpio.output(self.dig1, self.gpio.HIGH if dig1 else self.gpio.LOW)
-        self.gpio.output(self.dig2, self.gpio.HIGH if dig2 else self.gpio.LOW)
-        self.p1.ChangeDutyCycle(speed)
-        self.p2.ChangeDutyCycle(speed)
-        time.sleep(delay)
+
+        def start() -> None:
+            self.gpio.output(self.dig1, self.gpio.HIGH if dig1 else self.gpio.LOW)
+            self.gpio.output(self.dig2, self.gpio.HIGH if dig2 else self.gpio.LOW)
+            self.p1.ChangeDutyCycle(speed)
+            self.p2.ChangeDutyCycle(speed)
+
+        self.guarded_write(start)
+        self.interruptible_sleep(delay)
         self.p1.ChangeDutyCycle(0)
         self.p2.ChangeDutyCycle(0)
 
@@ -75,3 +78,9 @@ class HardwareAdapter(BaseHardware):
             self.p1.ChangeDutyCycle(0)
             self.p2.ChangeDutyCycle(0)
 
+    def _close_resources(self) -> None:
+        for pwm in (self.p1, self.p2):
+            if pwm is not None:
+                pwm.stop()
+        if self.gpio is not None:
+            self.gpio.cleanup()

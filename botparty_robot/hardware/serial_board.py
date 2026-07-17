@@ -40,7 +40,9 @@ class HardwareAdapter(BaseHardware):
                 self.device = found
 
         try:
-            self.serial = self.serial_module.Serial(self.device, self.baud_rate, timeout=0, write_timeout=0)
+            self.serial = self.serial_module.Serial(
+                self.device, self.baud_rate, timeout=0, write_timeout=0
+            )
             self.log.info("connected: %s @ %s", self.device, self.baud_rate)
         except Exception as exc:
             self.log.warning("could not open %s: %s", self.device, exc)
@@ -68,8 +70,16 @@ class HardwareAdapter(BaseHardware):
         if self.serial is None:
             self.log.info("command=%s", payload)
             return
-        self.serial.write((payload + self.line_ending).encode("utf-8"))
-        self.serial.flush()
+
+        def write() -> None:
+            self.serial.write((payload + self.line_ending).encode("utf-8"))
+            self.serial.flush()
+
+        self.guarded_write(write)
 
     def emergency_stop(self) -> None:
         self.on_command(self.stop_command)
+
+    def _close_resources(self) -> None:
+        if self.serial is not None and self.serial.is_open:
+            self.serial.close()

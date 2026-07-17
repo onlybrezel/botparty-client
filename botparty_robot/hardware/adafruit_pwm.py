@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -46,16 +45,18 @@ class HardwareAdapter(BaseHardware):
 
     def _set_pwm(self, channel: int, off: int) -> None:
         if self.pwm is not None:
-            self.pwm.set_pwm(channel, 0, off)
+            self.guarded_write(lambda: self.pwm.set_pwm(channel, 0, off))
 
-    def _pulse_drive(self, steer_value: int | None, drive_value: int, duration: float, settle: int | None = None) -> None:
+    def _pulse_drive(
+        self, steer_value: int | None, drive_value: int, duration: float, settle: int | None = None
+    ) -> None:
         if steer_value is not None:
             self._set_pwm(self.steer_channel, steer_value)
         self._set_pwm(self.drive_channel, drive_value)
-        time.sleep(duration)
+        self.interruptible_sleep(duration)
         if settle is not None:
             self._set_pwm(self.drive_channel, settle)
-            time.sleep(0.4)
+            self.interruptible_sleep(0.4)
         self._set_pwm(self.steer_channel, self.steer_center)
         self._set_pwm(self.drive_channel, self.neutral_drive)
 
@@ -92,4 +93,3 @@ class HardwareAdapter(BaseHardware):
     def emergency_stop(self) -> None:
         self._set_pwm(self.steer_channel, self.steer_center)
         self._set_pwm(self.drive_channel, self.neutral_drive)
-

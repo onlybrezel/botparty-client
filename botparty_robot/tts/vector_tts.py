@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from .base import BaseTTSProfile
 from ..hardware.vector import get_vector_robot
+from .base import BaseTTSProfile
 
 
 class TTSProfile(BaseTTSProfile):

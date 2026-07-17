@@ -1,152 +1,65 @@
 # Amazon Polly TTS
 
-Amazon Polly is a cloud text-to-speech service that produces high-quality, natural-sounding voices in dozens of languages. It requires an AWS account and internet access.
+Polly sends approved TTS text to the configured AWS region. Enable it only after recording the
+provider, region, retention and legal basis for the deployment.
+
+## Install
+
+```bash
+pip install 'botparty-robot[polly]'
+sudo apt install mpg123
+```
+
+Use an IAM principal restricted to `polly:SynthesizeSpeech`. Supply credentials through the
+service secret store or root-owned files; do not put them in `config.yaml`.
 
 ```yaml
 tts:
   enabled: true
-  type: "polly"
-  playback_device: "default"
+  type: polly
+  playback_device: default
   volume: 80
+  max_characters: 300
+  rate_limit_count: 5
+  rate_limit_window_sec: 60
+  daily_character_budget: 20000
+  operation_timeout_sec: 20
   options:
-    region_name: "eu-central-1"
-    robot_voice: "Amy"
-    access_key: "YOUR_AWS_ACCESS_KEY_ID"
-    secret_key: "YOUR_AWS_SECRET_ACCESS_KEY"
+    region_name: eu-central-1
+    robot_voice: Amy
+    cloud_data_processing_accepted: true
+    access_key_file: /run/credentials/botparty-robot.service/aws-access-key
+    secret_key_file: /run/credentials/botparty-robot.service/aws-secret-key
 ```
 
----
-
-## Install
-
-Install the AWS SDK and an MP3 player:
-
-```bash
-# Inside your botparty-client virtualenv
-pip install boto3
-
-# MP3 playback
-sudo apt install mpg123
-```
-
-Test boto3 is available:
-
-```bash
-python3 -c "import boto3; print('ok')"
-```
-
----
-
-## AWS credentials
-
-You need an IAM user with the `AmazonPollyReadOnlyAccess` policy (or at minimum `polly:SynthesizeSpeech`).
-
-**Option A – in config.yaml** (simple, good for a single robot):
-
-```yaml
-options:
-  access_key: "AKIAXXXXXXXXXXXXXXXX"
-  secret_key: "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-```
-
-**Option B – environment variables** (more secure, credentials never touch the config file):
-
-```bash
-export AWS_ACCESS_KEY_ID="AKIAXXXXXXXXXXXXXXXX"
-export AWS_SECRET_ACCESS_KEY="xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
-export AWS_REGION="eu-central-1"
-```
-
-When environment variables are set, you can omit `access_key` and `secret_key` from `config.yaml`.
-
-**Option C – AWS credentials file** (`~/.aws/credentials`):
-
-```ini
-[default]
-aws_access_key_id = AKIAXXXXXXXXXXXXXXXX
-aws_secret_access_key = xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
-
----
+The standard AWS environment variables and credentials file also work. The service account must
+be the only reader. `cloud_data_processing_accepted` is mandatory; without it no synthesis request
+is sent.
 
 ## Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `region_name` | string | `eu-central-1` | AWS region (pick one close to your robot) |
-| `robot_voice` | string | `Amy` | Polly voice ID |
-| `access_key` | string | — | AWS access key ID (or use env var) |
-| `secret_key` | string | — | AWS secret access key (or use env var) |
-| `mpg123_path` | string | `mpg123` | Path to the mpg123 binary |
+| Option | Default | Contract |
+|---|---|---|
+| `region_name` | `eu-central-1` | AWS processing region |
+| `robot_voice` | `Amy` | Polly voice ID |
+| `cloud_data_processing_accepted` | `false` | Explicit provider approval |
+| `access_key_file`, `secret_key_file` | none | Credential files; environment credentials remain supported |
+| `mpg123_path` | `mpg123` | Local player binary |
+| `output_module` | automatic | `pulse` or `alsa` |
 
-### Regions
-
-Pick a region close to your robot to reduce latency:
-
-| Region | Code |
-|--------|------|
-| Europe (Frankfurt) | `eu-central-1` |
-| Europe (Ireland) | `eu-west-1` |
-| US East (N. Virginia) | `us-east-1` |
-| US West (Oregon) | `us-west-2` |
-| Asia Pacific (Tokyo) | `ap-northeast-1` |
-
-### Available voices
-
-List all voices for a region:
+List voices with:
 
 ```bash
-aws polly describe-voices --region eu-central-1 --query 'Voices[*].[Id,LanguageCode,Gender]' --output table
+aws polly describe-voices --region eu-central-1 \
+  --query 'Voices[*].[Id,LanguageCode,Gender]' --output table
 ```
-
-Common voices:
-
-| Voice | Language | Gender |
-|-------|----------|--------|
-| `Amy` | en-GB | Female |
-| `Brian` | en-GB | Male |
-| `Joanna` | en-US | Female |
-| `Matthew` | en-US | Male |
-| `Marlene` | de-DE | Female |
-| `Hans` | de-DE | Male |
-| `Celine` | fr-FR | Female |
-| `Conchita` | es-ES | Female |
-
-This client currently uses Polly's default synthesis engine. There is no separate `engine` option in `config.yaml`.
-
----
 
 ## Troubleshooting
 
-**No audio, no errors in log**
+Run `botparty-robot --config /etc/botparty/config.yaml doctor` first. A missing Python package,
+player binary or device permission is reported without sending text or creating cloud cost.
 
-`can_handle()` returns `False` silently when a dependency is missing. Check:
-
-```bash
-# boto3 installed in the right env?
-.venv/bin/python -c "import boto3; print('ok')"
-
-# mpg123 installed?
-which mpg123
-```
-Use your actual virtualenv path if it differs.
-
-**`NoCredentialsError` or `InvalidClientTokenId`**
-
-Your credentials are wrong or missing. Double-check `access_key` / `secret_key`, or set the environment variables.
-
-**`AuthFailure` / `AccessDeniedException`**
-
-The IAM user is missing the `AmazonPollyReadOnlyAccess` policy. Add it in the AWS IAM console.
-
-**Audio plays but at wrong device**
-
-Run `aplay -l` to list cards, then set `playback_device` to match:
-
-```yaml
-playback_device: "plughw:1,0"
-```
-
-**Latency is high**
-
-Polly synthesis typically adds 300-600 ms. If latency matters, switch to an offline engine like `pico` or `espeak`.
+`NoCredentialsError` means the service account cannot read configured credentials.
+`AccessDeniedException` means the IAM policy does not permit `polly:SynthesizeSpeech` in the
+selected region. For device selection, use `aplay -l` and set `playback_device`, for example
+`plughw:1,0`.

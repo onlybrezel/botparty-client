@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -10,6 +9,18 @@ from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = (
+        "forward",
+        "backward",
+        "left",
+        "right",
+        "lift_up",
+        "lift_down",
+        "open",
+        "close",
+        "stop",
+    )
+    motion_commands = supported_commands[:-1]
     profile_name = "megapi_board"
     description = "Makeblock MegaPi-based tracked robot adapter"
 
@@ -35,17 +46,21 @@ class HardwareAdapter(BaseHardware):
     def _motor_run(self, port: int, speed: int) -> None:
         if self.bot is None:
             return
-        if hasattr(self.bot, "motorRun"):
-            self.bot.motorRun(port, speed)
-        elif hasattr(self.bot, "encoderMotorRun"):
-            self.bot.encoderMotorRun(port, speed)
+
+        def run() -> None:
+            if hasattr(self.bot, "motorRun"):
+                self.bot.motorRun(port, speed)
+            elif hasattr(self.bot, "encoderMotorRun"):
+                self.bot.encoderMotorRun(port, speed)
+
+        self.guarded_write(run)
 
     def _pulse(self, commands: list[tuple[int, int]], duration: float | None = None) -> None:
         if self.bot is None:
             return
         for port, speed in commands:
             self._motor_run(port, speed)
-        time.sleep(duration or self.motor_time)
+        self.interruptible_sleep(duration or self.motor_time)
         for port, _ in commands:
             self._motor_run(port, 0)
 
@@ -54,13 +69,21 @@ class HardwareAdapter(BaseHardware):
             self.log.info("command=%s value=%s", command, value)
             return
         if self.matches(command, "forward"):
-            self._pulse([(self.left_track, -self.driving_speed), (self.right_track, self.driving_speed)])
+            self._pulse(
+                [(self.left_track, -self.driving_speed), (self.right_track, self.driving_speed)]
+            )
         elif self.matches(command, "backward"):
-            self._pulse([(self.left_track, self.driving_speed), (self.right_track, -self.driving_speed)])
+            self._pulse(
+                [(self.left_track, self.driving_speed), (self.right_track, -self.driving_speed)]
+            )
         elif self.matches(command, "left"):
-            self._pulse([(self.left_track, self.driving_speed), (self.right_track, self.driving_speed)])
+            self._pulse(
+                [(self.left_track, self.driving_speed), (self.right_track, self.driving_speed)]
+            )
         elif self.matches(command, "right"):
-            self._pulse([(self.left_track, -self.driving_speed), (self.right_track, -self.driving_speed)])
+            self._pulse(
+                [(self.left_track, -self.driving_speed), (self.right_track, -self.driving_speed)]
+            )
         elif self.matches(command, "lift_up"):
             self._pulse([(self.arm, self.arm_speed)])
         elif self.matches(command, "lift_down"):
@@ -77,3 +100,9 @@ class HardwareAdapter(BaseHardware):
             return
         for port in (self.left_track, self.right_track, self.arm, self.grabber):
             self._motor_run(port, 0)
+
+    def _close_resources(self) -> None:
+        if self.bot is not None:
+            close = getattr(self.bot, "close", None)
+            if callable(close):
+                close()

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any
 
 from .base import BaseHardware
@@ -59,8 +58,8 @@ class HardwareAdapter(BaseHardware):
             return
 
         for pin in pins:
-            self.gpio.output(pin, self.gpio.HIGH)
-        time.sleep(duration)
+            self.guarded_write(lambda pin=pin: self.gpio.output(pin, self.gpio.HIGH))
+        self.interruptible_sleep(duration)
         set_low(self.gpio, pins)
 
     def emergency_stop(self) -> None:
@@ -76,3 +75,7 @@ class HardwareAdapter(BaseHardware):
                 *self.right_pins,
             ],
         )
+
+    def _close_resources(self) -> None:
+        if self.gpio is not None:
+            self.gpio.cleanup()
