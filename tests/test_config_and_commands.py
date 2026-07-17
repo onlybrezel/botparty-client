@@ -11,6 +11,9 @@ from botparty_robot.__main__ import _load_config_from
 from botparty_robot.client_commands import ClientCommandsMixin
 from botparty_robot.client_state import QueuedHardwareCommand, WatchdogStats
 from botparty_robot.config import (
+    DEFAULT_OTA_MANIFEST_URL,
+    DEFAULT_OTA_PUBLIC_KEY_FILE,
+    DEFAULT_OTA_STATE_DIRECTORY,
     CameraConfig,
     CameraStreamConfig,
     RobotConfig,
@@ -141,6 +144,35 @@ def test_load_config_defaults_video_to_ffmpeg_when_video_block_is_missing(tmp_pa
     config = _load_config_from(str(config_path))
 
     assert config.video.type == "ffmpeg"
+
+
+def test_ota_defaults_are_prefilled_but_disabled():
+    config = RobotConfig(server=ServerConfig(claim_token="claim-token"))
+
+    assert config.ota.enabled is False
+    assert config.ota.manifest_url == DEFAULT_OTA_MANIFEST_URL
+    assert config.ota.public_key_file == DEFAULT_OTA_PUBLIC_KEY_FILE
+    assert config.ota.state_directory == DEFAULT_OTA_STATE_DIRECTORY
+
+
+def test_load_config_applies_ota_service_overrides(monkeypatch, tmp_path: Path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "server:\n"
+        '  claim_token: "from-file"\n'
+        "ota:\n"
+        "  enabled: false\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("BOTPARTY_OTA_MANIFEST_URL", "https://updates.example/manifest.json")
+    monkeypatch.setenv("BOTPARTY_OTA_PUBLIC_KEY_FILE", str(tmp_path / "release.pub"))
+    monkeypatch.setenv("BOTPARTY_OTA_STATE_DIR", str(tmp_path / "ota"))
+
+    config = _load_config_from(str(config_path))
+
+    assert config.ota.manifest_url == "https://updates.example/manifest.json"
+    assert config.ota.public_key_file == tmp_path / "release.pub"
+    assert config.ota.state_directory == tmp_path / "ota"
 
 
 def test_load_config_maps_legacy_camera_pipeline_to_video_type(tmp_path: Path):
@@ -282,5 +314,16 @@ def test_remote_actions_require_scope_and_report_idempotent_outcomes() -> None:
         await asyncio.sleep(0)
         assert events[-2][1]["code"] == "replayed_action"
         assert events[-1][1]["code"] == "missing_scope"
+
+        await client._execute_action(
+            {
+                "actionId": "remote-3",
+                "type": "update_client",
+                "scopes": ["update:install"],
+            }
+        )
+        await asyncio.sleep(0)
+        assert events[-1][1]["state"] == "rejected"
+        assert events[-1][1]["code"] == "ota_disabled"
 
     asyncio.run(_scenario())

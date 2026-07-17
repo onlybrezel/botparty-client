@@ -181,9 +181,18 @@ telemetry:
   product_analytics_enabled: false
 
 ota:
-  # Signed over-the-air updates are disabled by default. When enabling them,
-  # all three values below are required and manifest_url must use HTTPS.
+  # Updates are installed only when the BotParty server sends an authorized
+  # update_client action. There is no automatic polling or unattended rollout.
+  # Keep this false until the trusted release public key has been installed.
   enabled: false
-  manifest_url: null
-  public_key_file: null
-  state_directory: null
+
+  # The stable URL always resolves to the manifest from the latest published
+  # BotParty client release. The signed manifest selects the exact bundle.
+  manifest_url: "https://github.com/onlybrezel/botparty-client/releases/latest/download/ota-manifest.json"
+
+  # Base64-encoded Ed25519 public key used to reject unsigned or modified
+  # releases. Private release channels must use their own URL and public key.
+  public_key_file: "/etc/botparty/botparty-ota.pub"
+
+  # Writable A/B slots, activation markers and rollback state.
+  state_directory: "/var/lib/botparty/ota"

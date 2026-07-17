@@ -491,6 +491,10 @@ class ClientCommandsMixin:
             )
             self._emit_remote_action_result(action_id, "rejected", "missing_scope")
             return
+        if action_type == "update_client" and getattr(self, "_update_manager", None) is None:
+            logger.warning("Rejected update_client because OTA is disabled")
+            self._emit_remote_action_result(action_id, "rejected", "ota_disabled")
+            return
         self._emit_remote_action_result(action_id, "accepted", "accepted")
 
         try:

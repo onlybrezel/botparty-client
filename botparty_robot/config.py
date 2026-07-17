@@ -73,6 +73,12 @@ TTS_PROFILES = frozenset(
     }
 )
 CAMERA_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
+DEFAULT_OTA_MANIFEST_URL = (
+    "https://github.com/onlybrezel/botparty-client/"
+    "releases/latest/download/ota-manifest.json"
+)
+DEFAULT_OTA_PUBLIC_KEY_FILE = Path("/etc/botparty/botparty-ota.pub")
+DEFAULT_OTA_STATE_DIRECTORY = Path("/var/lib/botparty/ota")
 
 
 class ConfigModel(BaseModel):
@@ -348,9 +354,9 @@ class TelemetryConfig(ConfigModel):
 
 class OtaConfig(ConfigModel):
     enabled: bool = False
-    manifest_url: str | None = None
-    public_key_file: Path | None = None
-    state_directory: Path | None = None
+    manifest_url: str | None = DEFAULT_OTA_MANIFEST_URL
+    public_key_file: Path | None = DEFAULT_OTA_PUBLIC_KEY_FILE
+    state_directory: Path | None = DEFAULT_OTA_STATE_DIRECTORY
 
     @model_validator(mode="after")
     def _complete_when_enabled(self) -> OtaConfig:

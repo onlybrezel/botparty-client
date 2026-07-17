@@ -21,6 +21,8 @@ This project follows Semantic Versioning and Keep a Changelog structure.
 - Production installation uses a dedicated service user and immutable wheel environments.
 - The main installer downloads the architecture-matched video streamer automatically from a
   release-pinned hash catalog; custom signed manifests remain supported.
+- OTA uses a prefilled, disabled standard release channel and runs only after an authorized
+  `update_client` action from the BotParty server.
 
 ### Removed
 

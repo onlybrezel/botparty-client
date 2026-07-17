@@ -32,9 +32,16 @@ Unknown keys, invalid ranges, duplicate camera IDs, unsupported profiles and uns
 | `state` | `directory`, `device_key_file` | Private, owner-checked device identity storage |
 | `diagnostics` | upload flag, buffer, batch, retention | Opt-in redacted support log upload |
 | `telemetry` | operational/product flags | Both off by default; product events contain only allowlisted milestones |
-| `ota` | enabled, manifest/key/state paths | Signed transactional A/B updates; all paths required when enabled |
+| `ota` | enabled, manifest/key/state paths | Server-triggered signed A/B updates; standard channel is prefilled and disabled |
 
 The complete, executable example is [config.example.yaml](../config.example.yaml). CI loads this file through the same Pydantic schema as production.
+
+OTA does not poll for releases. An authorized `update_client` action from the BotParty server
+downloads the current signed manifest, installs the verified bundle in the inactive slot and
+restarts into it. The standard manifest URL, public-key path and state directory are prefilled;
+set `ota.enabled: true` only after the matching Ed25519 public key exists at the configured path.
+`BOTPARTY_OTA_MANIFEST_URL`, `BOTPARTY_OTA_PUBLIC_KEY_FILE` and `BOTPARTY_OTA_STATE_DIR` can override
+the three values for a service installation or private release channel.
 
 ## Profile registries
 

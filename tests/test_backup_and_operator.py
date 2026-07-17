@@ -113,6 +113,8 @@ def test_setup_is_atomic_and_preserves_the_previous_config(tmp_path) -> None:
     assert (tmp_path / "config.yaml.before-import").read_text(encoding="utf-8") == "old: value\n"
     created = output.read_text(encoding="utf-8")
     assert "PASTE_YOUR_CLAIM_TOKEN_HERE" in created
+    assert "releases/latest/download/ota-manifest.json" in created
+    assert "enabled: false" in created
     assert output.stat().st_mode & 0o777 == 0o600
 
 

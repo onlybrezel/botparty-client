@@ -55,7 +55,9 @@ sudo -u botparty BOTPARTY_PYTHON=/opt/botparty/venv/bin/python \
 Private release channels can override the default with an Ed25519-signed manifest and pinned
 public key. `--no-streamer` is available only for intentionally headless installations.
 
-OTA updates use signed, immutable A/B release bundles. Failed readiness rolls back to the previous slot.
+OTA updates are triggered by an authorized BotParty server action and use signed, immutable A/B
+release bundles. The standard channel is prefilled but disabled until its public key is installed;
+failed readiness rolls back to the previous slot.
 
 ## Operator commands
 

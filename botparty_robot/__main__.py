@@ -199,6 +199,16 @@ def _load_config_from(
         claim_override = os.environ.get("BOTPARTY_CLAIM_TOKEN", "").strip()
         if claim_override:
             server["claim_token"] = claim_override
+
+    ota_overrides = {
+        "manifest_url": os.environ.get("BOTPARTY_OTA_MANIFEST_URL", "").strip(),
+        "public_key_file": os.environ.get("BOTPARTY_OTA_PUBLIC_KEY_FILE", "").strip(),
+        "state_directory": os.environ.get("BOTPARTY_OTA_STATE_DIR", "").strip(),
+    }
+    if any(ota_overrides.values()):
+        ota = raw.setdefault("ota", {})
+        if isinstance(ota, dict):
+            ota.update({key: value for key, value in ota_overrides.items() if value})
     try:
         config = RobotConfig.model_validate(raw)
     except ValidationError as exc:

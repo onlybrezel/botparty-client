@@ -23,7 +23,13 @@ from urllib.parse import urlsplit
 import yaml
 
 from . import __version__
-from .config import RobotConfig, normalize_cameras
+from .config import (
+    DEFAULT_OTA_MANIFEST_URL,
+    DEFAULT_OTA_PUBLIC_KEY_FILE,
+    DEFAULT_OTA_STATE_DIRECTORY,
+    RobotConfig,
+    normalize_cameras,
+)
 from .device_state import resolve_state_directory
 from .hardware import missing_hardware_dependency
 
@@ -166,6 +172,12 @@ def create_setup_config(
         "hardware": {"type": hardware, "options": {}},
         "video": {"type": video, "options": {}},
         "tts": {"enabled": False, "type": "none"},
+        "ota": {
+            "enabled": False,
+            "manifest_url": DEFAULT_OTA_MANIFEST_URL,
+            "public_key_file": str(DEFAULT_OTA_PUBLIC_KEY_FILE),
+            "state_directory": str(DEFAULT_OTA_STATE_DIRECTORY),
+        },
     }
     RobotConfig.model_validate(raw)
     if output.exists():

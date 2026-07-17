@@ -498,6 +498,8 @@ class ClientOpsMixin:
 
         if self._update_manager is None:
             logger.warning("Skipping update_client: signed transactional OTA is not enabled")
+            if action_id is not None:
+                self._emit_remote_action_result(action_id, "failed", "ota_disabled")
             return
 
         self._update_in_progress = True
