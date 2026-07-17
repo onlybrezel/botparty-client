@@ -1,29 +1,68 @@
-# BotParty robot configuration. Keep this file mode 0600.
+# BotParty Robot Client - example configuration
+#
+# The automatic installer copies this file to /etc/botparty/config.yaml and
+# downloads the verified video streamer. For the first start:
+#   1. Paste the robot's claim token below.
+#   2. Select the camera device if /dev/video0 is not the correct camera.
+#   3. Leave hardware.type set to "none" until the video connection works.
+#   4. Validate the file:
+#      sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
+#        --config /etc/botparty/config.yaml config validate
+#
+# Keep this file readable only by its owner: chmod 600 config.yaml
 
 server:
+  # Public BotParty API and LiveKit endpoints. Change both when using a
+  # self-hosted BotParty instance.
   api_url: "https://botparty.live"
   livekit_url: "wss://botparty.live"
+
+  # Create a robot in the BotParty dashboard and paste its claim token here.
+  # The client exchanges it for its own device identity on the first start.
   claim_token: "PASTE_YOUR_CLAIM_TOKEN_HERE"
+
+  # Plain HTTP and WS are accepted only for local development endpoints when
+  # this is true. Keep false for every normal installation.
   allow_insecure_dev_transport: false
-  # Enable only after the server claim endpoint supports capability manifests.
+
+  # Leave false for botparty.live. A self-hosted claim endpoint may enable the
+  # capability manifest sent during registration.
   report_capabilities_in_claim: false
 
 camera:
+  # /dev/video0 is the usual first USB camera. A /dev/v4l/by-id/... path is
+  # more reliable when several cameras are connected.
   device: "/dev/video0"
+
+  # Capture size and frame rate. 1280x720 at 25 FPS is a good starting point
+  # for a Raspberry Pi or a typical home connection.
   width: 1280
   height: 720
   fps: 25
+
+  # v4l2 is the standard Linux camera backend. MJPG usually reduces USB load.
+  # Set fourcc to null if the camera does not offer MJPG.
   backend: "v4l2"
   fourcc: "MJPG"
+
+  # A one-frame buffer keeps latency low. Warm-up frames are discarded while
+  # exposure and white balance settle.
   buffer_size: 1
   warmup_frames: 4
 
 video:
+  # Recommended mode. It uses the verified botparty-streamer installed by the
+  # automatic installer and falls back to the compatible FFmpeg path if needed.
+  # Other pipelines are documented in docs/video/.
   type: "ffmpeg"
   options:
+    # Upper bitrate limit in kbit/s. The server may request a lower value.
     target_bitrate_kbps: 1200
 
-# Optional multi-camera example. Every enabled camera is published continuously.
+# Optional multi-camera setup. Remove the leading # characters to enable it.
+# The camera and video blocks above remain the defaults; values listed on a
+# camera override those defaults. Use stable /dev/v4l/by-id/... device paths.
+# Up to eight cameras can be configured, with exactly one primary camera.
 # cameras:
 #   - id: "front"
 #     label: "Front"
@@ -51,53 +90,99 @@ video:
 #       type: "ffmpeg"
 #       options:
 #         target_bitrate_kbps: 350
+# Select which camera supplies audio when its video pipeline supports audio.
 # audio_source_camera_id: "front"
 
 hardware:
+  # "none" keeps movement disabled and is the safe choice for the first start.
+  # Select the matching adapter from docs/hardware/ before enabling motion.
   type: "none"
+
+  # Adapter-specific pin numbers, ports and limits belong here. The hardware
+  # guide for the selected adapter contains a complete options block.
   options: {}
 
 tts:
+  # To enable speech, set enabled to true and choose an engine from docs/tts/.
+  # Local engines such as espeak avoid cloud credentials and data transfer.
   enabled: false
   type: "none"
+
+  # ALSA playback device and volume from 0 to 100. "default" works for most
+  # USB speakers and the system's configured audio output.
   playback_device: "default"
   volume: 70
+
+  # Read chat messages aloud. URLs and anonymous messages are rejected by
+  # default; sender names in blocked_senders are matched case-insensitively.
   chat_to_tts: true
   filter_urls: true
   allow_anonymous: false
   blocked_senders: []
+
+  # Wait before playback, limit each message, and rate-limit each sender.
   delay_ms: 0
   max_characters: 300
   rate_limit_count: 5
   rate_limit_window_sec: 60
+
+  # Maximum spoken characters per UTC day. A value of 0 disables all speech.
   daily_character_budget: 20000
+
+  # Stop a speech operation that has not completed within this many seconds.
   operation_timeout_sec: 20
+
+  # Engine-specific settings belong here. Cloud engines also require explicit
+  # consent and credentials as described in their docs/tts/ guide.
   options: {}
 
 safety:
+  # Stop movement after this duration unless another valid command arrives.
   max_run_time_ms: 2000
+
+  # Reject remote commands older than this value.
   command_ttl_ms: 2000
+
+  # Maximum time allowed for a hardware stop operation.
   stop_timeout_ms: 1000
+
+  # Pending command capacity. New movement is rejected when the queue is full.
   command_queue_size: 64
+
+  # Keep true so camera or streaming failure also prevents remote movement.
   require_media_for_motion: true
 
 state:
-  # Defaults to $XDG_STATE_HOME/botparty or ~/.local/state/botparty.
+  # null uses $XDG_STATE_HOME/botparty or ~/.local/state/botparty. The automatic
+  # system installer sets the service state directory to /var/lib/botparty.
   directory: null
+
+  # File name for the locally generated device key inside the state directory.
   device_key_file: "device-key"
 
 diagnostics:
+  # Diagnostic upload is opt-in. Local log buffering still supports status and
+  # support bundles when uploads are disabled.
   upload_enabled: false
+
+  # Keep up to 400 lines, send at most 50 per batch, and discard buffered lines
+  # after 900 seconds.
   buffer_lines: 400
   batch_lines: 50
   retention_sec: 900
+
+  # Exact strings that must be removed from diagnostic output, for example a
+  # local Wi-Fi name. Tokens and standard secret fields are redacted already.
   redaction_literals: []
 
 telemetry:
+  # Both telemetry categories are opt-in and can be enabled independently.
   operational_enabled: false
   product_analytics_enabled: false
 
 ota:
+  # Signed over-the-air updates are disabled by default. When enabling them,
+  # all three values below are required and manifest_url must use HTTPS.
   enabled: false
   manifest_url: null
   public_key_file: null
