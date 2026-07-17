@@ -44,6 +44,27 @@ sudo ./scripts/install-botparty-client.sh \
   --extras hardware --device-groups video,gpio,dialout
 ```
 
+## Client updates
+
+Automatic updates are started by an authorized `update_client` action from the BotParty server.
+The client downloads the signed release, installs it into the inactive A/B slot and restarts only
+after verification. A failed readiness check restores the previous slot.
+
+For a manual update, pull the installation checkout with fast-forward protection and rerun the
+installer with the same extras and device groups used for the first installation:
+
+```bash
+cd botparty-client
+git pull --ff-only
+sudo systemctl stop botparty-robot.service
+sudo ./scripts/install-botparty-client.sh --device-groups video
+sudo systemctl start botparty-robot.service
+```
+
+The installer validates the new environment before replacing `/opt/botparty/venv`, keeps the
+previous environment at `/opt/botparty/venv.previous` and preserves the existing configuration
+and device identity.
+
 ## Signed streamer
 
 The production installer downloads the official streamer automatically. Its built-in release

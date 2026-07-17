@@ -21,6 +21,19 @@ The checkout is used only as the installation source. The installed service runs
 `/opt/botparty`; server-triggered updates download a fresh signed release into an A/B slot and do
 not modify the checkout with `git pull`.
 
+For a manual update, refresh the checkout and rerun the installer with the same hardware options:
+
+```bash
+cd botparty-client
+git pull --ff-only
+sudo systemctl stop botparty-robot.service
+sudo ./scripts/install-botparty-client.sh --device-groups video
+sudo systemctl start botparty-robot.service
+```
+
+The existing configuration and device identity are preserved. Automatic updates use the
+server-triggered OTA path described below.
+
 Start with `hardware.type: none`. Validate the host before enabling motors:
 
 ```bash
