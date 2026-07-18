@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .gpio import import_gpio
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "maxspeed", "stop")
+    motion_commands = ("forward", "backward", "left", "right")
     profile_name = "mdd10"
     description = "Cytron MDD10 GPIO + PWM motor controller"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
-        self.gpio = import_gpio()
+        self.gpio: Any = import_gpio()
         self.an1 = self.option_int("an1", 12)
         self.an2 = self.option_int("an2", 13)
         self.dig1 = self.option_int("dig1", 26)
@@ -24,8 +27,8 @@ class HardwareAdapter(BaseHardware):
         self.speed_percent = self.option_int("speed_percent", 60)
         self.max_speed_percent = self.option_int("max_speed_percent", 100)
         self.max_speed_enabled = False
-        self.p1 = None
-        self.p2 = None
+        self.p1: Any = None
+        self.p2: Any = None
 
     def setup(self) -> None:
         if self.gpio is None:

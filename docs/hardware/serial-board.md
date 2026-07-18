@@ -1,8 +1,13 @@
 # Serial Board — Arduino / USB Microcontroller
 
-The `serial_board` adapter sends control commands as text strings over a USB serial connection to an Arduino, Teensy, Raspberry Pi Pico, or any other microcontroller.
+> **Release status: community.** No current controller-specific HIL evidence exists. Production
+> movement is blocked.
 
-This is the most flexible hardware option: you write the firmware on the MCU side and the BotParty client just sends commands over the serial port.
+The `serial_board` adapter sends commands over USB serial to an Arduino, Teensy, Raspberry Pi Pico
+or another microcontroller.
+
+The microcontroller firmware owns the motor behavior. The BotParty client sends the configured
+commands over the serial port.
 
 ```yaml
 hardware:
@@ -13,13 +18,21 @@ hardware:
     payload_mode: "plain"    # or "json"
     line_ending: "\n"
     stop_command: "stop"
+    protocol: "framed_v1"
+    write_timeout_sec: 1.0
+    ack_timeout_sec: 1.0
 ```
-
----
 
 ## How it works
 
-On each `on_command` call the adapter formats the command into a string and writes it followed by `line_ending` to the serial port.
+For `framed_v1`, every command contains a sequence ID, CRC32 and base64url JSON body. The client
+requires an exact `ACK <sequence>` response after the bytes have been flushed. Short writes,
+timeouts and mismatched acknowledgements fail the command. The legacy line protocol remains
+available only for compatibility and cannot prove delivery.
+
+An acknowledgement proves firmware receipt, not de-energized motors. Motion remains disabled in
+release metadata until the firmware stop implementation, independent cutoff and current HIL report
+prove the complete stop path.
 
 ### Payload modes
 
@@ -43,8 +56,6 @@ speed 75\n
 {"command": "forward", "value": null}\n
 {"command": "speed", "value": 75}\n
 ```
-
----
 
 ## Finding your device
 
@@ -79,8 +90,6 @@ hardware:
 
 The adapter will scan all serial ports and connect to the first one whose description or hardware ID contains `"Arduino Uno"` (case-insensitive).
 
----
-
 ## Options
 
 | Option | Type | Default | Description |
@@ -91,8 +100,9 @@ The adapter will scan all serial ports and connect to the first one whose descri
 | `line_ending` | string | `"\n"` | Line terminator appended to each command. Use `"\\r\\n"` for Windows-style |
 | `stop_command` | string | `"stop"` | Command to send on emergency stop |
 | `payload_mode` | string | `"plain"` | `"plain"` or `"json"` |
-
----
+| `protocol` | string | `"legacy"` | Use `"framed_v1"` for sequenced acknowledgements |
+| `write_timeout_sec` | float | `1.0` | Maximum blocking write time |
+| `ack_timeout_sec` | float | `1.0` | Maximum wait for `ACK <sequence>` |
 
 ## Arduino firmware example
 
@@ -117,7 +127,9 @@ void loop() {
 }
 ```
 
----
+Production firmware for `framed_v1` must decode the BP1 frame, verify CRC32, reject repeated or
+out-of-order sequence IDs, apply the command, flush outputs and only then return `ACK <sequence>`.
+Use a hardware watchdog that removes motor power when serial input or the controller loop stalls.
 
 ## Dependencies
 
@@ -128,5 +140,5 @@ pip install pyserial
 Grant serial port access:
 
 ```bash
-sudo usermod -aG dialout $USER   # log out and in after this
+sudo ./scripts/install-botparty-client.sh --extras serial --device-groups dialout
 ```

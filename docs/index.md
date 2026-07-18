@@ -14,9 +14,12 @@ Start with [installation](installation.md), validate [configuration](configurati
 
 | Page | Contents |
 |---|---|
+| [Developer guide](../DEVELOPER_GUIDE.md) | local setup, module map, tests and debugging |
 | [Installation](installation.md) | service user, signed streamer, health and recovery |
 | [Configuration](configuration.md) | validated options and migrations |
-| [Architecture](client-mixins.md) | component ownership and lifecycle |
+| [Architecture](architecture.md) | trust boundaries, ownership and lifecycle diagrams |
+| [Component contract](client-mixins.md) | runtime component ownership and lifecycle |
+| [Architecture decisions](adr/index.md) | safety, acknowledgements, media and OTA invariants |
 | [Multi-camera](multi-camera.md) | ownership, audio source and bitrate cap |
 | [Protocol](protocol.md) | claim, commands and final acknowledgements |
 | [Adapter support](adapter-support.md) | support levels and HIL evidence |

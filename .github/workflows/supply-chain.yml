@@ -1,0 +1,104 @@
+name: Supply chain and policy
+
+on:
+  schedule:
+    - cron: "17 3 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  locks:
+    name: Audit ${{ matrix.profile }} lock
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        profile:
+          - build-toolchain
+          - dev
+          - installer
+          - production
+          - vision
+          - hardware
+          - gpio
+          - serial
+          - mqtt
+          - usb
+          - telemetry
+          - polly
+          - google-tts
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: python -m pip install --require-hashes --no-deps -r requirements/build-toolchain.txt
+      - run: python -m pip install --require-hashes -r requirements/dev.txt
+      - run: pip-audit -r "requirements/${{ matrix.profile }}.txt"
+      - name: Install locked profile
+        run: |
+          python -m venv /tmp/profile
+          /tmp/profile/bin/pip install --require-hashes -r "requirements/${{ matrix.profile }}.txt"
+      - name: Generate profile SBOM and notices
+        run: |
+          mkdir -p evidence
+          cyclonedx-py environment /tmp/profile/bin/python \
+            --pyproject pyproject.toml --output-reproducible \
+            --output-file "evidence/${{ matrix.profile }}.cdx.json"
+          python scripts/generate-license-inventory.py \
+            --python /tmp/profile/bin/python \
+            --output "evidence/${{ matrix.profile }}-THIRD_PARTY_NOTICES.md"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: supply-chain-${{ matrix.profile }}
+          path: evidence/
+          if-no-files-found: error
+
+  repository-policy:
+    name: Repository policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - name: Validate protected-branch settings
+        env:
+          GITHUB_TOKEN: ${{ secrets.REPOSITORY_POLICY_TOKEN }}
+        run: python scripts/check-repository-policy.py
+
+  deep-secret-scan:
+    name: Full-history secret scan
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python scripts/check-secrets.py --history
+
+  external-doc-links:
+    name: External documentation links
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.12"
+      - run: python scripts/check-doc-links.py --external --timeout 12

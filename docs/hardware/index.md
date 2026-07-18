@@ -1,10 +1,13 @@
 # Hardware Adapters
 
+> **Current release: media-only.** `none` is the only supported hardware profile. Moving profiles
+> remain blocked until a release-specific HIL report promotes an exact adapter/device combination.
+
 The hardware adapter translates BotParty control commands (`forward`, `backward`, `left`, `right`, `stop`) into signals for your specific motor controller or robotics platform.
 
-Set `hardware.type` in `config.yaml` to the adapter name. The `hardware.options` block is passed directly to the adapter.
-
----
+Set `hardware.type` in `config.yaml` to the adapter name. Built-in `hardware.options` are validated
+against a closed, range-limited schema. The generated machine-readable registry is
+[`../generated/adapter-inventory.json`](../generated/adapter-inventory.json).
 
 ## Emergency stop
 
@@ -14,9 +17,9 @@ Every adapter implements `emergency_stop()`. The client calls it automatically w
 - The client shuts down
 - The local safety timeout expires without a fresh drive command
 
-Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. It should cut motor power without any network calls or blocking I/O.
-
----
+The stop call is synchronous and bounded. Any timeout, exception or still-running earlier stop is a
+hard degraded state and prevents reset. A moving adapter is not release-supported until measured
+HIL evidence proves that its full electrical path meets the configured stop deadline.
 
 ## Available adapters
 
@@ -45,11 +48,10 @@ Your adapter's `emergency_stop` must be **synchronous, fast, and infallible**. I
 | [`owi_arm`](other.md#owi-535-usb-robotic-arm) | OWI 535 Robotic Arm | USB HID |
 | [`custom`](custom.md) | Your own hardware | Anything |
 
----
-
 ## Command reference
 
-Controllers send these string commands. All adapters must handle at least the first five:
+Controllers send these canonical commands. The advertised command and motion sets are
+adapter-specific; consult the generated inventory rather than assuming every adapter can drive.
 
 | Command | Description |
 |---------|-------------|

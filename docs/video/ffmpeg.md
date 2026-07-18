@@ -1,21 +1,20 @@
 # FFmpeg Video Profile
 
-The `ffmpeg` profile is the normal default and now handles both paths automatically:
+The `ffmpeg` profile is the default. It selects one of two publishing paths:
 
 - preferred path: ffmpeg -> botparty-streamer -> LiveKit (direct, low-latency)
 - fallback path: ffmpeg -> Python SDK publish
 
-`botparty-streamer` is our self-made video transmitter for maximum performance, low CPU usage and low latency.
+`botparty-streamer` is the native publisher used by the direct path. It reduces CPU load and
+latency where the target platform supports it.
 
-You keep `video.type: "ffmpeg"` in both cases.
+Both paths use `video.type: "ffmpeg"`.
 
 ```yaml
 video:
   type: "ffmpeg"
   options: {}
 ```
-
----
 
 ## How it works
 
@@ -35,8 +34,6 @@ You only need `video.options.video_codec` if you want to force a specific FFmpeg
 
 When the SDK fallback path is active, `video_codec` is not used because LiveKit handles encoding internally.
 
----
-
 ## Options
 
 | Option | Type | Default | Description |
@@ -53,8 +50,6 @@ When the SDK fallback path is active, `video_codec` is not used because LiveKit 
 | `video_codec` | string | `auto` | Optional override for the direct H.264 encoder. Leave unset for automatic hardware-first selection. |
 | `target_bitrate_kbps` | int | `auto` | Cap LiveKit video bitrate. If unset, the client applies a conservative low-latency default based on resolution and FPS. |
 
----
-
 ## Choosing a pixel format (fourcc)
 
 Set `camera.fourcc` to match your camera's native output:
@@ -70,8 +65,6 @@ v4l2-ctl --device=/dev/video0 --list-formats-ext
 ```
 
 Most modern USB webcams support MJPG at 1280x720@30fps. Switch to YUYV only if the camera does not support MJPG.
-
----
 
 ## With microphone audio
 
@@ -109,8 +102,6 @@ arecord -D plughw:1,0 -d 3 test.wav   # record 3 seconds to verify it works
 | `audio_queue_frames` | int | `8` | Max queued audio chunks before old audio is dropped |
 
 For low-latency teleoperation, keep `audio_queue_frames` small. With the default `audio_chunk_ms: 40` and `audio_queue_frames: 8`, the client holds at most about 320 ms of extra audio before dropping old chunks while reducing audio scheduling pressure.
-
----
 
 ## Troubleshooting
 
@@ -178,8 +169,14 @@ v4l2-ctl --device=/dev/video0 --list-formats-ext
 
 **"Device or resource busy"**
 
-Another process has the camera open (another ffmpeg, guvcview, etc.). Find and kill it:
+Stop the BotParty service first, then identify the exact owner. Do not signal an unverified PID:
 
 ```bash
-fuser /dev/video0
+sudo systemctl stop botparty-robot.service
+sudo fuser -v /dev/video0
+ps -fp <verified-PID>
+sudo kill -TERM <verified-PID>
 ```
+
+After the device is free, run `doctor`, restart the service and reset the safety latch only with the
+area clear.

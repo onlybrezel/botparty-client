@@ -18,3 +18,36 @@ Create a report template with `python scripts/check-hil-reports.py --template me
 validator enforces the table budgets, a 24-hour soak and a maximum RSS slope of 1 MiB/hour. CI
 validates all committed reports. Adapter metadata is available as JSON from
 `python scripts/adapter-inventory.py`.
+
+CI additionally runs `scripts/check-performance-budgets.py`. It installs the exact wheel and
+hashed production lock in a clean virtual environment before measuring CLI startup. Reports bind
+the wheel SHA-256, Python version, architecture and host; `--wheelhouse` makes dependency setup
+strictly offline. Versioned ceilings are 2 MiB for the
+wheel, 3 MiB for the sdist, 120 MiB for the offline OTA bundle, 40 production dependencies, 2.5 s
+for cold `--help`/`--version`, and 3 s for cold example-config validation on the hosted amd64
+runner. The JSON report preserves raw samples and p95. These host-independent packaging gates do
+not replace real-device latency, temperature, memory or soak measurements.
+
+No current report is fabricated from CI. Until one low-, one medium- and one reference-device
+report is committed for a release, the corresponding physical-performance claims and moving
+adapter support remain unverified.
+
+## Long-running soak
+
+Record the installed service process for at least 24 hours:
+
+```bash
+python scripts/run-soak.py --pid "$(systemctl show -p MainPID --value botparty-robot)" \
+  --duration-hours 24 --device-class medium \
+  --build-id "sha256-$(cut -d' ' -f1 /opt/botparty/installed-wheel.sha256)" \
+  --raw-output soak.jsonl --report-output soak-report.json
+python scripts/check-soak-report.py soak-report.json --raw soak.jsonl
+```
+
+The raw stream records RSS, file descriptors, threads, temperature, camera progress, reconnect
+counters and bounded health snapshots.
+The report binds the build and raw digest and rejects RSS growth above 1 MiB/hour, FD/thread drift
+above 0.1/hour, device-class RSS, 85 °C, camera progress below 80%, collection gaps, fewer than 288
+samples or a duration below 24 hours. Run the HIL
+scenario's camera, TTS, command, reconnect, restart and power-loss phases during this window and
+attest both files with the HIL evidence.

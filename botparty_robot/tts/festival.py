@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .base import BaseTTSProfile
-from .common import command_exists, run_shell, shell_quote, write_text_file
+from .common import command_exists, run_process, write_text_file
 
 
 class TTSProfile(BaseTTSProfile):
@@ -18,20 +20,15 @@ class TTSProfile(BaseTTSProfile):
             self.enabled and command_exists(self.text2wave_path) and command_exists(self.aplay_path)
         )
 
-    def say(self, message: str, metadata=None) -> None:
+    def say(self, message: str, metadata: dict[str, Any] | None = None) -> None:
         if not self.can_handle():
             return
         text_path = write_text_file(message)
         wav_path = text_path.with_suffix(".wav")
         try:
-            run_shell(
-                f"{shell_quote(self.text2wave_path)} -o {shell_quote(str(wav_path))} "
-                f"{shell_quote(str(text_path))}"
-            )
-            run_shell(
-                f"{shell_quote(self.aplay_path)} -D {shell_quote(self.playback_device)} "
-                f"{shell_quote(str(wav_path))}"
-            )
+            run_process([self.text2wave_path, "-o", str(wav_path), str(text_path)])
+            if self.operation_is_active():
+                run_process([self.aplay_path, "-D", self.playback_device, str(wav_path)])
         finally:
             text_path.unlink(missing_ok=True)
             wav_path.unlink(missing_ok=True)

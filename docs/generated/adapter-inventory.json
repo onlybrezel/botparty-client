@@ -1,0 +1,5273 @@
+{
+  "adapters": [
+    {
+      "adapterId": "adafruit_pwm",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "bl": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "br": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "neg60": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "pos60": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "s2dec": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "s2inc": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "bl",
+        "br",
+        "forward",
+        "left",
+        "neg60",
+        "pos60",
+        "right",
+        "s2dec",
+        "s2inc",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "Adafruit_PCA9685"
+        ],
+        "Adafruit-PCA9685"
+      ],
+      "description": "Adafruit PCA9685 steering and drive PWM adapter",
+      "hilReports": [],
+      "module": "adafruit_pwm",
+      "motionCommands": [
+        "backward",
+        "bl",
+        "br",
+        "forward",
+        "left",
+        "neg60",
+        "pos60",
+        "right",
+        "s2dec",
+        "s2inc"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "default": 64,
+            "title": "Address"
+          },
+          "aux_channel": {
+            "default": 2,
+            "maximum": 15,
+            "minimum": 0,
+            "title": "Aux Channel",
+            "type": "integer"
+          },
+          "aux_decrement": {
+            "default": 400,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Aux Decrement",
+            "type": "integer"
+          },
+          "aux_increment": {
+            "default": 300,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Aux Increment",
+            "type": "integer"
+          },
+          "aux_neg60": {
+            "default": 100,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Aux Neg60",
+            "type": "integer"
+          },
+          "aux_pos60": {
+            "default": 490,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Aux Pos60",
+            "type": "integer"
+          },
+          "backward_drive": {
+            "default": 270,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Backward Drive",
+            "type": "integer"
+          },
+          "backward_slow": {
+            "default": 325,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Backward Slow",
+            "type": "integer"
+          },
+          "drive_channel": {
+            "default": 0,
+            "maximum": 15,
+            "minimum": 0,
+            "title": "Drive Channel",
+            "type": "integer"
+          },
+          "forward_drive": {
+            "default": 445,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Forward Drive",
+            "type": "integer"
+          },
+          "forward_slow": {
+            "default": 345,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Forward Slow",
+            "type": "integer"
+          },
+          "neutral_drive": {
+            "default": 335,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Neutral Drive",
+            "type": "integer"
+          },
+          "pwm_freq": {
+            "default": 60,
+            "maximum": 1526,
+            "minimum": 24,
+            "title": "Pwm Freq",
+            "type": "integer"
+          },
+          "steer_center": {
+            "default": 400,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Steer Center",
+            "type": "integer"
+          },
+          "steer_channel": {
+            "default": 1,
+            "maximum": 15,
+            "minimum": 0,
+            "title": "Steer Channel",
+            "type": "integer"
+          },
+          "steer_left": {
+            "default": 300,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Steer Left",
+            "type": "integer"
+          },
+          "steer_right": {
+            "default": 500,
+            "maximum": 4095,
+            "minimum": 0,
+            "title": "Steer Right",
+            "type": "integer"
+          }
+        },
+        "title": "AdafruitPwmOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "cozmo",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "cozmo"
+        ],
+        "cozmo"
+      ],
+      "description": "Anki Cozmo control adapter",
+      "hilReports": [],
+      "module": "cozmo",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "colour": {
+            "default": true,
+            "title": "Colour",
+            "type": "boolean"
+          },
+          "forward_speed": {
+            "default": 75,
+            "maximum": 220,
+            "minimum": 1,
+            "title": "Forward Speed",
+            "type": "integer"
+          },
+          "volume": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "title": "CozmoOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "custom",
+      "close": true,
+      "commandValueSchemas": {},
+      "commands": [],
+      "dependency": null,
+      "description": "Load HardwareAdapter from hardware_custom.py next to the config file",
+      "hilReports": [],
+      "module": "custom",
+      "motionCommands": [],
+      "optionsSchema": {
+        "experimentalCustomOptions": true
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "gopigo2",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "gopigo"
+        ],
+        "gopigo"
+      ],
+      "description": "Dexter Industries GoPiGo2 adapter",
+      "hilReports": [],
+      "module": "gopigo2",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "drive_time": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Time",
+            "type": "number"
+          },
+          "turn_time": {
+            "default": 0.15,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Time",
+            "type": "number"
+          }
+        },
+        "title": "TimedDriveOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "gopigo3",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "easygopigo3"
+        ],
+        "easygopigo3"
+      ],
+      "description": "Dexter Industries GoPiGo3 adapter",
+      "hilReports": [],
+      "module": "gopigo3",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "drive_time": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Time",
+            "type": "number"
+          },
+          "turn_time": {
+            "default": 0.15,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Time",
+            "type": "number"
+          }
+        },
+        "title": "TimedDriveOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "l298n",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "RPi.GPIO"
+        ],
+        "botparty-robot[gpio]"
+      ],
+      "description": "GPIO pulse adapter for L298N-style direction pins",
+      "hilReports": [],
+      "module": "l298n",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "backward_pins": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Backward Pins",
+            "type": "array"
+          },
+          "drive_seconds": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Seconds",
+            "type": "number"
+          },
+          "forward_pins": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Forward Pins",
+            "type": "array"
+          },
+          "left_pins": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Left Pins",
+            "type": "array"
+          },
+          "right_pins": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 8,
+            "title": "Right Pins",
+            "type": "array"
+          },
+          "turn_seconds": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Seconds",
+            "type": "number"
+          }
+        },
+        "title": "L298nOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "maestro_servo",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "maestro"
+        ],
+        "Maestro"
+      ],
+      "description": "Dual-servo drive adapter for Pololu Maestro",
+      "hilReports": [],
+      "module": "maestro_servo",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "backward": {
+            "default": 2000,
+            "maximum": 10000,
+            "minimum": 0,
+            "title": "Backward",
+            "type": "integer"
+          },
+          "center": {
+            "default": 6000,
+            "maximum": 10000,
+            "minimum": 2000,
+            "title": "Center",
+            "type": "integer"
+          },
+          "forward": {
+            "default": 10000,
+            "maximum": 12000,
+            "minimum": 2000,
+            "title": "Forward",
+            "type": "integer"
+          },
+          "left_channel": {
+            "default": 0,
+            "maximum": 23,
+            "minimum": 0,
+            "title": "Left Channel",
+            "type": "integer"
+          },
+          "right_channel": {
+            "default": 1,
+            "maximum": 23,
+            "minimum": 0,
+            "title": "Right Channel",
+            "type": "integer"
+          },
+          "straight_delay": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Straight Delay",
+            "type": "number"
+          },
+          "turn_delay": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Delay",
+            "type": "number"
+          }
+        },
+        "title": "MaestroOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "max7219",
+      "close": true,
+      "commandValueSchemas": {
+        "LED_E_SAD": {
+          "type": "null"
+        },
+        "LED_E_SMILEY": {
+          "type": "null"
+        },
+        "LED_E_SURPRISED": {
+          "type": "null"
+        },
+        "LED_E_TONGUE": {
+          "type": "null"
+        },
+        "LED_FULL": {
+          "type": "null"
+        },
+        "LED_LOW": {
+          "type": "null"
+        },
+        "LED_MED": {
+          "type": "null"
+        },
+        "LED_OFF": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "LED_E_SAD",
+        "LED_E_SMILEY",
+        "LED_E_SURPRISED",
+        "LED_E_TONGUE",
+        "LED_FULL",
+        "LED_LOW",
+        "LED_MED",
+        "LED_OFF"
+      ],
+      "dependency": [
+        [
+          "spidev"
+        ],
+        "spidev"
+      ],
+      "description": "SPI LED matrix expressions and brightness",
+      "hilReports": [],
+      "module": "max7219",
+      "motionCommands": [],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "bus": {
+            "default": 0,
+            "maximum": 16,
+            "minimum": 0,
+            "title": "Bus",
+            "type": "integer"
+          },
+          "device": {
+            "default": 0,
+            "maximum": 16,
+            "minimum": 0,
+            "title": "Device",
+            "type": "integer"
+          },
+          "max_speed_hz": {
+            "default": 1000000,
+            "maximum": 10000000,
+            "minimum": 10000,
+            "title": "Max Speed Hz",
+            "type": "integer"
+          },
+          "rotate": {
+            "default": 0,
+            "enum": [
+              0,
+              90,
+              180,
+              270
+            ],
+            "title": "Rotate",
+            "type": "integer"
+          }
+        },
+        "title": "Max7219Options",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "mc33926",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "dual_mc33926_rpi"
+        ],
+        "dual-mc33926-rpi"
+      ],
+      "description": "Pololu dual MC33926 motor driver",
+      "hilReports": [],
+      "module": "mc33926",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "drive_time": {
+            "default": 0.3,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Time",
+            "type": "number"
+          },
+          "driving_speed": {
+            "default": 180,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Driving Speed",
+            "type": "integer"
+          }
+        },
+        "title": "SpeedDriveOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "mdd10",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "maxspeed": {
+          "type": "null"
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "maxspeed",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "RPi.GPIO"
+        ],
+        "botparty-robot[gpio]"
+      ],
+      "description": "Cytron MDD10 GPIO + PWM motor controller",
+      "hilReports": [],
+      "module": "mdd10",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "an1": {
+            "default": 12,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "An1",
+            "type": "integer"
+          },
+          "an2": {
+            "default": 13,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "An2",
+            "type": "integer"
+          },
+          "dig1": {
+            "default": 26,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Dig1",
+            "type": "integer"
+          },
+          "dig2": {
+            "default": 24,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Dig2",
+            "type": "integer"
+          },
+          "max_speed_percent": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Max Speed Percent",
+            "type": "integer"
+          },
+          "speed_percent": {
+            "default": 60,
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Speed Percent",
+            "type": "integer"
+          },
+          "straight_delay": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Straight Delay",
+            "type": "number"
+          },
+          "turn_delay": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Delay",
+            "type": "number"
+          }
+        },
+        "title": "Mdd10Options",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "megapi_board",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "close": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "open": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "close",
+        "forward",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "megapi"
+        ],
+        "megapi"
+      ],
+      "description": "Makeblock MegaPi-based tracked robot adapter",
+      "hilReports": [],
+      "module": "megapi_board",
+      "motionCommands": [
+        "backward",
+        "close",
+        "forward",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "arm_port": {
+            "default": 1,
+            "maximum": 4,
+            "minimum": 1,
+            "title": "Arm Port",
+            "type": "integer"
+          },
+          "arm_speed": {
+            "default": 50,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Arm Speed",
+            "type": "integer"
+          },
+          "driving_speed": {
+            "default": 150,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Driving Speed",
+            "type": "integer"
+          },
+          "grabber_port": {
+            "default": 4,
+            "maximum": 4,
+            "minimum": 1,
+            "title": "Grabber Port",
+            "type": "integer"
+          },
+          "grabber_speed": {
+            "default": 50,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Grabber Speed",
+            "type": "integer"
+          },
+          "left_track_port": {
+            "default": 2,
+            "maximum": 4,
+            "minimum": 1,
+            "title": "Left Track Port",
+            "type": "integer"
+          },
+          "motor_time": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Motor Time",
+            "type": "number"
+          },
+          "right_track_port": {
+            "default": 3,
+            "maximum": 4,
+            "minimum": 1,
+            "title": "Right Track Port",
+            "type": "integer"
+          }
+        },
+        "title": "MegaPiOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "motor_hat",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "close": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "open": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "close",
+        "forward",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "Adafruit_MotorHAT"
+        ],
+        "Adafruit-MotorHAT"
+      ],
+      "description": "Adafruit Motor HAT adapter with optional accessory channels",
+      "hilReports": [],
+      "module": "motor_hat",
+      "motionCommands": [
+        "backward",
+        "close",
+        "forward",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "default": 96,
+            "maximum": 119,
+            "minimum": 3,
+            "title": "Address",
+            "type": "integer"
+          },
+          "drive_speed": {
+            "default": 180,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Drive Speed",
+            "type": "integer"
+          },
+          "drive_time": {
+            "default": 0.35,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Time",
+            "type": "number"
+          },
+          "i2c_bus": {
+            "anyOf": [
+              {
+                "maximum": 16,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "I2C Bus"
+          },
+          "left_motors": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Left Motors",
+            "type": "array"
+          },
+          "open_motor": {
+            "default": 0,
+            "maximum": 4,
+            "minimum": 0,
+            "title": "Open Motor",
+            "type": "integer"
+          },
+          "right_motors": {
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 2,
+            "minItems": 1,
+            "title": "Right Motors",
+            "type": "array"
+          },
+          "turn_speed": {
+            "default": 180,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Turn Speed",
+            "type": "integer"
+          },
+          "turn_time": {
+            "default": 0.2,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Turn Time",
+            "type": "number"
+          },
+          "up_motor": {
+            "default": 0,
+            "maximum": 4,
+            "minimum": 0,
+            "title": "Up Motor",
+            "type": "integer"
+          }
+        },
+        "title": "MotorHatOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "motozero",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "RPi.GPIO"
+        ],
+        "botparty-robot[gpio]"
+      ],
+      "description": "4-channel GPIO adapter for MotoZero",
+      "hilReports": [],
+      "module": "motozero",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "motor1a": {
+            "default": 24,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor1A",
+            "type": "integer"
+          },
+          "motor1b": {
+            "default": 25,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor1B",
+            "type": "integer"
+          },
+          "motor1enable": {
+            "default": 12,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor1Enable",
+            "type": "integer"
+          },
+          "motor2a": {
+            "default": 27,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor2A",
+            "type": "integer"
+          },
+          "motor2b": {
+            "default": 17,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor2B",
+            "type": "integer"
+          },
+          "motor2enable": {
+            "default": 13,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor2Enable",
+            "type": "integer"
+          },
+          "motor3a": {
+            "default": 6,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor3A",
+            "type": "integer"
+          },
+          "motor3b": {
+            "default": 5,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor3B",
+            "type": "integer"
+          },
+          "motor3enable": {
+            "default": 18,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor3Enable",
+            "type": "integer"
+          },
+          "motor4a": {
+            "default": 22,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor4A",
+            "type": "integer"
+          },
+          "motor4b": {
+            "default": 23,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor4B",
+            "type": "integer"
+          },
+          "motor4enable": {
+            "default": 19,
+            "maximum": 53,
+            "minimum": 0,
+            "title": "Motor4Enable",
+            "type": "integer"
+          },
+          "motor_delay": {
+            "default": 0.25,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Motor Delay",
+            "type": "number"
+          }
+        },
+        "title": "MotoZeroOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "mqtt_pub",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "paho.mqtt.client"
+        ],
+        "botparty-robot[mqtt]"
+      ],
+      "description": "Publish BotParty commands to an MQTT topic",
+      "hilReports": [],
+      "module": "mqtt_pub",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ack_timeout_sec": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Ack Timeout Sec",
+            "type": "number"
+          },
+          "ca_file": {
+            "anyOf": [
+              {
+                "maxLength": 4096,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Ca File"
+          },
+          "host": {
+            "default": "localhost",
+            "maxLength": 253,
+            "minLength": 1,
+            "title": "Host",
+            "type": "string"
+          },
+          "password": {
+            "anyOf": [
+              {
+                "format": "password",
+                "type": "string",
+                "writeOnly": true
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Password"
+          },
+          "payload_mode": {
+            "default": "plain",
+            "enum": [
+              "plain",
+              "json"
+            ],
+            "title": "Payload Mode",
+            "type": "string"
+          },
+          "port": {
+            "anyOf": [
+              {
+                "maximum": 65535,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Port"
+          },
+          "qos": {
+            "default": 1,
+            "enum": [
+              1,
+              2
+            ],
+            "title": "Qos",
+            "type": "integer"
+          },
+          "status_topic": {
+            "default": "botparty/robot/status",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Status Topic",
+            "type": "string"
+          },
+          "stop_command": {
+            "default": "stop",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Stop Command",
+            "type": "string"
+          },
+          "stop_topic": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Stop Topic"
+          },
+          "tls": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Tls"
+          },
+          "topic": {
+            "default": "botparty/robot/command",
+            "maxLength": 256,
+            "minLength": 1,
+            "title": "Topic",
+            "type": "string"
+          },
+          "username": {
+            "anyOf": [
+              {
+                "maxLength": 256,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Username"
+          }
+        },
+        "title": "MqttOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "navq",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "mavsdk"
+        ],
+        "mavsdk"
+      ],
+      "description": "MAVSDK offboard control adapter for NavQ robots",
+      "hilReports": [],
+      "module": "navq",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "system_address": {
+            "default": "serial:///dev/ttymxc2:921600",
+            "maxLength": 512,
+            "minLength": 8,
+            "title": "System Address",
+            "type": "string"
+          },
+          "thrust": {
+            "default": 0.1,
+            "maximum": 0.3,
+            "minimum": 0.01,
+            "title": "Thrust",
+            "type": "number"
+          },
+          "yaw_step": {
+            "default": 45.0,
+            "maximum": 180.0,
+            "minimum": 1.0,
+            "title": "Yaw Step",
+            "type": "number"
+          }
+        },
+        "title": "NavQOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "none",
+      "close": true,
+      "commandValueSchemas": {},
+      "commands": [],
+      "dependency": null,
+      "description": "No-op adapter that only logs commands",
+      "hilReports": [],
+      "module": "none",
+      "motionCommands": [],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {},
+        "title": "EmptyOptions",
+        "type": "object"
+      },
+      "safeStop": true,
+      "supportLevel": "supported"
+    },
+    {
+      "adapterId": "owi_arm",
+      "close": true,
+      "commandValueSchemas": {
+        "0": {
+          "type": "null"
+        },
+        "1": {
+          "type": "null"
+        },
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "close": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "open": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "0",
+        "1",
+        "backward",
+        "close",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "usb.core"
+        ],
+        "botparty-robot[usb]"
+      ],
+      "description": "OWI USB robotic arm controller",
+      "hilReports": [],
+      "module": "owi_arm",
+      "motionCommands": [
+        "backward",
+        "close",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "open",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "product_id": {
+            "default": 0,
+            "maximum": 65535,
+            "minimum": 0,
+            "title": "Product Id",
+            "type": "integer"
+          },
+          "step_seconds": {
+            "default": 0.15,
+            "maximum": 1.0,
+            "minimum": 0.01,
+            "title": "Step Seconds",
+            "type": "number"
+          },
+          "vendor_id": {
+            "default": 4711,
+            "maximum": 65535,
+            "minimum": 1,
+            "title": "Vendor Id",
+            "type": "integer"
+          }
+        },
+        "title": "OwiArmOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "pololu",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "pololu_drv8835_rpi"
+        ],
+        "pololu-drv8835-rpi"
+      ],
+      "description": "Pololu DRV8835 motor driver",
+      "hilReports": [],
+      "module": "pololu",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "drive_time": {
+            "default": 0.3,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Drive Time",
+            "type": "number"
+          },
+          "driving_speed": {
+            "default": 180,
+            "maximum": 255,
+            "minimum": 1,
+            "title": "Driving Speed",
+            "type": "integer"
+          }
+        },
+        "title": "SpeedDriveOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "serial_board",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "serial"
+        ],
+        "botparty-robot[serial]"
+      ],
+      "description": "Send commands to an attached microcontroller over serial",
+      "hilReports": [],
+      "module": "serial_board",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ack_timeout_sec": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Ack Timeout Sec",
+            "type": "number"
+          },
+          "baud_rate": {
+            "default": 115200,
+            "maximum": 4000000,
+            "minimum": 1200,
+            "title": "Baud Rate",
+            "type": "integer"
+          },
+          "device": {
+            "default": "/dev/ttyUSB0",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Device",
+            "type": "string"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Device Name"
+          },
+          "line_ending": {
+            "default": "\n",
+            "enum": [
+              "",
+              "\n",
+              "\r",
+              "\r\n"
+            ],
+            "title": "Line Ending",
+            "type": "string"
+          },
+          "payload_mode": {
+            "default": "plain",
+            "enum": [
+              "plain",
+              "json"
+            ],
+            "title": "Payload Mode",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "legacy",
+            "enum": [
+              "legacy",
+              "framed_v1"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "stop_command": {
+            "default": "stop",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Stop Command",
+            "type": "string"
+          },
+          "write_timeout_sec": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Write Timeout Sec",
+            "type": "number"
+          }
+        },
+        "title": "SerialOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "telly",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "serial"
+        ],
+        "botparty-robot[serial]"
+      ],
+      "description": "Telly serial controller with Telly-friendly defaults",
+      "hilReports": [],
+      "module": "telly",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "ack_timeout_sec": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Ack Timeout Sec",
+            "type": "number"
+          },
+          "baud_rate": {
+            "default": 115200,
+            "maximum": 4000000,
+            "minimum": 1200,
+            "title": "Baud Rate",
+            "type": "integer"
+          },
+          "device": {
+            "default": "/dev/ttyUSB0",
+            "maxLength": 4096,
+            "minLength": 1,
+            "title": "Device",
+            "type": "string"
+          },
+          "device_name": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Device Name"
+          },
+          "line_ending": {
+            "default": "\n",
+            "enum": [
+              "",
+              "\n",
+              "\r",
+              "\r\n"
+            ],
+            "title": "Line Ending",
+            "type": "string"
+          },
+          "payload_mode": {
+            "default": "plain",
+            "enum": [
+              "plain",
+              "json"
+            ],
+            "title": "Payload Mode",
+            "type": "string"
+          },
+          "protocol": {
+            "default": "legacy",
+            "enum": [
+              "legacy",
+              "framed_v1"
+            ],
+            "title": "Protocol",
+            "type": "string"
+          },
+          "stop_command": {
+            "default": "stop",
+            "maxLength": 128,
+            "minLength": 1,
+            "title": "Stop Command",
+            "type": "string"
+          },
+          "write_timeout_sec": {
+            "default": 1.0,
+            "maximum": 10.0,
+            "minimum": 0.1,
+            "title": "Write Timeout Sec",
+            "type": "number"
+          }
+        },
+        "title": "SerialOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "thunderborg",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "left",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "ThunderBorg",
+          "ThunderBorg3"
+        ],
+        "ThunderBorg"
+      ],
+      "description": "PiBorg ThunderBorg motor driver",
+      "hilReports": [],
+      "module": "thunderborg",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "left",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "address": {
+            "anyOf": [
+              {
+                "maximum": 119,
+                "minimum": 3,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Address"
+          },
+          "left_motor_max": {
+            "default": 1.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Left Motor Max",
+            "type": "number"
+          },
+          "right_motor_max": {
+            "default": 1.0,
+            "maximum": 1.0,
+            "minimum": 0.0,
+            "title": "Right Motor Max",
+            "type": "number"
+          },
+          "sleep_time": {
+            "default": 0.3,
+            "maximum": 2.0,
+            "minimum": 0.01,
+            "title": "Sleep Time",
+            "type": "number"
+          }
+        },
+        "title": "ThunderBorgOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    },
+    {
+      "adapterId": "vector",
+      "close": true,
+      "commandValueSchemas": {
+        "backward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "forward": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "head_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "left": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_down": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "lift_up": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "right": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "maximum": 100,
+              "minimum": -100,
+              "type": "number"
+            },
+            {
+              "additionalProperties": false,
+              "properties": {
+                "x": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                },
+                "y": {
+                  "maximum": 1,
+                  "minimum": -1,
+                  "type": "number"
+                }
+              },
+              "required": [
+                "x",
+                "y"
+              ],
+              "type": "object"
+            }
+          ]
+        },
+        "stop": {
+          "type": "null"
+        }
+      },
+      "commands": [
+        "backward",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "right",
+        "stop"
+      ],
+      "dependency": [
+        [
+          "anki_vector"
+        ],
+        "anki-vector"
+      ],
+      "description": "Anki Vector control adapter",
+      "hilReports": [],
+      "module": "vector",
+      "motionCommands": [
+        "backward",
+        "forward",
+        "head_down",
+        "head_up",
+        "left",
+        "lift_down",
+        "lift_up",
+        "right"
+      ],
+      "optionsSchema": {
+        "additionalProperties": false,
+        "properties": {
+          "colour": {
+            "default": true,
+            "title": "Colour",
+            "type": "boolean"
+          },
+          "forward_speed": {
+            "default": 75,
+            "maximum": 220,
+            "minimum": 1,
+            "title": "Forward Speed",
+            "type": "integer"
+          },
+          "serial": {
+            "anyOf": [
+              {
+                "maxLength": 128,
+                "minLength": 1,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Serial"
+          },
+          "turn_speed": {
+            "default": 50,
+            "maximum": 220,
+            "minimum": 1,
+            "title": "Turn Speed",
+            "type": "integer"
+          },
+          "volume": {
+            "default": 100,
+            "maximum": 100,
+            "minimum": 0,
+            "title": "Volume",
+            "type": "integer"
+          }
+        },
+        "title": "VectorOptions",
+        "type": "object"
+      },
+      "safeStop": false,
+      "supportLevel": "community"
+    }
+  ],
+  "schemaVersion": 3
+}

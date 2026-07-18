@@ -18,6 +18,8 @@ from pydantic import (
     model_validator,
 )
 
+from .profile_options import validate_profile_options
+
 HARDWARE_PROFILES = frozenset(
     {
         "adafruit_pwm",
@@ -63,7 +65,6 @@ TTS_PROFILES = frozenset(
         "cozmo_tts",
         "custom",
         "espeak",
-        "espeak_loop",
         "festival",
         "google_cloud",
         "none",
@@ -74,8 +75,7 @@ TTS_PROFILES = frozenset(
 )
 CAMERA_ID_RE = re.compile(r"^[a-z][a-z0-9_-]{0,31}$")
 DEFAULT_OTA_MANIFEST_URL = (
-    "https://github.com/onlybrezel/botparty-client/"
-    "releases/latest/download/ota-manifest.json"
+    "https://github.com/onlybrezel/botparty-client/releases/latest/download/ota-manifest.json"
 )
 DEFAULT_OTA_PUBLIC_KEY_FILE = Path("/etc/botparty/botparty-ota.pub")
 DEFAULT_OTA_STATE_DIRECTORY = Path("/var/lib/botparty/ota")
@@ -221,6 +221,15 @@ class HardwareConfig(ConfigModel):
             )
         return normalized
 
+    @model_validator(mode="after")
+    def _validate_options(self) -> HardwareConfig:
+        self.options = validate_profile_options("hardware", self.type, self.options)
+        if self.type == "auto":
+            selected = str(self.options.get("auto_profile", ""))
+            if selected not in HARDWARE_PROFILES - {"auto", "custom"}:
+                raise ValueError("hardware.options.auto_profile must name a built-in profile")
+        return self
+
 
 class VideoConfig(ConfigModel):
     type: str = "ffmpeg"
@@ -243,6 +252,11 @@ class VideoConfig(ConfigModel):
             )
         return normalized
 
+    @model_validator(mode="after")
+    def _validate_options(self) -> VideoConfig:
+        self.options = validate_profile_options("video", self.type, self.options)
+        return self
+
 
 class CameraVideoOverrideConfig(ConfigModel):
     type: str | None = None
@@ -261,7 +275,7 @@ class CameraStreamConfig(ConfigModel):
     label: str | None = Field(default=None, max_length=80)
     role: Literal["primary", "secondary", "auxiliary"] | None = None
     enabled: bool = True
-    publish_mode: Literal["always_on"] = "always_on"
+    publish_mode: Literal["always_on", "on_demand"] = "always_on"
     device: str | int | None = None
     width: int | None = Field(default=None, ge=160, le=7680)
     height: int | None = Field(default=None, ge=120, le=4320)
@@ -315,6 +329,7 @@ class TTSConfig(ConfigModel):
     def _enabled_profile(self) -> TTSConfig:
         if self.enabled and self.type == "none":
             raise ValueError("tts.type must name an engine when TTS is enabled")
+        self.options = validate_profile_options("tts", self.type, self.options)
         return self
 
 
@@ -356,6 +371,7 @@ class OtaConfig(ConfigModel):
     enabled: bool = False
     manifest_url: str | None = DEFAULT_OTA_MANIFEST_URL
     public_key_file: Path | None = DEFAULT_OTA_PUBLIC_KEY_FILE
+    public_key_sha256: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     state_directory: Path | None = DEFAULT_OTA_STATE_DIRECTORY
 
     @model_validator(mode="after")
@@ -385,13 +401,14 @@ class NormalizedCameraConfig(ConfigModel):
     label: str
     role: Literal["primary", "secondary", "auxiliary"]
     enabled: bool = True
-    publish_mode: Literal["always_on"] = "always_on"
+    publish_mode: Literal["always_on", "on_demand"] = "always_on"
     camera: CameraConfig
     video: VideoConfig
 
 
 class RobotConfig(ConfigModel):
     _source_path: Path | None = PrivateAttr(default=None)
+    _legacy_migration_used: bool = PrivateAttr(default=False)
 
     server: ServerConfig
     camera: CameraConfig = Field(default_factory=CameraConfig)
@@ -424,6 +441,16 @@ class RobotConfig(ConfigModel):
             if selected not in {camera.id for camera in enabled}:
                 raise ValueError("audio_source_camera_id must reference an enabled camera id")
             self.audio_source_camera_id = selected
+        for camera in normalize_cameras(self):
+            if (
+                camera.enabled
+                and camera.video.type != "opencv"
+                and isinstance(camera.camera.device, int)
+            ):
+                raise ValueError(
+                    f"camera {camera.id!r} requires a string device for video profile "
+                    f"{camera.video.type!r}; numeric indices are only supported by opencv"
+                )
         return self
 
 

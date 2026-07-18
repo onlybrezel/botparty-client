@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "deploymentId": "production-eu",
+  "reviewer": "REPLACE_WITH_INDEPENDENT_REVIEWER",
+  "observedAt": "2026-01-01T00:00:00Z",
+  "alertRoute": "REPLACE_WITH_ON_CALL_ROUTE",
+  "testAlertId": "REPLACE_WITH_ALERT_DELIVERY_ID",
+  "testAlertDelivered": false,
+  "rpoHours": 24,
+  "verifiedBackupAgeHours": 999,
+  "backupId": "REPLACE_WITH_BACKUP_INVENTORY_ID",
+  "offsiteCopyVerified": false,
+  "rtoMinutes": 120,
+  "restoreDurationMinutes": 999,
+  "restoreDrillId": "REPLACE_WITH_RESTORE_DRILL_ID",
+  "restoreVerified": false
+}

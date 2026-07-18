@@ -1,8 +1,6 @@
 # TTS Engines Overview
 
-This page is kept as a lightweight overview for older links.
-
-Use the dedicated engine pages for accurate, maintained configuration details:
+Engine-specific configuration:
 
 - [eSpeak](espeak.md)
 - [SVOX Pico](pico.md)
@@ -11,3 +9,6 @@ Use the dedicated engine pages for accurate, maintained configuration details:
 - [Google Cloud TTS](google-cloud.md)
 
 For the current engine matrix and shared settings, see [TTS profiles](index.md).
+
+Cloud engines require `cloud_data_processing_accepted: true`, a protected credential file outside
+service-user home directories and deployment-specific region, retention and processor review.

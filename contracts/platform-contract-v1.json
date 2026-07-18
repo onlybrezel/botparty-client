@@ -1,0 +1,827 @@
+{
+  "commandValueRules": {
+    "motion": {
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "maximum": 100,
+          "minimum": -100,
+          "type": "number"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "x": {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            },
+            "y": {
+              "maximum": 1,
+              "minimum": -1,
+              "type": "number"
+            }
+          },
+          "required": [
+            "x",
+            "y"
+          ],
+          "type": "object"
+        }
+      ]
+    },
+    "nonMotionHardware": {
+      "type": "null"
+    },
+    "ttsVolume": {
+      "oneOf": [
+        {
+          "maximum": 100,
+          "minimum": 0,
+          "type": "integer"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "level": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            },
+            "volume": {
+              "maximum": 100,
+              "minimum": 0,
+              "type": "integer"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    }
+  },
+  "compatibility": {
+    "maximumClient": 1,
+    "minimumClient": 1
+  },
+  "http": {
+    "POST /api/v1/robots/actions/poll": {
+      "maxResponseBytes": 65536,
+      "redirects": "rejected",
+      "success": "RemoteActionsPayload",
+      "successStatuses": [
+        200,
+        201
+      ]
+    },
+    "POST /api/v1/robots/claim": {
+      "maxResponseBytes": 131072,
+      "redirects": "rejected",
+      "request": "ClaimRequest",
+      "success": "ClaimResponse",
+      "successStatuses": [
+        200,
+        201
+      ]
+    },
+    "POST /api/v1/robots/heartbeat": {
+      "authentication": "robot bearer token",
+      "maxResponseBytes": 4096,
+      "redirects": "rejected",
+      "request": {
+        "additionalProperties": false,
+        "type": "object"
+      },
+      "successStatuses": [
+        200,
+        201
+      ]
+    },
+    "POST /api/v1/robots/logs": {
+      "authentication": "robot bearer token",
+      "maxResponseBytes": 4096,
+      "redirects": "rejected",
+      "request": {
+        "additionalProperties": false,
+        "properties": {
+          "clientId": {
+            "maxLength": 128,
+            "type": "string"
+          },
+          "lines": {
+            "items": {
+              "maxLength": 4096,
+              "type": "string"
+            },
+            "maxItems": 200,
+            "type": "array"
+          },
+          "sequenceEnd": {
+            "minimum": 1,
+            "type": "integer"
+          },
+          "sequenceStart": {
+            "minimum": 1,
+            "type": "integer"
+          }
+        },
+        "required": [
+          "clientId",
+          "sequenceStart",
+          "sequenceEnd",
+          "lines"
+        ],
+        "type": "object"
+      },
+      "successStatuses": [
+        200,
+        201,
+        204
+      ]
+    },
+    "POST /api/v1/robots/telemetry": {
+      "authentication": "robot bearer token",
+      "maxResponseBytes": 4096,
+      "redirects": "rejected",
+      "request": {
+        "additionalProperties": {
+          "oneOf": [
+            {
+              "type": [
+                "boolean",
+                "integer",
+                "number",
+                "string",
+                "null"
+              ]
+            },
+            {
+              "items": {
+                "maxLength": 64,
+                "type": "string"
+              },
+              "maxItems": 16,
+              "type": "array"
+            }
+          ]
+        },
+        "maxProperties": 32,
+        "type": "object"
+      },
+      "successStatuses": [
+        200,
+        201,
+        204
+      ]
+    }
+  },
+  "models": {
+    "ActionResult": {
+      "additionalProperties": false,
+      "properties": {
+        "actionId": {
+          "maxLength": 128,
+          "title": "Actionid",
+          "type": "string"
+        },
+        "code": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Code",
+          "type": "string"
+        },
+        "detail": {
+          "anyOf": [
+            {
+              "maxLength": 240,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Detail"
+        },
+        "occurredAtMs": {
+          "title": "Occurredatms",
+          "type": "integer"
+        },
+        "protocolVersion": {
+          "const": 1,
+          "default": 1,
+          "title": "Protocolversion",
+          "type": "integer"
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "completed",
+            "rejected",
+            "failed"
+          ],
+          "title": "State",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actionId",
+        "state",
+        "code",
+        "occurredAtMs"
+      ],
+      "title": "ActionResult",
+      "type": "object"
+    },
+    "ClaimRequest": {
+      "additionalProperties": false,
+      "properties": {
+        "capabilities": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Capabilities"
+        },
+        "claimToken": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Claimtoken",
+          "type": "string"
+        },
+        "deviceKey": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[0-9a-f]{64}$",
+          "title": "Devicekey",
+          "type": "string"
+        },
+        "publishCameraIds": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 8,
+          "title": "Publishcameraids",
+          "type": "array"
+        }
+      },
+      "required": [
+        "claimToken",
+        "deviceKey"
+      ],
+      "title": "ClaimRequest",
+      "type": "object"
+    },
+    "ClaimResponse": {
+      "$defs": {
+        "StreamPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "active_camera_id": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Camera Id"
+            },
+            "target_bitrate_kbps": {
+              "anyOf": [
+                {
+                  "maximum": 3000,
+                  "minimum": 150,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Target Bitrate Kbps"
+            }
+          },
+          "title": "StreamPolicy",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "ingress": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Ingress"
+        },
+        "livekit_url": {
+          "maxLength": 2048,
+          "minLength": 1,
+          "title": "Livekit Url",
+          "type": "string"
+        },
+        "protocol_version": {
+          "default": 1,
+          "title": "Protocol Version",
+          "type": "integer"
+        },
+        "publish_tokens": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "title": "Publish Tokens",
+          "type": "object"
+        },
+        "robot_auth_token": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Robot Auth Token",
+          "type": "string"
+        },
+        "robot_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Robot Id",
+          "type": "string"
+        },
+        "stream": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        },
+        "token": {
+          "maxLength": 16384,
+          "minLength": 1,
+          "title": "Token",
+          "type": "string"
+        }
+      },
+      "required": [
+        "token",
+        "robot_id",
+        "livekit_url",
+        "robot_auth_token"
+      ],
+      "title": "ClaimResponse",
+      "type": "object"
+    },
+    "ControlAck": {
+      "additionalProperties": false,
+      "properties": {
+        "commandId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Commandid",
+          "type": "string"
+        },
+        "message": {
+          "anyOf": [
+            {
+              "maxLength": 256,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Message"
+        },
+        "state": {
+          "enum": [
+            "accepted",
+            "completed",
+            "rejected",
+            "failed",
+            "superseded",
+            "cancelled_by_stop"
+          ],
+          "title": "State",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "ACK",
+            "NACK"
+          ],
+          "title": "Status",
+          "type": "string"
+        }
+      },
+      "required": [
+        "commandId",
+        "status",
+        "state"
+      ],
+      "title": "ControlAck",
+      "type": "object"
+    },
+    "ControlCommand": {
+      "additionalProperties": false,
+      "properties": {
+        "ack_required": {
+          "default": false,
+          "title": "Ack Required",
+          "type": "boolean"
+        },
+        "button_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Button Id"
+        },
+        "client_timestamp": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Client Timestamp"
+        },
+        "command": {
+          "maxLength": 64,
+          "minLength": 1,
+          "title": "Command",
+          "type": "string"
+        },
+        "command_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Command Id",
+          "type": "string"
+        },
+        "metadata": {
+          "anyOf": [
+            {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Metadata"
+        },
+        "timestamp": {
+          "title": "Timestamp",
+          "type": "number"
+        },
+        "user_id": {
+          "anyOf": [
+            {
+              "maxLength": 128,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "User Id"
+        },
+        "value": {
+          "default": null,
+          "title": "Value"
+        }
+      },
+      "required": [
+        "command_id",
+        "command",
+        "timestamp"
+      ],
+      "title": "ControlCommand",
+      "type": "object"
+    },
+    "OutcomeDeliveryAck": {
+      "additionalProperties": false,
+      "properties": {
+        "outcome_id": {
+          "maxLength": 64,
+          "minLength": 64,
+          "pattern": "^[a-f0-9]{64}$",
+          "title": "Outcome Id",
+          "type": "string"
+        }
+      },
+      "required": [
+        "outcome_id"
+      ],
+      "title": "OutcomeDeliveryAck",
+      "type": "object"
+    },
+    "RemoteAction": {
+      "additionalProperties": false,
+      "properties": {
+        "actionId": {
+          "maxLength": 128,
+          "minLength": 1,
+          "title": "Actionid",
+          "type": "string"
+        },
+        "durationSec": {
+          "anyOf": [
+            {
+              "maximum": 900,
+              "minimum": 10,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Durationsec"
+        },
+        "scopes": {
+          "items": {
+            "type": "string"
+          },
+          "maxItems": 32,
+          "title": "Scopes",
+          "type": "array"
+        },
+        "type": {
+          "enum": [
+            "restart_video",
+            "restart_control",
+            "reset_safety",
+            "restart_tts",
+            "restart_audio",
+            "update_client",
+            "set_log_stream"
+          ],
+          "title": "Type",
+          "type": "string"
+        }
+      },
+      "required": [
+        "actionId",
+        "type"
+      ],
+      "title": "RemoteAction",
+      "type": "object"
+    },
+    "RemoteActionsPayload": {
+      "$defs": {
+        "RemoteAction": {
+          "additionalProperties": false,
+          "properties": {
+            "actionId": {
+              "maxLength": 128,
+              "minLength": 1,
+              "title": "Actionid",
+              "type": "string"
+            },
+            "durationSec": {
+              "anyOf": [
+                {
+                  "maximum": 900,
+                  "minimum": 10,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Durationsec"
+            },
+            "scopes": {
+              "items": {
+                "type": "string"
+              },
+              "maxItems": 32,
+              "title": "Scopes",
+              "type": "array"
+            },
+            "type": {
+              "enum": [
+                "restart_video",
+                "restart_control",
+                "reset_safety",
+                "restart_tts",
+                "restart_audio",
+                "update_client",
+                "set_log_stream"
+              ],
+              "title": "Type",
+              "type": "string"
+            }
+          },
+          "required": [
+            "actionId",
+            "type"
+          ],
+          "title": "RemoteAction",
+          "type": "object"
+        },
+        "StreamPolicy": {
+          "additionalProperties": false,
+          "properties": {
+            "active_camera_id": {
+              "anyOf": [
+                {
+                  "maxLength": 32,
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Active Camera Id"
+            },
+            "target_bitrate_kbps": {
+              "anyOf": [
+                {
+                  "maximum": 3000,
+                  "minimum": 150,
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": null,
+              "title": "Target Bitrate Kbps"
+            }
+          },
+          "title": "StreamPolicy",
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "properties": {
+        "actions": {
+          "items": {
+            "$ref": "#/$defs/RemoteAction"
+          },
+          "maxItems": 32,
+          "title": "Actions",
+          "type": "array"
+        },
+        "stream": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/StreamPolicy"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
+        }
+      },
+      "title": "RemoteActionsPayload",
+      "type": "object"
+    },
+    "StreamPolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "active_camera_id": {
+          "anyOf": [
+            {
+              "maxLength": 32,
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Active Camera Id"
+        },
+        "target_bitrate_kbps": {
+          "anyOf": [
+            {
+              "maximum": 3000,
+              "minimum": 150,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Target Bitrate Kbps"
+        }
+      },
+      "title": "StreamPolicy",
+      "type": "object"
+    }
+  },
+  "operatorOutputs": {
+    "commissionJson": {
+      "properties": {
+        "buildId": {
+          "type": "string"
+        },
+        "clientVersion": {
+          "type": "string"
+        },
+        "mode": {
+          "enum": [
+            "online",
+            "offline"
+          ]
+        },
+        "passed": {
+          "type": "boolean"
+        },
+        "phases": {
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": 1
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "clientVersion",
+        "buildId",
+        "mode",
+        "passed",
+        "phases"
+      ],
+      "type": "object"
+    },
+    "doctorJson": {
+      "items": {
+        "additionalProperties": false,
+        "properties": {
+          "detail": {
+            "type": "string"
+          },
+          "fix": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "name": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "OK",
+              "WARN",
+              "ERROR"
+            ]
+          }
+        },
+        "required": [
+          "name",
+          "status",
+          "detail",
+          "fix"
+        ],
+        "type": "object"
+      },
+      "type": "array"
+    }
+  },
+  "protocolVersion": 1,
+  "schemaVersion": 1,
+  "websocket": {
+    "control:ack": "ControlAck",
+    "control:command": "ControlCommand",
+    "robot:action-result": "ActionResult",
+    "robot:actions": "RemoteActionsPayload",
+    "robot:outcome-ack": "OutcomeDeliveryAck"
+  }
+}

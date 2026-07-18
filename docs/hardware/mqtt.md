@@ -1,5 +1,8 @@
 # MQTT Publish
 
+> **Release status: community.** No current end-to-end HIL evidence exists. Production movement is
+> blocked.
+
 The `mqtt_pub` adapter publishes control commands to an MQTT broker. This is useful when:
 
 - Your motor firmware already subscribes to MQTT topics (common in ROS2 / Home Assistant setups)
@@ -10,18 +13,28 @@ The `mqtt_pub` adapter publishes control commands to an MQTT broker. This is use
 hardware:
   type: "mqtt_pub"
   options:
-    host: "localhost"
-    port: 1883
+    host: "broker.example.com"
+    port: 8883
     topic: "botparty/robot/command"
+    stop_topic: "botparty/robot/stop"
+    status_topic: "botparty/robot/status"
     payload_mode: "plain"    # or "json"
     stop_command: "stop"
+    qos: 1
+    tls: true
+    ca_file: "/etc/ssl/certs/ca-certificates.crt"
 ```
-
----
 
 ## How it works
 
-The adapter connects to an MQTT broker on startup and publishes each command to the configured topic. If the connection drops it attempts to reconnect automatically before each publish.
+The adapter waits for a successful broker connection and QoS acknowledgement. A disconnected
+broker, publish rejection or acknowledgement timeout is returned as a failed command. Remote
+brokers require certificate-verified TLS; publish topics cannot contain wildcards.
+
+MQTT delivery acknowledgement proves broker receipt, not that a motor controller has stopped.
+The adapter therefore remains motion-disabled in release metadata until a downstream controller,
+independent hardware cutoff and current HIL report prove the complete stop path. It is safe for
+non-moving integration tests before that evidence exists.
 
 ### Payload modes
 
@@ -43,8 +56,6 @@ stop
 {"command": "stop", "value": null}
 ```
 
----
-
 ## Options
 
 | Option | Type | Default | Description |
@@ -56,8 +67,12 @@ stop
 | `password` | string | `null` | MQTT password |
 | `payload_mode` | string | `plain` | `"plain"` or `"json"` |
 | `stop_command` | string | `stop` | Command published on emergency stop |
-
----
+| `stop_topic` | string | command topic | Dedicated stop topic |
+| `status_topic` | string | `botparty/robot/status` | Retained online/offline status topic |
+| `qos` | int | `1` | Broker acknowledgement level; only 1 or 2 |
+| `ack_timeout_sec` | float | `1.0` | Connection and publish acknowledgement deadline |
+| `tls` | bool | remote: `true` | TLS may be disabled only for a loopback broker |
+| `ca_file` | string | system trust | Optional CA bundle path |
 
 ## ROS2 bridge example
 
@@ -71,8 +86,6 @@ bridge:
     ros_type: std_msgs/String
     direction: mqtt_to_ros
 ```
-
----
 
 ## Dependencies
 

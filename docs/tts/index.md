@@ -15,8 +15,6 @@ tts:
   options: {}             # engine-specific options
 ```
 
----
-
 ## Available engines
 
 | Type | Quality | Requires | Internet |
@@ -28,11 +26,8 @@ tts:
 | [`polly`](polly.md) | High quality cloud | `boto3` + AWS account | Yes |
 | [`google_cloud`](google-cloud.md) | High quality cloud | `google-cloud-texttospeech` + GCP account | Yes |
 | `custom` | Your own Python class | Importable class in `tts.options.class` | Depends |
-| `espeak_loop` | Legacy alias for `espeak` | Same as `espeak` | No |
 | `cozmo_tts` | Speak through an attached Cozmo robot | `cozmo[camera]` | No |
 | `vector_tts` | Speak through an attached Vector robot | `anki_vector` | No |
-
----
 
 ## Playback device
 
@@ -55,8 +50,6 @@ Common values:
 | `plughw:1,0` | Card 1, device 0 (use `aplay -l` to find the right numbers) |
 | `hw:0,0` | Raw hardware access to card 0, device 0 |
 
----
-
 ## Filtering messages
 
 | Setting | Effect |
@@ -65,13 +58,9 @@ Common values:
 | `allow_anonymous: false` | Only speak messages from logged-in users |
 | `blocked_senders: ["troll1", "spammer"]` | Silence specific usernames permanently |
 
----
-
 ## Volume control
 
 The volume (0–100) is applied via `amixer` to the ALSA device at startup. You can also change it at runtime via TTS control commands such as `tts:volume`.
-
----
 
 ## none
 

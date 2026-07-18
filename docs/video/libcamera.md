@@ -8,8 +8,6 @@ video:
   options: {}
 ```
 
----
-
 ## How it works
 
 `libcamera-vid` captures raw YUV420 frames and pipes them directly into FFmpeg, which converts them to RGBA for LiveKit. This avoids the V4L2 compatibility layer and gives better performance on recent Pi firmware.
@@ -17,8 +15,6 @@ video:
 ```
 libcamera-vid -t 0 --codec yuv420 -o - | ffmpeg -f rawvideo ... pipe:1
 ```
-
----
 
 ## Requirements
 
@@ -37,8 +33,6 @@ libcamera-vid -t 5000 --width 1280 --height 720 --framerate 30 --codec yuv420 -o
 ```
 
 If `libcamera-hello` shows no cameras, check the ribbon cable connection and ensure the kernel overlay is configured in `/boot/firmware/config.txt` on current Raspberry Pi OS releases (for example `dtoverlay=imx219` for Camera Module v2).
-
----
 
 ## Options
 
@@ -60,8 +54,6 @@ camera:
 
 > The `camera.device` path is not used by this profile — libcamera selects the camera automatically.
 
----
-
 ## Camera Module versions
 
 | Module | Sensor | Max resolution | Overlay |
@@ -72,8 +64,6 @@ camera:
 | HQ | Sony IMX477 | 4056x3040 | `dtoverlay=imx477` |
 
 For streaming, 1280x720@30fps or 1920x1080@30fps are the most practical resolutions.
-
----
 
 ## Troubleshooting
 

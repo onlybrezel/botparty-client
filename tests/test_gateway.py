@@ -35,6 +35,8 @@ def _build_gateway(**kwargs: object) -> GatewayConnection:
         on_shutdown=kwargs.pop("on_shutdown", None),
         on_reconnected=kwargs.pop("on_reconnected", None),
         on_disconnected=kwargs.pop("on_disconnected", None),
+        on_connected=kwargs.pop("on_connected", None),
+        on_outcome_ack=kwargs.pop("on_outcome_ack", None),
     )
 
 
@@ -46,6 +48,70 @@ def test_resolve_ws_url_strips_api_prefix_and_uses_wss() -> None:
 def test_send_event_returns_false_when_disconnected() -> None:
     gateway = _build_gateway()
     assert asyncio.run(gateway.send_event("robot:heartbeat", {})) is False
+
+
+def test_send_event_and_close_handle_success_and_transport_failure() -> None:
+    class _Ws:
+        def __init__(self) -> None:
+            self.closed = False
+            self.fail = False
+
+        async def send_json(self, payload: dict[str, object]) -> None:
+            assert payload["event"] == "robot:heartbeat"
+            if self.fail:
+                raise RuntimeError("closed")
+
+        async def close(self) -> None:
+            self.closed = True
+
+    async def scenario() -> None:
+        gateway = _build_gateway()
+        ws = _Ws()
+        gateway._ws = ws  # type: ignore[assignment]
+        gateway._connected = True
+        assert await gateway.send_event("robot:heartbeat", {}) is True
+        ws.fail = True
+        assert await gateway.send_event("robot:heartbeat", {}) is False
+        await gateway.close()
+        assert ws.closed is True
+        assert gateway.connected is False
+
+    asyncio.run(scenario())
+
+
+@pytest.mark.parametrize("outcome", ["invalid", "failed", "error", "closed", "timeout"])
+def test_claim_acknowledgement_rejects_every_failure_mode(outcome: str) -> None:
+    class _Ws:
+        close_code = 4001
+
+        async def receive(self, timeout: float | None = None) -> SimpleNamespace:
+            del timeout
+            if outcome == "timeout":
+                raise asyncio.TimeoutError
+            if outcome == "invalid":
+                return SimpleNamespace(type=aiohttp.WSMsgType.TEXT, data="{")
+            if outcome == "failed":
+                return SimpleNamespace(
+                    type=aiohttp.WSMsgType.TEXT,
+                    data=json.dumps(
+                        {"event": "robot:claim", "data": {"success": False, "message": "no"}}
+                    ),
+                )
+            if outcome == "error":
+                return SimpleNamespace(
+                    type=aiohttp.WSMsgType.TEXT,
+                    data=json.dumps({"event": "error", "data": {"message": "denied"}}),
+                )
+            return SimpleNamespace(type=aiohttp.WSMsgType.CLOSED, data=None)
+
+        def exception(self) -> None:
+            return None
+
+    gateway = _build_gateway(running_fn=lambda: outcome != "invalid")
+    if outcome == "invalid":
+        gateway._running_fn = iter((True, False)).__next__
+    with pytest.raises(RuntimeError):
+        asyncio.run(gateway._await_robot_claim(_Ws()))  # type: ignore[arg-type]
 
 
 def test_handle_shutdown_message_updates_reconnect_state() -> None:
@@ -128,6 +194,24 @@ def test_handle_emergency_stop_message_invokes_callback() -> None:
     )
 
     assert calls == ["estop"]
+
+
+def test_handle_outcome_ack_validates_digest_before_callback() -> None:
+    calls: list[str] = []
+    gateway = _build_gateway(on_outcome_ack=calls.append)
+
+    asyncio.run(
+        gateway._handle_message(
+            json.dumps({"event": "robot:outcome-ack", "data": {"outcomeId": "a" * 64}})
+        )
+    )
+    asyncio.run(
+        gateway._handle_message(
+            json.dumps({"event": "robot:outcome-ack", "data": {"outcomeId": "invalid"}})
+        )
+    )
+
+    assert calls == ["a" * 64]
 
 
 def test_gateway_reuses_shared_session_provider_across_reconnects() -> None:

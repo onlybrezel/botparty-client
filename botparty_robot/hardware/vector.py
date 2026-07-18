@@ -4,13 +4,14 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
-_VECTOR_ROBOT = None
+_VECTOR_ROBOT: Any | None = None
 
 
-def get_vector_robot():
+def get_vector_robot() -> Any | None:
     return _VECTOR_ROBOT
 
 
@@ -30,10 +31,10 @@ class HardwareAdapter(BaseHardware):
     profile_name = "vector"
     description = "Anki Vector control adapter"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.anki_vector = optional_import("anki_vector", "anki_vector")
-        self.vector = None
+        self.vector: Any = None
         self.forward_speed = self.option_int("forward_speed", 75)
         self.turn_speed = self.option_int("turn_speed", 50)
         self.volume = self.option_int("volume", 100)
@@ -140,6 +141,7 @@ class HardwareAdapter(BaseHardware):
                 self.emergency_stop()
         except Exception as exc:
             self.log.warning("command failed: %s", exc)
+            raise
 
     def emergency_stop(self) -> None:
         if self.vector is not None:

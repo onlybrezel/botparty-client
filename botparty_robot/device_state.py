@@ -15,6 +15,143 @@ class DeviceStateError(RuntimeError):
     pass
 
 
+MAX_CONFIGURATION_BYTES = 1024 * 1024
+
+
+def validate_trusted_parent_chain(path: Path, *, owner_uid: int) -> None:
+    """Reject symlinked or writable ancestors of a trusted file."""
+
+    current = path.absolute().parent
+    while True:
+        try:
+            metadata = current.lstat()
+        except OSError as exc:
+            raise DeviceStateError(f"cannot inspect trusted parent directory: {current}") from exc
+        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISDIR(metadata.st_mode):
+            raise DeviceStateError(f"trusted parent must be a regular directory: {current}")
+        if metadata.st_uid not in {0, owner_uid} or stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise DeviceStateError(
+                f"trusted parent is not owner-controlled or is writable by group/world: {current}"
+            )
+        if current == current.parent:
+            return
+        current = current.parent
+
+
+def validate_trusted_code_file(path: Path, *, owner_uid: int) -> os.stat_result:
+    """Validate a Python/native module before a privileged production import."""
+
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise DeviceStateError(f"cannot inspect custom code file: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise DeviceStateError(f"custom code must be a regular non-symlink file: {path}")
+    if metadata.st_uid != owner_uid or stat.S_IMODE(metadata.st_mode) & 0o022:
+        raise DeviceStateError(
+            f"custom code must be owned by uid {owner_uid} and not group/world writable: {path}"
+        )
+    validate_trusted_parent_chain(path, owner_uid=owner_uid)
+    return metadata
+
+
+def validate_configuration_file(
+    path: Path, *, allow_public_example: bool = False
+) -> os.stat_result:
+    """Validate a development config or an installed root-managed config."""
+
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise DeviceStateError(f"cannot inspect configuration file: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise DeviceStateError(f"configuration must be a regular non-symlink file: {path}")
+    mode = stat.S_IMODE(metadata.st_mode)
+    production_mode = os.getenv("BOTPARTY_DEPLOYMENT_MODE", "").strip().lower() == "production"
+    service_owned = not production_mode and metadata.st_uid == os.geteuid() and mode == 0o600
+    public_example = (
+        allow_public_example
+        and path.name == "config.example.yaml"
+        and metadata.st_uid == os.geteuid()
+        and mode in {0o400, 0o440, 0o444, 0o600, 0o640, 0o644}
+    )
+    root_managed = metadata.st_uid == 0 and mode == 0o640
+    if root_managed:
+        validate_trusted_parent_chain(path, owner_uid=0)
+    if root_managed and os.geteuid() != 0:
+        root_managed = metadata.st_gid == os.getegid() and os.access(path, os.R_OK)
+    if not service_owned and not root_managed and not public_example:
+        raise DeviceStateError(
+            "production configuration must be root-owned mode 0640 with the service group"
+            if production_mode
+            else (
+                "configuration must be service-owned mode 0600 or root-owned mode 0640 "
+                "with the service group"
+            )
+        )
+    if metadata.st_size > MAX_CONFIGURATION_BYTES:
+        raise DeviceStateError("configuration exceeds 1 MiB")
+    return metadata
+
+
+def read_configuration_file(path: Path, *, allow_public_example: bool = False) -> bytes:
+    """Read a validated configuration from one descriptor without following symlinks."""
+
+    expected = validate_configuration_file(path, allow_public_example=allow_public_example)
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise DeviceStateError(f"cannot open configuration file: {path}") from exc
+    try:
+        opened = os.fstat(descriptor)
+        if (opened.st_dev, opened.st_ino) != (expected.st_dev, expected.st_ino):
+            raise DeviceStateError("configuration changed while it was opened")
+        chunks: list[bytes] = []
+        size = 0
+        while True:
+            chunk = os.read(descriptor, min(64 * 1024, MAX_CONFIGURATION_BYTES + 1 - size))
+            if not chunk:
+                break
+            size += len(chunk)
+            if size > MAX_CONFIGURATION_BYTES:
+                raise DeviceStateError("configuration exceeds 1 MiB")
+            chunks.append(chunk)
+        final = os.fstat(descriptor)
+        if (final.st_dev, final.st_ino, final.st_size) != (
+            expected.st_dev,
+            expected.st_ino,
+            expected.st_size,
+        ):
+            raise DeviceStateError("configuration changed while it was read")
+        return b"".join(chunks)
+    finally:
+        os.close(descriptor)
+
+
+def validate_private_regular_file(path: Path, *, exact_mode: int | None = None) -> os.stat_result:
+    """Validate ownership, type and private permissions for service-owned state."""
+
+    try:
+        metadata = path.lstat()
+    except OSError as exc:
+        raise DeviceStateError(f"cannot inspect private file: {path}") from exc
+    if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
+        raise DeviceStateError(f"private path must be a regular file, not a symlink: {path}")
+    if metadata.st_uid != os.geteuid():
+        raise DeviceStateError(
+            f"private file owner uid {metadata.st_uid} does not match service uid {os.geteuid()}"
+        )
+    mode = stat.S_IMODE(metadata.st_mode)
+    if exact_mode is not None and mode != exact_mode:
+        raise DeviceStateError(f"private file permissions must be {exact_mode:04o}: {path}")
+    if exact_mode is None and mode & 0o077:
+        raise DeviceStateError(f"private file must not allow group/world access: {path}")
+    return metadata
+
+
 def resolve_state_directory(config: StateConfig) -> Path:
     if config.directory is not None:
         return config.directory.expanduser().resolve()
@@ -28,18 +165,7 @@ def resolve_state_directory(config: StateConfig) -> Path:
 
 
 def _validate_key_file(path: Path) -> None:
-    try:
-        file_stat = path.lstat()
-    except OSError as exc:
-        raise DeviceStateError(f"cannot inspect device key file: {path}") from exc
-    if stat.S_ISLNK(file_stat.st_mode) or not stat.S_ISREG(file_stat.st_mode):
-        raise DeviceStateError(f"device key path must be a regular file, not a symlink: {path}")
-    if file_stat.st_uid != os.geteuid():
-        raise DeviceStateError(
-            f"device key owner uid {file_stat.st_uid} does not match service uid {os.geteuid()}"
-        )
-    if stat.S_IMODE(file_stat.st_mode) != 0o600:
-        raise DeviceStateError(f"device key permissions must be 0600: {path}")
+    validate_private_regular_file(path, exact_mode=0o600)
 
 
 def _read_key(path: Path) -> str:

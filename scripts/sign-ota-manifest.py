@@ -8,6 +8,7 @@ import base64
 import hashlib
 import json
 import os
+import platform
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -15,7 +16,7 @@ from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 
 
 def sign_manifest(
-    bundle: Path, bundle_url: str, version: str, encoded_key: str
+    bundle: Path, bundle_url: str, version: str, encoded_key: str, arch: str | None = None
 ) -> dict[str, object]:
     parsed = urlsplit(bundle_url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
@@ -24,8 +25,18 @@ def sign_manifest(
     if len(key_bytes) != 32:
         raise ValueError("release key must be a base64-encoded 32-byte Ed25519 private key")
     content = bundle.read_bytes()
+    normalized_arch = arch or {
+        "x86_64": "amd64",
+        "aarch64": "arm64",
+        "armv7l": "armv7",
+    }.get(platform.machine().lower(), platform.machine().lower())
+    if normalized_arch not in {"amd64", "arm64", "armv7"}:
+        raise ValueError("unsupported OTA architecture")
     payload: dict[str, object] = {
+        "schemaVersion": 2,
         "version": version,
+        "platform": "linux",
+        "arch": normalized_arch,
         "bundleUrl": bundle_url,
         "size": len(content),
         "sha256": hashlib.sha256(content).hexdigest(),
@@ -42,13 +53,14 @@ def main() -> int:
     parser.add_argument("--bundle", type=Path, required=True)
     parser.add_argument("--bundle-url", required=True)
     parser.add_argument("--version", required=True)
+    parser.add_argument("--arch", choices=("amd64", "arm64", "armv7"))
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--private-key-env", default="OTA_ED25519_PRIVATE_KEY")
     args = parser.parse_args()
     encoded_key = os.environ.get(args.private_key_env, "")
     if not encoded_key:
         parser.error(f"environment variable {args.private_key_env} is required")
-    manifest = sign_manifest(args.bundle, args.bundle_url, args.version, encoded_key)
+    manifest = sign_manifest(args.bundle, args.bundle_url, args.version, encoded_key, args.arch)
     args.output.write_text(
         json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n",
         encoding="utf-8",

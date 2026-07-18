@@ -1,0 +1,41 @@
+name: Promote canary release
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing prerelease tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  attestations: read
+  id-token: write
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    environment: production-promotion
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download canary evidence
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release download "${{ inputs.tag }}" --pattern canary-report.json --dir evidence
+      - name: Verify canary provenance and contents
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh attestation verify evidence/canary-report.json --repo "$GITHUB_REPOSITORY"
+          release_commit="$(git rev-list -n 1 "${{ inputs.tag }}")"
+          python scripts/check-canary-report.py evidence/canary-report.json \
+            --tag "${{ inputs.tag }}" --commit "$release_commit"
+      - name: Promote the immutable release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${{ inputs.tag }}" --prerelease=false --latest

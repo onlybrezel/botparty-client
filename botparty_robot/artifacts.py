@@ -10,22 +10,58 @@ import os
 import platform
 import shutil
 import stat
-import subprocess
 import sys
 import tempfile
 import urllib.request
 from dataclasses import dataclass
 from pathlib import Path
+from types import TracebackType
 from urllib.parse import urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
 
+from .process_group import run_sandboxed
+
 MAX_MANIFEST_BYTES = 64 * 1024
 MAX_STREAMER_BYTES = 100 * 1024 * 1024
+_ELF_MACHINE_BY_ARCH = {"amd64": 62, "arm64": 183, "armv7": 40}
 
 
 class ArtifactVerificationError(RuntimeError):
     pass
+
+
+@dataclass(slots=True)
+class VerifiedExecutable:
+    """An open, verified native executable whose identity cannot be path-swapped."""
+
+    path: Path
+    descriptor: int
+    digest: str
+
+    @property
+    def exec_path(self) -> str:
+        return f"/proc/self/fd/{self.descriptor}"
+
+    @property
+    def pass_fds(self) -> tuple[int]:
+        return (self.descriptor,)
+
+    def close(self) -> None:
+        if self.descriptor >= 0:
+            os.close(self.descriptor)
+            self.descriptor = -1
+
+    def __enter__(self) -> VerifiedExecutable:
+        return self
+
+    def __exit__(
+        self,
+        _exc_type: type[BaseException] | None,
+        _exc: BaseException | None,
+        _traceback: TracebackType | None,
+    ) -> None:
+        self.close()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,15 +192,84 @@ def _read_url(url: str, limit: int, timeout: float) -> bytes:
     return data
 
 
-def load_public_key(path: Path) -> bytes:
+def _trusted_owner_uid(explicit: int | None = None) -> int:
+    if explicit is not None:
+        return explicit
+    configured = os.getenv("BOTPARTY_TRUSTED_ARTIFACT_OWNER_UID", "").strip()
+    if configured:
+        try:
+            owner = int(configured)
+        except ValueError as exc:
+            raise ArtifactVerificationError(
+                "BOTPARTY_TRUSTED_ARTIFACT_OWNER_UID must be a numeric uid"
+            ) from exc
+        if owner < 0:
+            raise ArtifactVerificationError("trusted artifact owner uid must not be negative")
+        return owner
+    if os.getenv("BOTPARTY_STREAMER_DIR", "").strip():
+        return 0
+    return os.geteuid()
+
+
+def _open_trusted_regular_file(path: Path, owner_uid: int, purpose: str) -> int:
     try:
-        metadata = path.lstat()
-        if stat.S_ISLNK(metadata.st_mode) or not stat.S_ISREG(metadata.st_mode):
-            raise OSError("public key is not a regular file")
-        value = path.read_text(encoding="ascii").strip()
+        parent = path.parent.lstat()
+    except OSError as exc:
+        raise ArtifactVerificationError(f"could not inspect trusted {purpose} directory") from exc
+    if (
+        not stat.S_ISDIR(parent.st_mode)
+        or stat.S_ISLNK(parent.st_mode)
+        or parent.st_uid != owner_uid
+        or stat.S_IMODE(parent.st_mode) & 0o022
+    ):
+        raise ArtifactVerificationError(
+            f"{purpose} directory must be owned by uid {owner_uid} and not group/world writable"
+        )
+    flags = os.O_RDONLY | os.O_CLOEXEC
+    if hasattr(os, "O_NOFOLLOW"):
+        flags |= os.O_NOFOLLOW
+    try:
+        descriptor = os.open(path, flags)
+    except OSError as exc:
+        raise ArtifactVerificationError(f"could not open trusted {purpose}") from exc
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_ISREG(metadata.st_mode):
+            raise ArtifactVerificationError(f"{purpose} must be a regular non-symlink file")
+        if metadata.st_uid != owner_uid or stat.S_IMODE(metadata.st_mode) & 0o022:
+            raise ArtifactVerificationError(
+                f"{purpose} must be owned by uid {owner_uid} and not group/world writable"
+            )
+        return descriptor
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def _read_limited_descriptor(descriptor: int, limit: int, purpose: str) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        chunk = os.read(descriptor, min(1024 * 1024, limit + 1 - total))
+        if not chunk:
+            return b"".join(chunks)
+        chunks.append(chunk)
+        total += len(chunk)
+        if total > limit:
+            raise ArtifactVerificationError(f"{purpose} exceeds its size limit")
+
+
+def load_public_key(path: Path, *, trusted_owner_uid: int | None = None) -> bytes:
+    owner_uid = _trusted_owner_uid(trusted_owner_uid)
+    descriptor = _open_trusted_regular_file(path, owner_uid, "Ed25519 public key")
+    try:
+        raw = _read_limited_descriptor(descriptor, 4096, "Ed25519 public key")
+        value = raw.decode("ascii").strip()
         key = base64.b64decode(value, validate=True)
     except (OSError, UnicodeError, ValueError) as exc:
         raise ArtifactVerificationError("could not read the Ed25519 public key") from exc
+    finally:
+        os.close(descriptor)
     if len(key) != 32:
         raise ArtifactVerificationError("Ed25519 public key must contain exactly 32 bytes")
     return key
@@ -181,6 +286,108 @@ def _atomic_write(path: Path, value: str, encoding: str) -> None:
         os.replace(temporary, path)
     finally:
         temporary.unlink(missing_ok=True)
+
+
+def _read_expected_digest(binary_path: Path, owner_uid: int, expected_sha256: str | None) -> str:
+    expected = (expected_sha256 or "").strip().lower()
+    if expected:
+        return expected
+    sidecar = binary_path.parent / "botparty-streamer.sha256"
+    descriptor = _open_trusted_regular_file(sidecar, owner_uid, "streamer digest sidecar")
+    try:
+        raw = _read_limited_descriptor(descriptor, 4096, "streamer digest sidecar")
+        return raw.decode("ascii").strip().split()[0].lower()
+    except (UnicodeError, IndexError) as exc:
+        raise ArtifactVerificationError("streamer digest sidecar is invalid") from exc
+    finally:
+        os.close(descriptor)
+
+
+def _validate_elf_header(descriptor: int) -> None:
+    header = os.pread(descriptor, 64, 0)
+    if len(header) < 20 or header[:4] != b"\x7fELF":
+        raise ArtifactVerificationError("streamer binary is not an ELF executable")
+    byte_order = header[5]
+    if byte_order == 1:
+        machine = int.from_bytes(header[18:20], "little")
+    elif byte_order == 2:
+        machine = int.from_bytes(header[18:20], "big")
+    else:
+        raise ArtifactVerificationError("streamer ELF byte order is invalid")
+    expected_machine = _ELF_MACHINE_BY_ARCH[normalized_arch()]
+    if machine != expected_machine:
+        raise ArtifactVerificationError("streamer ELF architecture does not match this host")
+
+
+def open_verified_streamer(
+    binary_path: Path,
+    expected_sha256: str | None = None,
+    *,
+    trusted_owner_uid: int | None = None,
+) -> VerifiedExecutable:
+    """Open and verify a native streamer, retaining the verified inode for exec."""
+
+    owner_uid = _trusted_owner_uid(trusted_owner_uid)
+    try:
+        descriptor = _open_trusted_regular_file(binary_path, owner_uid, "streamer binary")
+    except ArtifactVerificationError as exc:
+        if not binary_path.exists():
+            raise ArtifactVerificationError("streamer binary is missing") from exc
+        raise
+    try:
+        metadata = os.fstat(descriptor)
+        if not stat.S_IMODE(metadata.st_mode) & 0o111:
+            raise ArtifactVerificationError("streamer binary is not executable")
+        if metadata.st_size <= 0 or metadata.st_size > MAX_STREAMER_BYTES:
+            raise ArtifactVerificationError("streamer binary size is outside the allowed range")
+        _validate_elf_header(descriptor)
+        expected = _read_expected_digest(binary_path, owner_uid, expected_sha256)
+        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
+            raise ArtifactVerificationError("streamer expected SHA-256 is invalid")
+
+        digest = hashlib.sha256()
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        total = 0
+        while True:
+            chunk = os.read(descriptor, 1024 * 1024)
+            if not chunk:
+                break
+            total += len(chunk)
+            if total > MAX_STREAMER_BYTES:
+                raise ArtifactVerificationError("streamer binary exceeds its size limit")
+            digest.update(chunk)
+        final_metadata = os.fstat(descriptor)
+        if (
+            final_metadata.st_dev != metadata.st_dev
+            or final_metadata.st_ino != metadata.st_ino
+            or final_metadata.st_size != metadata.st_size
+            or total != metadata.st_size
+        ):
+            raise ArtifactVerificationError("streamer binary changed during verification")
+        actual = digest.hexdigest()
+        if actual != expected:
+            raise ArtifactVerificationError("streamer binary SHA-256 verification failed")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        return VerifiedExecutable(binary_path, descriptor, actual)
+    except Exception:
+        os.close(descriptor)
+        raise
+
+
+def verify_installed_streamer(
+    binary_path: Path,
+    expected_sha256: str | None = None,
+    *,
+    trusted_owner_uid: int | None = None,
+) -> str:
+    """Verify an installed native streamer without executing it."""
+
+    with open_verified_streamer(
+        binary_path,
+        expected_sha256,
+        trusted_owner_uid=trusted_owner_uid,
+    ) as verified:
+        return verified.digest
 
 
 def install_streamer(
@@ -256,7 +463,7 @@ def install_streamer_manifest(
         os.fsync(handle.fileno())
     try:
         temporary.chmod(stat.S_IRUSR | stat.S_IWUSR | stat.S_IXUSR | stat.S_IRGRP | stat.S_IXGRP)
-        version_smoke = subprocess.run(
+        version_smoke = run_sandboxed(
             [str(temporary), "--version"],
             capture_output=True,
             text=True,
@@ -270,7 +477,7 @@ def install_streamer_manifest(
             ) != manifest.version.lstrip("v"):
                 raise ArtifactVerificationError("streamer version smoke test failed")
         else:
-            help_smoke = subprocess.run(
+            help_smoke = run_sandboxed(
                 [str(temporary), "--help"],
                 capture_output=True,
                 check=False,

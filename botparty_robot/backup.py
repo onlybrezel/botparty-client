@@ -21,9 +21,20 @@ from pydantic import ValidationError
 
 from . import __version__
 from .config import RobotConfig
+from .device_state import (
+    DeviceStateError,
+    read_configuration_file,
+    validate_configuration_file,
+    validate_private_regular_file,
+)
 
 BACKUP_HEADER = b"BOTPARTY-BACKUP-V1\0"
-MAX_BACKUP_BYTES = 16 * 1024 * 1024
+MAX_BACKUP_PLAINTEXT_BYTES = 16 * 1024 * 1024
+AEAD_NONCE_BYTES = 12
+AEAD_TAG_BYTES = 16
+MAX_BACKUP_CIPHERTEXT_BYTES = (
+    len(BACKUP_HEADER) + AEAD_NONCE_BYTES + AEAD_TAG_BYTES + MAX_BACKUP_PLAINTEXT_BYTES
+)
 
 
 class BackupError(RuntimeError):
@@ -77,9 +88,11 @@ def create_encrypted_backup(
     memory = io.BytesIO()
     files = ["config.yaml", "device-key"]
     try:
+        validate_configuration_file(config_path)
+        validate_private_regular_file(device_key_path, exact_mode=0o600)
         device_key = device_key_path.read_bytes()
-    except OSError as exc:
-        raise BackupError("could not read device key for backup") from exc
+    except (OSError, DeviceStateError) as exc:
+        raise BackupError("config and device key do not satisfy their ownership policy") from exc
     manifest: dict[str, object] = {
         "schemaVersion": 1,
         "clientVersion": __version__,
@@ -90,12 +103,18 @@ def create_encrypted_backup(
     }
     custom_path = config_path.parent / "hardware_custom.py"
     if custom_path.is_file():
+        try:
+            validate_configuration_file(custom_path)
+        except DeviceStateError as exc:
+            raise BackupError(
+                "custom adapter does not satisfy the configuration ownership policy"
+            ) from exc
         files.append("hardware_custom.py")
 
     try:
         with zipfile.ZipFile(memory, "w", compression=zipfile.ZIP_DEFLATED) as archive:
             archive.writestr("manifest.json", json.dumps(manifest, sort_keys=True))
-            archive.writestr("config.yaml", config_path.read_bytes())
+            archive.writestr("config.yaml", read_configuration_file(config_path))
             archive.writestr("device-key", device_key)
             if custom_path.is_file():
                 archive.writestr("hardware_custom.py", custom_path.read_bytes())
@@ -103,7 +122,7 @@ def create_encrypted_backup(
         raise BackupError("could not read device state for backup") from exc
 
     plaintext = memory.getvalue()
-    if len(plaintext) > MAX_BACKUP_BYTES:
+    if len(plaintext) > MAX_BACKUP_PLAINTEXT_BYTES:
         raise BackupError("device backup exceeds 16 MiB")
     nonce = os.urandom(12)
     ciphertext = AESGCM(key).encrypt(nonce, plaintext, BACKUP_HEADER)
@@ -127,7 +146,7 @@ def read_encrypted_backup(input_path: Path, key_path: Path) -> dict[str, bytes]:
         encrypted = input_path.read_bytes()
     except OSError as exc:
         raise BackupError(f"cannot read backup: {input_path}") from exc
-    if len(encrypted) > MAX_BACKUP_BYTES or not encrypted.startswith(BACKUP_HEADER):
+    if len(encrypted) > MAX_BACKUP_CIPHERTEXT_BYTES or not encrypted.startswith(BACKUP_HEADER):
         raise BackupError("backup header or size is invalid")
     nonce_start = len(BACKUP_HEADER)
     nonce = encrypted[nonce_start : nonce_start + 12]
@@ -151,10 +170,10 @@ def read_encrypted_backup(input_path: Path, key_path: Path) -> dict[str, bytes]:
             expanded_size = 0
             for name in archive.namelist():
                 info = archive.getinfo(name)
-                if info.file_size > MAX_BACKUP_BYTES:
+                if info.file_size > MAX_BACKUP_PLAINTEXT_BYTES:
                     raise BackupError("backup entry exceeds its size limit")
                 expanded_size += info.file_size
-                if expanded_size > MAX_BACKUP_BYTES:
+                if expanded_size > MAX_BACKUP_PLAINTEXT_BYTES:
                     raise BackupError("backup payload expands beyond its size limit")
                 result[name] = archive.read(name)
     except (zipfile.BadZipFile, KeyError) as exc:
@@ -223,27 +242,47 @@ def restore_encrypted_backup(
         except (SyntaxError, ValueError) as exc:
             raise BackupError("backup custom adapter is not valid Python") from exc
 
+    def target_policy(target: Path, *, static_policy: bool) -> tuple[int, int, int]:
+        if target.is_file() and not target.is_symlink():
+            metadata = target.stat()
+            return metadata.st_uid, metadata.st_gid, stat.S_IMODE(metadata.st_mode)
+        parent = target.parent.stat()
+        if static_policy and os.geteuid() == 0:
+            return 0, parent.st_gid, 0o640
+        return parent.st_uid, parent.st_gid, 0o600
+
+    config_uid, config_gid, config_mode = target_policy(config_path, static_policy=True)
+    device_uid, device_gid, device_mode = target_policy(device_key_path, static_policy=False)
     targets = {
-        config_path: (files["config.yaml"], 0o600),
-        device_key_path: (files["device-key"], 0o600),
+        config_path: (files["config.yaml"], config_mode, config_uid, config_gid),
+        device_key_path: (files["device-key"], device_mode, device_uid, device_gid),
     }
     if "hardware_custom.py" in files:
+        custom_path = config_path.parent / "hardware_custom.py"
+        custom_uid, custom_gid, custom_mode = target_policy(custom_path, static_policy=True)
         targets[config_path.parent / "hardware_custom.py"] = (
             files["hardware_custom.py"],
-            0o600,
+            custom_mode,
+            custom_uid,
+            custom_gid,
         )
 
     temporaries: list[tuple[Path, Path]] = []
-    previous: dict[Path, tuple[bytes, int] | None] = {}
+    previous: dict[Path, tuple[bytes, int, int, int] | None] = {}
     replaced: list[Path] = []
     try:
-        for target, (content, mode) in targets.items():
+        for target, (content, mode, owner_uid, group_gid) in targets.items():
             target.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
-            previous[target] = (
-                (target.read_bytes(), stat.S_IMODE(target.stat().st_mode))
-                if target.is_file() and not target.is_symlink()
-                else None
-            )
+            if target.is_file() and not target.is_symlink():
+                metadata = target.stat()
+                previous[target] = (
+                    target.read_bytes(),
+                    stat.S_IMODE(metadata.st_mode),
+                    metadata.st_uid,
+                    metadata.st_gid,
+                )
+            else:
+                previous[target] = None
             with tempfile.NamedTemporaryFile(
                 dir=target.parent,
                 prefix=f".{target.name}.",
@@ -253,13 +292,15 @@ def restore_encrypted_backup(
                 handle.write(content)
                 handle.flush()
                 os.fsync(handle.fileno())
+                if os.geteuid() == 0:
+                    os.fchown(handle.fileno(), owner_uid, group_gid)
             temporary.chmod(mode)
             temporaries.append((temporary, target))
         for temporary, target in temporaries:
             old = previous[target]
             if old is not None:
                 backup = target.with_suffix(target.suffix + ".before-restore")
-                _write_private_file(backup, old[0], 0o600)
+                _write_private_file(backup, old[0], 0o600, old[2], old[3])
             os.replace(temporary, target)
             replaced.append(target)
     except Exception:
@@ -268,14 +309,20 @@ def restore_encrypted_backup(
             if old is None:
                 target.unlink(missing_ok=True)
             else:
-                _write_private_file(target, old[0], old[1])
+                _write_private_file(target, old[0], old[1], old[2], old[3])
         raise
     finally:
         for temporary, _target in temporaries:
             temporary.unlink(missing_ok=True)
 
 
-def _write_private_file(target: Path, content: bytes, mode: int) -> None:
+def _write_private_file(
+    target: Path,
+    content: bytes,
+    mode: int,
+    owner_uid: int | None = None,
+    group_gid: int | None = None,
+) -> None:
     with tempfile.NamedTemporaryFile(
         dir=target.parent,
         prefix=f".{target.name}.",
@@ -285,6 +332,8 @@ def _write_private_file(target: Path, content: bytes, mode: int) -> None:
         handle.write(content)
         handle.flush()
         os.fsync(handle.fileno())
+        if os.geteuid() == 0 and owner_uid is not None and group_gid is not None:
+            os.fchown(handle.fileno(), owner_uid, group_gid)
     try:
         temporary.chmod(mode)
         os.replace(temporary, target)

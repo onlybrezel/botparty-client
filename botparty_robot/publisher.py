@@ -13,6 +13,9 @@ from collections.abc import Callable
 from livekit import rtc
 
 from .config import RobotConfig
+from .process_group import terminate_async_process
+from .redaction import redact_text
+from .video.base import BaseVideoProfile
 
 logger = logging.getLogger("botparty.camera")
 
@@ -21,7 +24,7 @@ class LiveKitPublisherManager:
     def __init__(
         self,
         config: RobotConfig,
-        video_profile,
+        video_profile: BaseVideoProfile,
         *,
         token_fn: Callable[[], str | None],
         audio_token_fn: Callable[[], str | None],
@@ -36,9 +39,10 @@ class LiveKitPublisherManager:
         self._audio_token_fn = audio_token_fn
         self._livekit_url_fn = livekit_url_fn
         self._audio_enabled = audio_enabled
-        self._audio_task: asyncio.Task | None = None
+        self._audio_task: asyncio.Task[None] | None = None
         self._audio_room: rtc.Room | None = None
         self._frame_count = 0
+        self._run_last_raw_frame_count = 0
         self._last_reported_frame_count = 0
         self._last_reported_at = 0.0
         self._started_at = 0.0
@@ -53,10 +57,19 @@ class LiveKitPublisherManager:
         return self._frame_count
 
     @property
-    def audio_task(self) -> asyncio.Task | None:
+    def video_track_published(self) -> bool:
+        return any(track in {"camera", "video"} for track in self._published_tracks)
+
+    @property
+    def audio_task(self) -> asyncio.Task[None] | None:
         return self._audio_task
 
-    def restart_audio(self, room, running_fn):
+    def restart_audio(
+        self,
+        room: rtc.Room,
+        running_fn: Callable[[], bool],
+    ) -> asyncio.Task[None] | None:
+        del room
         if (
             not self._audio_enabled
             or not self.video_profile.has_audio()
@@ -71,11 +84,12 @@ class LiveKitPublisherManager:
 
     async def run(
         self,
-        room,
+        room: rtc.Room | None,
         target_bitrate_kbps: int | None,
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
+        del room
         audio_fallback_attempted = False
         codec_fallback_attempted = False
         while True:
@@ -130,6 +144,7 @@ class LiveKitPublisherManager:
         self._ffmpeg_progress.clear()
         self._recent_log_lines.clear()
         self._started_at = time.monotonic()
+        self._run_last_raw_frame_count = 0
         self._last_reported_at = self._started_at
         self._last_reported_frame_count = self._frame_count
 
@@ -220,16 +235,9 @@ class LiveKitPublisherManager:
                     with contextlib.suppress(asyncio.CancelledError):
                         await log_task
             if proc is not None:
-                with contextlib.suppress(ProcessLookupError):
-                    proc.terminate()
-                try:
-                    await asyncio.wait_for(proc.wait(), timeout=5)
-                except asyncio.TimeoutError:
+                terminated = await terminate_async_process(proc)
+                if not terminated:
                     logger.warning("publisher did not exit after SIGTERM; killing")
-                    with contextlib.suppress(ProcessLookupError):
-                        proc.kill()
-                    with contextlib.suppress(asyncio.TimeoutError):
-                        await asyncio.wait_for(proc.wait(), timeout=2)
             if audio_task is not None and not audio_task.done():
                 audio_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -297,14 +305,47 @@ class LiveKitPublisherManager:
         )
         return not any(marker in message for marker in non_retryable)
 
-    async def _drain_logs(self, stream) -> None:
+    async def _drain_logs(self, stream: asyncio.StreamReader) -> None:
+        if not hasattr(stream, "read"):
+            while True:
+                line = await stream.readline()
+                if not line:
+                    return
+                message = self._sanitize_log_line(bytes(line[: 16 * 1024]))
+                if message:
+                    self._handle_log_line(message)
+        buffer = bytearray()
         while True:
-            line = await stream.readline()
-            if not line:
+            chunk = await stream.read(4096)
+            if not chunk:
+                if buffer:
+                    self._handle_log_line(self._sanitize_log_line(bytes(buffer)))
                 return
-            message = line.decode("utf-8", errors="replace").strip()
-            if message:
-                self._handle_log_line(message)
+            buffer.extend(chunk)
+            while b"\n" in buffer:
+                raw, _, remaining = buffer.partition(b"\n")
+                buffer = bytearray(remaining)
+                message = self._sanitize_log_line(bytes(raw))
+                if message:
+                    self._handle_log_line(message)
+            if len(buffer) > 16 * 1024:
+                self._handle_log_line(self._sanitize_log_line(bytes(buffer[: 16 * 1024])))
+                buffer.clear()
+
+    def _sanitize_log_line(self, raw: bytes) -> str:
+        literals = tuple(
+            value
+            for value in (
+                self._token_fn(),
+                self._audio_token_fn(),
+                self.config.server.claim_token_value(),
+                self.config.server.robot_auth_token_value(),
+                *self.config.diagnostics.redaction_literals,
+            )
+            if isinstance(value, str) and value
+        )
+        decoded = raw.decode("utf-8", errors="replace").replace("\r", " ").strip()
+        return redact_text(decoded[: 16 * 1024], literals)[:4096]
 
     def _handle_log_line(self, message: str) -> None:
         self._recent_log_lines.append(message)
@@ -314,14 +355,14 @@ class LiveKitPublisherManager:
             self._ffmpeg_progress[key] = value
             if key == "frame":
                 with contextlib.suppress(ValueError):
-                    self._frame_count = max(self._frame_count, int(value))
+                    self._record_raw_frame_count(int(value))
             if key == "progress":
                 self._log_ffmpeg_progress(value)
             return
 
         parsed_frame = self._parse_ffmpeg_progress_int(message, "frame")
         if parsed_frame is not None:
-            self._frame_count = max(self._frame_count, parsed_frame)
+            self._record_raw_frame_count(parsed_frame)
             return
 
         parsed_fps = self._parse_ffmpeg_progress_float(message, "fps")
@@ -352,9 +393,9 @@ class LiveKitPublisherManager:
             r'published track\s+\{"name":\s*"[^"]*",\s*"source":\s*"([^"]+)"', message
         )
         if json_track_match:
-            source = json_track_match.group(1)
+            source = json_track_match.group(1).lower()
             self._published_tracks.append(source)
-            logger.info("Direct track published %s: %s", self.camera_id, source.lower())
+            logger.info("Direct track published %s: %s", self.camera_id, source)
             return
 
         # Go slog messages that are noisy internal SDK events → suppress to debug
@@ -452,6 +493,16 @@ class LiveKitPublisherManager:
         if not match:
             return None
         return float(match.group(1))
+
+    def _record_raw_frame_count(self, raw_count: int) -> None:
+        if raw_count < 0:
+            return
+        if raw_count < self._run_last_raw_frame_count:
+            self._run_last_raw_frame_count = 0
+        delta = raw_count - self._run_last_raw_frame_count
+        if delta > 0:
+            self._frame_count += delta
+            self._run_last_raw_frame_count = raw_count
 
     def _log_ffmpeg_progress(self, progress_value: str) -> None:
         frame_value = self._ffmpeg_progress.get("frame")

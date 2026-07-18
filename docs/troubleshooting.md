@@ -1,7 +1,5 @@
 # Troubleshooting
 
----
-
 ## Connection issues
 
 ### "claim_token not set" or "PASTE_YOUR_CLAIM_TOKEN_HERE"
@@ -32,8 +30,6 @@ Usually a bad claim token (401) or a firewall blocking the WebSocket port. Enabl
 ```bash
 BOTPARTY_LOG_LEVEL=debug python -m botparty_robot
 ```
-
----
 
 ## Camera / Video issues
 
@@ -83,14 +79,19 @@ Verify: `libcamera-hello --list-cameras`
 
 ### "Device or resource busy" on /dev/video0
 
-Another process has the camera locked:
+Keep the robot safety-latched and identify the owner before stopping anything:
 
 ```bash
-fuser /dev/video0
-kill <PID>
+sudo systemctl stop botparty-robot.service
+sudo fuser -v /dev/video0
+ps -fp <verified-PID>
+sudo kill -TERM <verified-PID>
+sudo fuser -v /dev/video0
 ```
 
----
+Use `KILL` only after a verified non-client process ignores `TERM`; then inspect its cleanup and
+restart policy before restarting BotParty. Confirm the camera is free, run `doctor`, start the
+service and reset safety only with the area clear.
 
 ## Hardware / Motor issues
 
@@ -137,8 +138,6 @@ Enable I2C if not visible:
 sudo raspi-config   # Interface Options → I2C → Enable
 ```
 
----
-
 ## TTS / Audio issues
 
 ### No sound from speaker
@@ -175,8 +174,6 @@ tts:
   delay_ms: 200
 ```
 
----
-
 ## Performance
 
 ### High CPU usage on Raspberry Pi
@@ -185,15 +182,14 @@ tts:
 2. Use MJPG format at 720p instead of YUYV
 3. Reduce FPS to 15–20
 4. Disable TTS if not needed
-5. Run overclocked if thermals allow (Pi 4: 2000 MHz)
+5. Check throttling, cooling, power supply and the board vendor's supported operating limits.
+   Do not use overclocking as a production recovery step.
 
 ### Robot commands feel laggy
 
 - Check your internet connection speed from the Pi: `speedtest-cli`
 - Check `/health` for stale commands, queue drops, control reconnects and safety stops.
 - Keep CPU and memory within the device-class budget in [Performance](performance.md).
-
----
 
 ## Logs
 

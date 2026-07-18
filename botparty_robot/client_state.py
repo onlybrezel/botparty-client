@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import re
 import threading
 import time
 from collections import deque
@@ -13,6 +12,8 @@ from dataclasses import dataclass, field
 from typing import Any, Protocol
 
 from .config import RobotConfig
+from .redaction import redact_text
+from .video.base import BaseVideoProfile
 
 logger = logging.getLogger("botparty.client")
 _SUPPRESS_LIVEKIT_NOISE_UNTIL = 0.0
@@ -32,13 +33,30 @@ LOCAL_GIT_STATUS_IGNORE_PATHS = (
 
 
 class MediaManager(Protocol):
+    video_profile: BaseVideoProfile
+
     @property
     def frame_count(self) -> int: ...
 
     @property
+    def video_track_published(self) -> bool: ...
+
+    @property
     def audio_task(self) -> asyncio.Task[None] | None: ...
 
-    def restart_audio(self, room: Any, running_fn: Callable[[], bool]) -> None: ...
+    async def run(
+        self,
+        room: Any,
+        target_bitrate_kbps: int | None,
+        running_fn: Callable[[], bool],
+        connected_fn: Callable[[], bool],
+    ) -> None: ...
+
+    def restart_audio(
+        self,
+        room: Any,
+        running_fn: Callable[[], bool],
+    ) -> asyncio.Task[None] | None: ...
 
 
 def suppress_livekit_reconnect_noise(duration_sec: float) -> None:
@@ -69,29 +87,6 @@ class DiagnosticRecord:
     sequence: int
     created_at: float
     line: str
-
-
-_REDACTION_PATTERNS = (
-    re.compile(r"(?i)(authorization\s*[:=]\s*bearer\s+)[^\s,;]+"),
-    re.compile(r"(?i)((?:claim|auth|device)[_-]?token\s*[:=]\s*)[^\s,;]+"),
-    re.compile(r"(?i)((?:secret|access)[_-]?key\s*[:=]\s*)[^\s,;]+"),
-    re.compile(r"(?i)(https?://)[^/@\s]+@"),
-    re.compile(r"\bAKIA[0-9A-Z]{16}\b"),
-)
-
-
-def redact_text(value: str, literals: tuple[str, ...] = ()) -> str:
-    redacted = value
-    for pattern in _REDACTION_PATTERNS:
-        if pattern.pattern.startswith("\\bAKIA"):
-            redacted = pattern.sub("[REDACTED_AWS_KEY]", redacted)
-        elif "https?" in pattern.pattern:
-            redacted = pattern.sub(r"\1[REDACTED]@", redacted)
-        else:
-            redacted = pattern.sub(r"\1[REDACTED]", redacted)
-    for literal in literals:
-        redacted = re.sub(re.escape(literal), "[REDACTED_OPERATOR_TERM]", redacted, flags=re.I)
-    return redacted
 
 
 class DiagnosticsBufferHandler(logging.Handler):
@@ -140,6 +135,17 @@ class WatchdogStats:
     stale_commands: int = 0
     last_command_ack_at: float = 0.0
     last_control_disconnect_reason: str | None = None
+    last_stop_status: str = "never"
+    last_stop_reason: str | None = None
+    last_stop_error_code: str | None = None
+    last_stop_at: float = 0.0
+    claim_latency_ms: deque[float] = field(default_factory=lambda: deque(maxlen=256))
+    command_receive_latency_ms: deque[float] = field(default_factory=lambda: deque(maxlen=512))
+    command_execution_ms: deque[float] = field(default_factory=lambda: deque(maxlen=512))
+    stop_confirmation_ms: deque[float] = field(default_factory=lambda: deque(maxlen=256))
+    control_reconnect_ms: deque[float] = field(default_factory=lambda: deque(maxlen=256))
+    first_frame_ms: deque[float] = field(default_factory=lambda: deque(maxlen=256))
+    media_restart_ms: deque[float] = field(default_factory=lambda: deque(maxlen=256))
 
 
 @dataclass
@@ -167,3 +173,9 @@ class QueuedHardwareCommand:
     value: Any
     metadata: dict[str, Any] | None
     motion_command_id: int | None
+
+
+@dataclass(slots=True)
+class QueuedTTSCommand:
+    message: str
+    metadata: dict[str, Any] | None

@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import logging
 import os
-import shutil
-import subprocess
+from pathlib import Path
 
+from ..config import RobotConfig
+from ..process_group import ManagedProcessGroup, credential_minimized_environment
 from .base import BaseVideoProfile
 
 FFMPEG_INPUT_FORMAT_MAP = {
@@ -22,7 +22,7 @@ logger = logging.getLogger("botparty.video.ffmpeg")
 class VideoProfile(BaseVideoProfile):
     profile_name = "ffmpeg"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self._direct_profile: BaseVideoProfile | None = None
         self._streamer_binary_path: str | None = None
@@ -42,62 +42,34 @@ class VideoProfile(BaseVideoProfile):
         if managed.is_file() and os.access(managed, os.X_OK):
             return str(managed)
 
-        for candidate in ("/usr/local/bin/botparty-streamer",):
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                return candidate
-
-        on_path = shutil.which("botparty-streamer")
-        return on_path or None
-
-    def _probe_streamer_binary(self, binary_path: str) -> bool:
-        try:
-            result = subprocess.run(
-                [binary_path],
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=4,
-            )
-        except Exception:
-            return False
-
-        combined = f"{result.stdout}\n{result.stderr}".lower()
-        if "invalid config" in combined or "lk_url is required" in combined:
-            return True
-        return result.returncode == 0
+        return None
 
     def _verify_streamer_binary(self, binary_path: str) -> bool:
-        expected = str(self.options.get("publisher_binary_sha256") or "").strip().lower()
-        if not expected:
-            sidecar = self.managed_streamer_dir() / "botparty-streamer.sha256"
-            if os.path.abspath(binary_path) == os.path.abspath(self.managed_streamer_binary_path()):
-                try:
-                    expected = sidecar.read_text(encoding="ascii").strip().lower()
-                except OSError:
-                    expected = ""
-        if len(expected) != 64 or any(char not in "0123456789abcdef" for char in expected):
-            logger.warning("Ignoring unverified botparty-streamer binary: %s", binary_path)
-            return False
-        digest = hashlib.sha256()
+        expected = self.options.get("publisher_binary_sha256")
         try:
-            with open(binary_path, "rb") as handle:
-                for chunk in iter(lambda: handle.read(1024 * 1024), b""):
-                    digest.update(chunk)
-        except OSError:
+            from ..artifacts import verify_installed_streamer
+
+            verify_installed_streamer(
+                self.managed_streamer_binary_path()
+                if os.path.abspath(binary_path)
+                == os.path.abspath(self.managed_streamer_binary_path())
+                else Path(binary_path),
+                str(expected) if isinstance(expected, str) and expected.strip() else None,
+            )
+        except Exception as exc:
+            logger.warning("Ignoring unverified botparty-streamer binary %s: %s", binary_path, exc)
             return False
-        return digest.hexdigest() == expected
+        return True
 
     def _maybe_enable_direct_publisher(self) -> None:
         streamer_binary = self._resolve_streamer_binary_path()
         verified = bool(streamer_binary and self._verify_streamer_binary(streamer_binary))
-        healthy = bool(
-            verified and streamer_binary and self._probe_streamer_binary(streamer_binary)
-        )
-        self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
 
-        if not healthy or not streamer_binary:
+        if not verified or not streamer_binary:
             logger.info("Verified botparty-streamer unavailable; using legacy ffmpeg SDK transport")
             return
+
+        self._installed_streamer_version = self.read_streamer_version_for_binary(streamer_binary)
 
         self._streamer_binary_path = streamer_binary
         self.options["publisher_binary"] = streamer_binary
@@ -130,7 +102,7 @@ class VideoProfile(BaseVideoProfile):
         livekit_url: str,
         token: str,
         target_bitrate_kbps: int | None,
-    ):
+    ) -> asyncio.subprocess.Process | ManagedProcessGroup:
         if self._direct_profile is None:
             raise RuntimeError("Direct publisher is not enabled for this ffmpeg profile")
         return await self._direct_profile.spawn_livekit_process(
@@ -139,7 +111,7 @@ class VideoProfile(BaseVideoProfile):
             target_bitrate_kbps=target_bitrate_kbps,
         )
 
-    async def spawn_ffmpeg_process(self):
+    async def spawn_ffmpeg_process(self) -> asyncio.subprocess.Process:
         configured_input_format = str(self.options.get("input_format", "")).strip().lower()
         fourcc = (self.camera.fourcc or "").strip().upper()
         output_fps = max(1, round(self.output_fps()))
@@ -205,4 +177,6 @@ class VideoProfile(BaseVideoProfile):
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            env=credential_minimized_environment(),
+            start_new_session=True,
         )

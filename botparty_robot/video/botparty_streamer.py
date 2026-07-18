@@ -8,11 +8,17 @@ import contextlib
 import json
 import logging
 import os
-import shlex
 import socket
 import zlib
+from collections.abc import Callable
+from typing import Any
 
-from ..audio import list_alsa_devices, resolve_alsa_device
+from ..audio import AudioCapture, AudioCaptureConfig
+from ..process_group import (
+    ManagedProcessGroup,
+    credential_minimized_environment,
+    terminate_async_process,
+)
 from .base import BaseVideoProfile
 
 logger = logging.getLogger("botparty.video.botparty_streamer")
@@ -24,165 +30,17 @@ class VideoProfile(BaseVideoProfile):
     def has_audio(self) -> bool:
         return True
 
-    async def start_audio(self, rtc, room, running):
+    async def start_audio(
+        self,
+        rtc: Any,
+        room: Any,
+        running: Callable[[], bool],
+    ) -> None:
         if room is None:
             logger.warning("Direct audio requested without LiveKit room; skipping audio publish")
             return
-
-        sample_rate = int(self.options.get("audio_sample_rate", 48000))
-        channels = int(self.options.get("audio_channels", 1))
-        chunk_ms = int(self.options.get("audio_chunk_ms", 40))
-        queue_frames = max(1, int(self.options.get("audio_queue_frames", 8)))
-        samples_per_channel = sample_rate * chunk_ms // 1000
-        bytes_per_sample = 2
-        frame_bytes = samples_per_channel * channels * bytes_per_sample
-        arecord_path = self.options.get("arecord_path", "arecord")
-        requested_audio_device = str(self.options.get("audio_device", "default"))
-        audio_device = resolve_alsa_device(requested_audio_device, "capture")
-        audio_format = self.options.get("arecord_format", "S16_LE")
-
-        candidate_devices: list[str] = [audio_device]
-        requested_normalized = requested_audio_device.strip().lower()
-        if requested_normalized in {"", "default", "pulse"}:
-            for dev in list_alsa_devices("capture"):
-                candidate_devices.append(f"plughw:{dev['hw']}")
-
-        candidate_devices = list(dict.fromkeys(candidate_devices))
-
-        source = rtc.AudioSource(sample_rate, channels)
-        track = rtc.LocalAudioTrack.create_audio_track("microphone", source)
-        publish_options = rtc.TrackPublishOptions(source=rtc.TrackSource.SOURCE_MICROPHONE)
-        await room.local_participant.publish_track(track, publish_options)
-
-        queue: asyncio.Queue[bytes | None] = asyncio.Queue(maxsize=queue_frames)
-        dropped_chunks = 0
-
-        async def _read_stdout(proc_stdout) -> None:
-            nonlocal dropped_chunks
-            try:
-                while running():
-                    chunk = await proc_stdout.readexactly(frame_bytes)
-                    if queue.full():
-                        with contextlib.suppress(asyncio.QueueEmpty):
-                            queue.get_nowait()
-                        dropped_chunks += 1
-                        if dropped_chunks % 200 == 0:
-                            logger.warning(
-                                "Audio capture backlog detected; dropped_chunks=%d queue_frames=%d",
-                                dropped_chunks,
-                                queue_frames,
-                            )
-                    with contextlib.suppress(asyncio.QueueFull):
-                        queue.put_nowait(chunk)
-            except asyncio.IncompleteReadError:
-                return
-            finally:
-                with contextlib.suppress(asyncio.QueueFull):
-                    queue.put_nowait(None)
-
-        async def _publish_audio() -> None:
-            while running():
-                chunk = await queue.get()
-                if chunk is None:
-                    return
-                frame = rtc.AudioFrame(
-                    data=chunk,
-                    sample_rate=sample_rate,
-                    num_channels=channels,
-                    samples_per_channel=samples_per_channel,
-                )
-                await source.capture_frame(frame)
-
-        async def _drain_stderr(proc_stderr) -> None:
-            while True:
-                line = await proc_stderr.readline()
-                if not line:
-                    return
-                msg = line.decode("utf-8", errors="replace").strip()
-                if msg:
-                    logger.warning("arecord: %s", msg)
-
-        last_error: str | None = None
-        for idx, current_audio_device in enumerate(candidate_devices):
-            if not running():
-                return
-
-            logger.info(
-                "Starting arecord capture for botparty-streamer: "
-                "device=%s sample_rate=%d channels=%d",
-                current_audio_device,
-                sample_rate,
-                channels,
-            )
-            proc = await asyncio.create_subprocess_exec(
-                arecord_path,
-                "-q",
-                "-D",
-                str(current_audio_device),
-                "-f",
-                str(audio_format),
-                "-c",
-                str(channels),
-                "-r",
-                str(sample_rate),
-                "-t",
-                "raw",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-
-            stderr_task = None
-            read_task = None
-            publish_task = None
-            try:
-                if proc.stdout is None:
-                    return
-
-                read_task = asyncio.create_task(_read_stdout(proc.stdout))
-                publish_task = asyncio.create_task(_publish_audio())
-                if proc.stderr is not None:
-                    stderr_task = asyncio.create_task(_drain_stderr(proc.stderr))
-
-                await asyncio.gather(read_task, publish_task)
-            finally:
-                for task in (read_task, publish_task, stderr_task):
-                    if task is not None:
-                        task.cancel()
-                        with contextlib.suppress(asyncio.CancelledError):
-                            await task
-                await asyncio.shield(self._shutdown_audio_process(proc))
-
-            if proc.returncode in (None, 0):
-                return
-
-            last_error = (
-                f"arecord exited with code {proc.returncode} on device {current_audio_device}"
-            )
-            if idx + 1 < len(candidate_devices):
-                logger.warning("%s; trying fallback capture device", last_error)
-                continue
-
-        if last_error:
-            logger.error("Audio capture stopped: %s", last_error)
-
-    async def _shutdown_audio_process(self, proc) -> None:
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
-
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
-            return
-        except asyncio.TimeoutError:
-            pass
-        except asyncio.CancelledError:
-            pass
-
-        if proc.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-
-        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-            await asyncio.wait_for(proc.wait(), timeout=2)
+        capture = AudioCapture(AudioCaptureConfig.from_options(self.options))
+        await capture.publish(rtc, room, running)
 
     def capture_mode(self) -> str:
         return "publisher"
@@ -200,16 +58,14 @@ class VideoProfile(BaseVideoProfile):
             or self.options.get("lk_h264_publisher_path")
         )
         if explicit:
-            return str(explicit)
+            path = os.path.abspath(os.path.expanduser(str(explicit)))
+            return path
 
         managed = self.managed_streamer_binary_path()
         if managed.is_file() and os.access(managed, os.X_OK):
             return str(managed)
 
-        for candidate in ("/usr/local/bin/botparty-streamer",):
-            if os.path.isfile(candidate) and os.access(candidate, os.X_OK):
-                return candidate
-        return "botparty-streamer"
+        return str(managed)
 
     def _camera_id(self) -> str:
         camera_id = str(self.options.get("camera_id", "front")).strip()
@@ -262,10 +118,8 @@ class VideoProfile(BaseVideoProfile):
                 sock.close()
 
     def _decode_token_payload(self, token: str) -> dict[str, object]:
-        # Note: this decodes the JWT payload WITHOUT signature verification.
-        # The token is not used for authentication here — it is verified by the
-        # LiveKit server when the publisher connects. We only extract the
-        # identity/room fields so the Go streamer can be configured correctly.
+        # LiveKit verifies the token when the publisher connects. This local
+        # decode only extracts identity and room fields for streamer configuration.
         parts = token.split(".")
         if len(parts) < 2:
             return {}
@@ -310,7 +164,8 @@ class VideoProfile(BaseVideoProfile):
             else int(self.options.get("target_bitrate_kbps", 1200))
         )
         codec = str(self.options.get("video_codec") or self.detect_default_h264_codec()).strip()
-        gop = max(output_fps, int(self.options.get("gop_frames", output_fps * 2)))
+        configured_gop = self.options.get("gop_frames")
+        gop = max(output_fps, int(configured_gop if configured_gop is not None else output_fps * 2))
 
         cmd = [
             str(self.options.get("ffmpeg_path", "ffmpeg")),
@@ -395,7 +250,7 @@ class VideoProfile(BaseVideoProfile):
         identity, room = self._extract_identity_room(token)
         track_name = self._track_name()
 
-        env = os.environ.copy()
+        env = credential_minimized_environment()
         env.update(
             {
                 "LK_URL": livekit_url,
@@ -425,7 +280,7 @@ class VideoProfile(BaseVideoProfile):
         livekit_url: str,
         token: str,
         target_bitrate_kbps: int | None,
-    ):
+    ) -> ManagedProcessGroup:
         publisher_path = self._publisher_binary_path()
         ffmpeg_path = str(self.options.get("ffmpeg_path", "ffmpeg"))
 
@@ -447,43 +302,8 @@ class VideoProfile(BaseVideoProfile):
 
         port = self._tcp_port()
         ffmpeg_cmd = self._build_ffmpeg_command(port, target_bitrate_kbps)
-        publisher_cmd = [publisher_path]
-        env = self._build_publisher_env(livekit_url, token, port)
-
-        shell_cmd = (
-            "set -uo pipefail; "
-            "cleanup() { "
-            "status=$?; "
-            '[[ -n "${publisher_pid:-}" ]] && kill "$publisher_pid" 2>/dev/null || true; '
-            '[[ -n "${ffmpeg_pid:-}" ]] && kill "$ffmpeg_pid" 2>/dev/null || true; '
-            '[[ -n "${publisher_pid:-}" ]] && wait "$publisher_pid" 2>/dev/null || true; '
-            '[[ -n "${ffmpeg_pid:-}" ]] && wait "$ffmpeg_pid" 2>/dev/null || true; '
-            'exit "$status"; '
-            "}; "
-            "trap cleanup EXIT INT TERM; "
-            f"{shlex.join(publisher_cmd)} & "
-            "publisher_pid=$!; "
-            "sleep 0.4; "
-            f"{shlex.join(ffmpeg_cmd)} & "
-            "ffmpeg_pid=$!; "
-            "while true; do "
-            'if ! kill -0 "$publisher_pid" 2>/dev/null; then '
-            'wait "$publisher_pid"; publisher_status=$?; '
-            'echo "publisher exited with code ${publisher_status}" >&2; '
-            'kill "$ffmpeg_pid" 2>/dev/null || true; '
-            'wait "$ffmpeg_pid" 2>/dev/null || true; '
-            'exit "$publisher_status"; '
-            "fi; "
-            'if ! kill -0 "$ffmpeg_pid" 2>/dev/null; then '
-            'wait "$ffmpeg_pid"; ffmpeg_status=$?; '
-            'echo "ffmpeg exited with code ${ffmpeg_status}" >&2; '
-            'kill "$publisher_pid" 2>/dev/null || true; '
-            'wait "$publisher_pid" 2>/dev/null || true; '
-            'exit "$ffmpeg_status"; '
-            "fi; "
-            "sleep 0.2; "
-            "done"
-        )
+        publisher_env = self._build_publisher_env(livekit_url, token, port)
+        ffmpeg_env = credential_minimized_environment()
 
         logger.info(
             "Starting botparty-streamer direct path: camera=%s track=%s tcp_port=%d codec=%s",
@@ -493,10 +313,29 @@ class VideoProfile(BaseVideoProfile):
             codec,
         )
 
-        return await asyncio.create_subprocess_shell(
-            shell_cmd,
-            stdout=asyncio.subprocess.DEVNULL,
-            stderr=asyncio.subprocess.PIPE,
-            env=env,
-            executable="/bin/bash",
-        )
+        with self.open_streamer_binary(publisher_path) as verified_publisher:
+            publisher = await asyncio.create_subprocess_exec(
+                verified_publisher.exec_path,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+                env=publisher_env,
+                start_new_session=True,
+                pass_fds=verified_publisher.pass_fds,
+            )
+        await asyncio.sleep(0.4)
+        if publisher.returncode is not None:
+            raise RuntimeError(
+                f"botparty-streamer exited during startup with code {publisher.returncode}"
+            )
+        try:
+            ffmpeg = await asyncio.create_subprocess_exec(
+                *ffmpeg_cmd,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+                env=ffmpeg_env,
+                start_new_session=True,
+            )
+        except Exception:
+            await terminate_async_process(publisher)
+            raise
+        return ManagedProcessGroup((publisher, ffmpeg))

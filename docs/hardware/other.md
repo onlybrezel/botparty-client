@@ -1,6 +1,7 @@
 # Other Hardware Adapters
 
----
+> **Release scope:** `none` is supported for non-moving media/TTS operation. Every moving adapter
+> on this page is community or experimental and remains blocked without current HIL evidence.
 
 ## None
 
@@ -13,8 +14,6 @@ hardware:
 ```
 
 No additional dependencies required.
-
----
 
 ## Pololu DRV8835
 
@@ -35,8 +34,6 @@ hardware:
 pip install drv8835-motor-driver-rpi
 ```
 
----
-
 ## Pololu Dual MC33926
 
 ```yaml
@@ -55,8 +52,6 @@ hardware:
 ```bash
 pip install dual-mc33926-motor-driver-rpi
 ```
-
----
 
 ## Cytron MDD10
 
@@ -82,8 +77,6 @@ sudo apt install python3-rpi.gpio
 
 If Raspberry Pi OS proposes removing `python3-rpi-lgpio`, that is normal. The packages conflict because they provide overlapping GPIO compatibility layers.
 
----
-
 ## MotoZero
 
 ```yaml
@@ -105,8 +98,6 @@ sudo apt install python3-rpi.gpio
 
 If Raspberry Pi OS proposes removing `python3-rpi-lgpio`, that is normal. The packages conflict because they provide overlapping GPIO compatibility layers.
 
----
-
 ## PiBorg ThunderBorg
 
 ```yaml
@@ -122,8 +113,6 @@ hardware:
 pip install thunderborg
 ```
 
----
-
 ## GoPiGo 2 / GoPiGo 3
 
 ```yaml
@@ -137,8 +126,6 @@ hardware:
 ```bash
 pip install easygopigo3   # GoPiGo 3
 ```
-
----
 
 ## Makeblock MegaPi Board
 
@@ -160,8 +147,6 @@ hardware:
 pip install megapi
 ```
 
----
-
 ## Telly
 
 `telly` is a convenience preset built on top of [`serial_board`](serial-board.md). If `device_name` is not set, it auto-searches for a serial device whose USB description contains `Telly`.
@@ -172,8 +157,6 @@ hardware:
   options:
     baud_rate: 115200
 ```
-
----
 
 ## MAX7219 LED Matrix
 
@@ -195,8 +178,6 @@ Recognized commands include `LED_OFF`, `LED_FULL`, `LED_LOW`, `LED_MED`, `LED_E_
 pip install spidev
 ```
 
----
-
 ## Pololu Maestro Servo Controller
 
 ```yaml
@@ -216,8 +197,6 @@ hardware:
 pip install Maestro
 ```
 
----
-
 ## NXP NavQ / MAVSDK
 
 ```yaml
@@ -232,8 +211,6 @@ hardware:
 ```bash
 pip install mavsdk
 ```
-
----
 
 ## Anki Cozmo / Vector
 
@@ -252,8 +229,6 @@ Useful options:
 pip install cozmo          # Cozmo
 pip install anki_vector    # Vector
 ```
-
----
 
 ## OWI 535 USB Robotic Arm
 

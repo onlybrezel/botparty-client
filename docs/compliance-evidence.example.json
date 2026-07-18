@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "policyVersion": "REPLACE_WITH_APPROVED_POLICY_VERSION",
+  "approvedBy": "REPLACE_WITH_ACCOUNTABLE_REVIEWER",
+  "approvedAt": "2026-01-01T00:00:00Z",
+  "expiresAt": "2026-12-31T23:59:59Z",
+  "deployments": [
+    {
+      "deploymentId": "production-eu",
+      "controller": "REPLACE_WITH_CONTROLLER",
+      "region": "EU",
+      "legalBasis": "REPLACE_WITH_REVIEWED_LEGAL_BASIS",
+      "retentionDays": 30,
+      "processors": [],
+      "deletionProcedure": "REPLACE_WITH_TESTED_PROCEDURE",
+      "exportProcedure": "REPLACE_WITH_TESTED_PROCEDURE",
+      "testRunId": "REPLACE_WITH_DATA_SUBJECT_TEST_RUN_ID",
+      "consentTests": {"optOut": false, "export": false, "deletion": false}
+    }
+  ]
+}

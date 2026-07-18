@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "pololu"
     description = "Pololu DRV8835 motor driver"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         module = optional_import("pololu_drv8835_rpi", "drv8835-motor-driver-rpi")
         self.motors = getattr(module, "motors", None) if module else None
@@ -20,11 +23,12 @@ class HardwareAdapter(BaseHardware):
         self.drive_time = self.option_float("drive_time", 0.3)
 
     def _run(self, left: int, right: int) -> None:
-        if self.motors is None:
+        motors = self.motors
+        if motors is None:
             return
-        self.guarded_write(lambda: self.motors.setSpeeds(left, right))
+        self.guarded_write(lambda: motors.setSpeeds(left, right))
         self.interruptible_sleep(self.drive_time)
-        self.motors.setSpeeds(0, 0)
+        motors.setSpeeds(0, 0)
 
     def on_command(self, command: str, value: Any = None) -> None:
         speed = self.drive_speed

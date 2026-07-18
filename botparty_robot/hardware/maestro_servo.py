@@ -4,18 +4,21 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "maestro_servo"
     description = "Dual-servo drive adapter for Pololu Maestro"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.maestro = optional_import("maestro", "Maestro")
-        self.controller = None
+        self.controller: Any = None
         self.left_channel = self.option_int("left_channel", 0)
         self.right_channel = self.option_int("right_channel", 1)
         self.center = self.option_int("center", 6000)

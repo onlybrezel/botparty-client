@@ -75,31 +75,11 @@ class DiagnosticsUploader:
             json=payload,
             headers=headers,
             timeout=aiohttp.ClientTimeout(total=5),
+            allow_redirects=False,
         ) as response:
-            if response.status == 400:
-                return await self._post_legacy(session, headers, payload)
             if response.status not in (200, 201, 204):
                 return None
             return await self._acknowledged_sequence(response, payload)
-
-    async def _post_legacy(
-        self,
-        session: aiohttp.ClientSession,
-        headers: dict[str, str],
-        payload: dict[str, object],
-    ) -> int | None:
-        lines = payload.get("lines")
-        endpoint = f"{self._api_url}/api/v1/robots/logs"
-        async with session.post(
-            endpoint,
-            json={"lines": lines},
-            headers=headers,
-            timeout=aiohttp.ClientTimeout(total=5),
-        ) as response:
-            if response.status not in (200, 201, 204):
-                return None
-            sequence_end = payload.get("sequenceEnd")
-            return sequence_end if isinstance(sequence_end, int) else None
 
     async def _acknowledged_sequence(
         self,

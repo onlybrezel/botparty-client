@@ -12,7 +12,8 @@ from typing import Any
 import aiohttp
 
 from .config import RobotConfig
-from .protocol import MAX_WEBSOCKET_MESSAGE_BYTES, ControlCommand
+from .protocol import MAX_WEBSOCKET_MESSAGE_BYTES, ControlCommand, OutcomeDeliveryAck
+from .redaction import redact_text
 from .ws_protocol import WS_EVENTS, WS_PROTOCOL_VERSION
 
 logger = logging.getLogger("botparty.gateway")
@@ -40,6 +41,8 @@ class GatewayConnection:
         on_reconnected: Callable[[str, str], Awaitable[None]] | None = None,
         on_disconnected: Callable[[str], Awaitable[None]] | None = None,
         on_reconnect_attempt: Callable[[], None] | None = None,
+        on_connected: Callable[[], Awaitable[None]] | None = None,
+        on_outcome_ack: Callable[[str], None] | None = None,
     ) -> None:
         self.config = config
         self._on_command = on_command
@@ -49,6 +52,8 @@ class GatewayConnection:
         self._on_reconnected = on_reconnected
         self._on_disconnected = on_disconnected
         self._on_reconnect_attempt = on_reconnect_attempt
+        self._on_connected = on_connected
+        self._on_outcome_ack = on_outcome_ack
         self._running_fn = running_fn
         self._session_provider = session_provider
         self._connected = False
@@ -141,6 +146,8 @@ class GatewayConnection:
                         connected_this_attempt = True
                         self._disconnect_notified = False
                         logger.info("Control websocket connected")
+                        if self._on_connected is not None:
+                            await self._on_connected()
                         await self._pull_actions(ws, force=True)
                         if self._pending_recovery_reason and self._on_reconnected is not None:
                             try:
@@ -290,8 +297,16 @@ class GatewayConnection:
             self._on_emergency_stop()
         elif event == WS_EVENTS["ROBOT_ACTIONS"]:
             await self._on_actions(data)
+        elif event == WS_EVENTS["ROBOT_OUTCOME_ACK"]:
+            try:
+                acknowledgement = OutcomeDeliveryAck.model_validate(data)
+            except Exception:
+                logger.warning("Rejected invalid outcome acknowledgement")
+                return
+            if self._on_outcome_ack is not None:
+                self._on_outcome_ack(acknowledgement.outcome_id)
         elif event == WS_EVENTS["ERROR"]:
-            message = str(data.get("message") or "Gateway error")
+            message = redact_text(str(data.get("message") or "Gateway error"))[:240]
             logger.warning("Gateway error event: %s", message)
         elif event == WS_EVENTS["SERVER_SHUTDOWN"]:
             retry_after_ms = data.get("retryAfterMs")
@@ -304,7 +319,9 @@ class GatewayConnection:
 
             reason = str(data.get("reason") or "restart")
             scope = str(data.get("scope") or "app").strip().lower() or "app"
-            message = str(data.get("message") or "Server restart announced. Reconnecting soon...")
+            message = redact_text(
+                str(data.get("message") or "Server restart announced. Reconnecting soon...")
+            )[:240]
             self._retry_after_override_sec = retry_after_sec
             self._shutdown_reason = reason
             self._shutdown_message = message

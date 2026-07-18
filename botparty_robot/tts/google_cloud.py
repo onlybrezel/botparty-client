@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
+from typing import Any
 from xml.sax.saxutils import escape
 
 from .base import BaseTTSProfile
-from .common import command_exists, getenv_or_option, run_shell, shell_quote, write_bytes_file
+from .common import command_exists, getenv_or_option, run_process, write_bytes_file
 
 
 class TTSProfile(BaseTTSProfile):
     profile_name = "google_cloud"
 
     def setup(self) -> None:
+        self.texttospeech: Any = None
+        self.credentials: Any = None
+        self.client: Any = None
         try:
             from google.cloud import texttospeech
             from google.oauth2 import service_account
@@ -44,7 +48,7 @@ class TTSProfile(BaseTTSProfile):
             and command_exists(self.aplay_path)
         )
 
-    def say(self, message: str, metadata=None) -> None:
+    def say(self, message: str, metadata: dict[str, Any] | None = None) -> None:
         if not self.can_handle():
             return
         tts = self.texttospeech
@@ -66,12 +70,12 @@ class TTSProfile(BaseTTSProfile):
             audio_config=audio_config,
             timeout=self.operation_timeout_sec,
         )
+        if not self.operation_is_active():
+            return
         wav_path = write_bytes_file(response.audio_content, ".wav")
         try:
-            run_shell(
-                f"{shell_quote(self.aplay_path)} -D {shell_quote(self.playback_device)} "
-                f"{shell_quote(str(wav_path))}"
-            )
+            if self.operation_is_active():
+                run_process([self.aplay_path, "-D", self.playback_device, str(wav_path)])
         finally:
             wav_path.unlink(missing_ok=True)
 

@@ -4,15 +4,18 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "gopigo2"
     description = "Dexter Industries GoPiGo2 adapter"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.gopigo = optional_import("gopigo", "gopigo")
         self.drive_time = self.option_float("drive_time", 0.35)

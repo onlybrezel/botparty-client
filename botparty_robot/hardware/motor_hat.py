@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
@@ -25,10 +26,10 @@ class HardwareAdapter(BaseHardware):
     profile_name = "motor_hat"
     description = "Adafruit Motor HAT adapter with optional accessory channels"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.module = optional_import("Adafruit_MotorHAT", "Adafruit_MotorHAT")
-        self.mh = None
+        self.mh: Any | None = None
         self.drive_speed = self.option_int("drive_speed", 180)
         self.turn_speed = self.option_int("turn_speed", 180)
         self.drive_time = self.option_float("drive_time", 0.35)
@@ -51,7 +52,7 @@ class HardwareAdapter(BaseHardware):
             return
         self.mh = self.module.Adafruit_MotorHAT(addr=address)
 
-    def _motor(self, channel: int):
+    def _motor(self, channel: int) -> Any | None:
         if self.mh is None:
             return None
         if channel < 1 or channel > 4:
@@ -64,7 +65,7 @@ class HardwareAdapter(BaseHardware):
             if motor is None:
                 continue
 
-            def apply(current_motor=motor) -> None:
+            def apply(current_motor: Any = motor) -> None:
                 current_motor.setSpeed(speed)
                 current_motor.run(direction)
 

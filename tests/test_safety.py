@@ -17,6 +17,9 @@ from botparty_robot.tts.base import BaseTTSProfile
 
 class _RaceAdapter(BaseHardware):
     profile_name = "race"
+    supported_commands = ("forward", "stop")
+    motion_commands = ("forward",)
+    safe_stop_capable = True
 
     def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)

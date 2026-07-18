@@ -12,8 +12,6 @@ tts:
     voice: "en-US"
 ```
 
----
-
 ## Install
 
 ```bash
@@ -25,8 +23,6 @@ Test it:
 ```bash
 pico2wave --lang=en-US --wave=/tmp/test.wav "Hello from BotParty" && aplay /tmp/test.wav
 ```
-
----
 
 ## Options
 
@@ -48,8 +44,6 @@ Pico supports a fixed set of languages:
 | `fr-FR` | French |
 | `es-ES` | Spanish |
 | `it-IT` | Italian |
-
----
 
 ## Troubleshooting
 

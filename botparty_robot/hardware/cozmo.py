@@ -3,16 +3,16 @@
 from __future__ import annotations
 
 import threading
-from contextlib import suppress
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
-_COZMO_ROBOT = None
+_COZMO_ROBOT: Any | None = None
 
 
-def get_cozmo_robot():
+def get_cozmo_robot() -> Any | None:
     return _COZMO_ROBOT
 
 
@@ -32,10 +32,10 @@ class HardwareAdapter(BaseHardware):
     profile_name = "cozmo"
     description = "Anki Cozmo control adapter"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.cozmo = optional_import("cozmo", "cozmo[camera]")
-        self.robot = None
+        self.robot: Any = None
         self.forward_speed = self.option_int("forward_speed", 75)
         self.volume = self.option_int("volume", 100)
         self.colour = bool(self.options.get("colour", True))
@@ -53,7 +53,7 @@ class HardwareAdapter(BaseHardware):
         except Exception as exc:
             self.log.warning("setup failed: %s", exc)
 
-    def _run(self, conn) -> None:
+    def _run(self, conn: Any) -> None:
         global _COZMO_ROBOT
         self.robot = conn.wait_for_robot()
         self.robot.enable_stop_on_cliff(True)
@@ -148,11 +148,11 @@ class HardwareAdapter(BaseHardware):
                 self.emergency_stop()
         except Exception as exc:
             self.log.warning("command failed: %s", exc)
+            raise
 
     def emergency_stop(self) -> None:
         if self.robot is not None:
-            with suppress(Exception):
-                self.robot.stop_all_motors()
+            self.robot.stop_all_motors()
 
     def _close_resources(self) -> None:
         global _COZMO_ROBOT

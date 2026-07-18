@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "contractSha256": "REPLACE_WITH_CONTRACT_SHA256",
+  "clientVersion": "REPLACE_WITH_RELEASE_VERSION",
+  "clientCommit": "REPLACE_WITH_RELEASE_COMMIT",
+  "backendVersion": "REPLACE_WITH_BACKEND_BUILD_ID",
+  "gatewayVersion": "REPLACE_WITH_GATEWAY_BUILD_ID",
+  "livekitVersion": "REPLACE_WITH_LIVEKIT_VERSION",
+  "stagingEnvironment": "isolated-staging",
+  "testRunId": "REPLACE_WITH_TEST_RUN_ID",
+  "workflowRunUrl": "https://ci.example.invalid/runs/REPLACE_WITH_RUN_ID",
+  "sourceRepository": "REPLACE_WITH_PLATFORM_REPOSITORY",
+  "reviewer": "REPLACE_WITH_INDEPENDENT_REVIEWER",
+  "observedAt": "2026-01-01T00:00:00Z",
+  "containsProductionSecrets": false,
+  "securityCases": [],
+  "recoveryCases": []
+}

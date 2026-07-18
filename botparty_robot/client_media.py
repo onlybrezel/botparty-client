@@ -5,12 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import time
-from typing import Any
+from typing import Any, Protocol
 
 from .camera import CameraManager
+from .client_contract import ClientComponentBinding
 from .client_state import (
     GATEWAY_RECOVERY_RESTART_THRESHOLD_SEC,
     CameraRuntime,
+    MediaManager,
     logger,
     suppress_livekit_reconnect_noise,
 )
@@ -19,7 +21,49 @@ from .publisher import LiveKitPublisherManager
 from .video import create_video_profile
 
 
-class ClientMediaMixin:
+class MediaHost(Protocol):
+    config: Any
+    stats: Any
+    _active_room_disconnected_event: asyncio.Event | None
+    _active_room_session_id: int
+    _camera_restart_lock: asyncio.Lock
+    _camera_runtimes: list[CameraRuntime]
+    _configured_target_bitrate_kbps: int | None
+    _gateway_outage_scope: str | None
+    _gateway_outage_started_at: float
+    _livekit_connected: bool
+    _livekit_disconnected_during_gateway_outage: bool
+    _livekit_publish_token: str | None
+    _livekit_publish_tokens: dict[str, str]
+    _livekit_reconnect_task: asyncio.Task[None] | None
+    _planned_disconnect_notice_sent: bool
+    _planned_reconnect_at: float
+    _planned_reconnect_reason: str | None
+    _primary_camera_id: str
+    _recovery_restart_task: asyncio.Task[None] | None
+    _remote_target_bitrate_kbps: int | None
+    _room: Any
+    _room_reconnect_in_progress: bool
+    _room_shutdown_task: asyncio.Task[None] | None
+    _running: bool
+    _shutdown_disconnect_task: asyncio.Task[None] | None
+
+    def _default_target_bitrate_kbps(self, runtime: CameraRuntime | None = None) -> int: ...
+
+    def _resolve_target_bitrate_kbps(
+        self, *, remote: int | None, configured: int | None, default: int
+    ) -> int: ...
+
+    def _uses_direct_livekit_publisher(self) -> bool: ...
+
+    async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None: ...
+
+    async def _stop_media_tasks(self) -> None: ...
+
+    async def _trigger_hardware_stop(self, reason: str) -> bool: ...
+
+
+class ClientMediaComponent(ClientComponentBinding[MediaHost]):
     def _build_initial_camera_runtime_state(
         self,
     ) -> tuple[list[CameraRuntime], str]:
@@ -38,17 +82,17 @@ class ClientMediaMixin:
         return [], "front"
 
     def _uses_direct_livekit_publisher(self) -> bool:
-        return bool(self._camera_runtimes) and all(
+        return bool(self.host._camera_runtimes) and all(
             runtime.video_profile.publish_transport() == "livekit_direct"
-            for runtime in self._camera_runtimes
+            for runtime in self.host._camera_runtimes
         )
 
     def _uses_external_media_transport(self) -> bool:
-        return self._uses_direct_livekit_publisher()
+        return self.host._uses_direct_livekit_publisher()
 
     def _validate_media_mode(self) -> None:
         transports = {
-            runtime.video_profile.publish_transport() for runtime in self._camera_runtimes
+            runtime.video_profile.publish_transport() for runtime in self.host._camera_runtimes
         }
         if len(transports) > 1:
             raise ValueError(
@@ -56,16 +100,16 @@ class ClientMediaMixin:
             )
 
     def _build_camera_runtimes(self) -> list[CameraRuntime]:
-        normalized = normalize_cameras(self.config)
+        normalized = normalize_cameras(self.host.config)
         runtimes: list[CameraRuntime] = []
-        requested_audio_source = self.config.audio_source_camera_id
+        requested_audio_source = self.host.config.audio_source_camera_id
         audio_source_selected = False
 
         for entry in normalized:
             if not entry.enabled:
                 continue
 
-            derived_config = self.config.model_copy(
+            derived_config = self.host.config.model_copy(
                 deep=True,
                 update={
                     "camera": entry.camera,
@@ -81,15 +125,22 @@ class ClientMediaMixin:
             if include_audio:
                 audio_source_selected = True
             track_name = "camera" if len(normalized) == 1 else f"camera.{entry.id}"
+            manager: MediaManager
             if video_profile.publish_transport() == "livekit_direct":
+                camera_id = entry.id
+
+                def camera_token(selected_camera_id: str = camera_id) -> str | None:
+                    return (
+                        self.host._livekit_publish_tokens.get(selected_camera_id)
+                        or self.host._livekit_publish_token
+                    )
+
                 manager = LiveKitPublisherManager(
                     derived_config,
                     video_profile,
-                    token_fn=lambda camera_id=entry.id: (
-                        self._livekit_publish_tokens.get(camera_id) or self._livekit_publish_token
-                    ),
-                    audio_token_fn=lambda: self._livekit_publish_token,
-                    livekit_url_fn=lambda: self.config.server.livekit_url,
+                    token_fn=camera_token,
+                    audio_token_fn=lambda: self.host._livekit_publish_token,
+                    livekit_url_fn=lambda: self.host.config.server.livekit_url,
                     camera_id=entry.id,
                     audio_enabled=include_audio,
                 )
@@ -123,30 +174,30 @@ class ClientMediaMixin:
         return runtimes
 
     def _resolve_primary_camera_id(self) -> str:
-        for runtime in self._camera_runtimes:
+        for runtime in self.host._camera_runtimes:
             if runtime.role.strip().lower() == "primary":
                 return runtime.camera_id
-        if self._camera_runtimes:
-            return self._camera_runtimes[0].camera_id
+        if self.host._camera_runtimes:
+            return self.host._camera_runtimes[0].camera_id
         return "front"
 
     def _get_primary_runtime(self) -> CameraRuntime | None:
-        if not self._camera_runtimes:
+        if not self.host._camera_runtimes:
             return None
-        for runtime in self._camera_runtimes:
-            if runtime.camera_id == self._primary_camera_id:
+        for runtime in self.host._camera_runtimes:
+            if runtime.camera_id == self.host._primary_camera_id:
                 return runtime
-        return self._camera_runtimes[0]
+        return self.host._camera_runtimes[0]
 
     def _total_camera_frames(self) -> int:
-        return sum(runtime.manager.frame_count for runtime in self._camera_runtimes)
+        return sum(runtime.manager.frame_count for runtime in self.host._camera_runtimes)
 
     def _start_camera(self, runtime: CameraRuntime) -> Any:
         return runtime.manager.run(
-            self._room,
+            self.host._room,
             self._target_bitrate_for_runtime(runtime),
-            lambda: self._running,
-            lambda: self._livekit_connected,
+            lambda: self.host._running,
+            lambda: self.host._livekit_connected,
         )
 
     def _parse_target_bitrate_kbps(self, value: Any) -> int | None:
@@ -155,7 +206,7 @@ class ClientMediaMixin:
         return None
 
     def _default_target_bitrate_kbps(self, runtime: CameraRuntime | None = None) -> int:
-        active_config = runtime.config if runtime is not None else self.config
+        active_config = runtime.config if runtime is not None else self.host.config
         pixels_per_second = (
             active_config.camera.width
             * active_config.camera.height
@@ -179,33 +230,54 @@ class ClientMediaMixin:
         return remote or configured or default
 
     def _effective_target_bitrate_kbps(self) -> int:
-        return self._resolve_target_bitrate_kbps(
-            remote=self._remote_target_bitrate_kbps,
-            configured=self._configured_target_bitrate_kbps,
-            default=self._default_target_bitrate_kbps(),
+        return self.host._resolve_target_bitrate_kbps(
+            remote=self.host._remote_target_bitrate_kbps,
+            configured=self.host._configured_target_bitrate_kbps,
+            default=self.host._default_target_bitrate_kbps(),
         )
 
     def _target_bitrate_for_runtime(self, runtime: CameraRuntime) -> int | None:
         configured = self._parse_target_bitrate_kbps(
             runtime.config.video.options.get("target_bitrate_kbps")
         )
-        if len(self._camera_runtimes) <= 1 or runtime.camera_id == self._primary_camera_id:
-            return self._resolve_target_bitrate_kbps(
-                remote=self._remote_target_bitrate_kbps,
-                configured=configured,
-                default=self._default_target_bitrate_kbps(runtime),
-            )
-        return configured
+        return self.host._resolve_target_bitrate_kbps(
+            remote=self.host._remote_target_bitrate_kbps,
+            configured=configured,
+            default=self.host._default_target_bitrate_kbps(runtime),
+        )
 
     async def _start_all_cameras(self) -> None:
-        for runtime in self._camera_runtimes:
+        for runtime in self.host._camera_runtimes:
             runtime.restart_count = 0
             runtime.started_at_monotonic = time.monotonic()
             runtime.last_frame_at_monotonic = 0.0
-            runtime.last_frame_count = 0
-            runtime.state = "starting"
+            runtime.last_frame_count = runtime.manager.frame_count
+            should_publish = (
+                runtime.publish_mode == "always_on"
+                or runtime.camera_id == self.host._primary_camera_id
+            )
+            runtime.state = "starting" if should_publish else "idle"
             runtime.last_error = None
-            runtime.task = asyncio.create_task(self._start_camera(runtime))
+            runtime.task = (
+                asyncio.create_task(self._start_camera(runtime)) if should_publish else None
+            )
+
+    async def _sync_on_demand_cameras(self) -> None:
+        for runtime in self.host._camera_runtimes:
+            if runtime.publish_mode != "on_demand":
+                continue
+            should_publish = runtime.camera_id == self.host._primary_camera_id
+            active = runtime.task is not None and not runtime.task.done()
+            if should_publish and not active:
+                runtime.started_at_monotonic = time.monotonic()
+                runtime.last_frame_at_monotonic = 0.0
+                runtime.last_frame_count = runtime.manager.frame_count
+                runtime.state = "warming_up"
+                runtime.last_error = None
+                runtime.task = asyncio.create_task(self._start_camera(runtime))
+            elif not should_publish and active:
+                await self._cancel_camera_task(runtime)
+                runtime.state = "idle"
 
     async def _cancel_camera_task(self, runtime: CameraRuntime, timeout_sec: float = 6.5) -> None:
         task = runtime.task
@@ -230,9 +302,9 @@ class ClientMediaMixin:
         runtime.state = "stopped"
 
     async def _restart_camera_pipeline(self, reason: str, camera_id: str | None = None) -> None:
-        async with self._camera_restart_lock:
-            if not self._livekit_connected or (
-                not self._uses_external_media_transport() and self._room is None
+        async with self.host._camera_restart_lock:
+            if not self.host._livekit_connected or (
+                not self._uses_external_media_transport() and self.host._room is None
             ):
                 logger.info(
                     "Skipping camera pipeline restart while media transport is not ready: %s%s",
@@ -245,9 +317,18 @@ class ClientMediaMixin:
                 "Restarting camera pipeline: %s%s", reason, f" ({camera_id})" if camera_id else ""
             )
             targets = (
-                [runtime for runtime in self._camera_runtimes if runtime.camera_id == camera_id]
+                [
+                    runtime
+                    for runtime in self.host._camera_runtimes
+                    if runtime.camera_id == camera_id
+                ]
                 if camera_id
-                else list(self._camera_runtimes)
+                else [
+                    runtime
+                    for runtime in self.host._camera_runtimes
+                    if runtime.publish_mode == "always_on"
+                    or runtime.camera_id == self.host._primary_camera_id
+                ]
             )
 
             for runtime in targets:
@@ -261,11 +342,13 @@ class ClientMediaMixin:
                 runtime.video_profile = create_video_profile(runtime.config)
                 runtime.manager.video_profile = runtime.video_profile
                 runtime.started_at_monotonic = time.monotonic()
+                runtime.last_frame_at_monotonic = 0.0
+                runtime.last_frame_count = int(getattr(runtime.manager, "frame_count", 0))
                 runtime.state = "starting"
                 runtime.task = asyncio.create_task(self._start_camera(runtime))
 
     async def _stop_media_tasks(self) -> None:
-        for runtime in self._camera_runtimes:
+        for runtime in self.host._camera_runtimes:
             audio = runtime.manager.audio_task
             await self._cancel_camera_task(runtime)
             if audio and not audio.done():
@@ -284,64 +367,67 @@ class ClientMediaMixin:
         if self._uses_external_media_transport():
             return
         reconnect_at = time.time() + retry_after_sec
-        self._planned_reconnect_at = max(self._planned_reconnect_at, reconnect_at)
-        self._planned_reconnect_reason = reason
-        self._gateway_outage_scope = scope
-        self._livekit_disconnected_during_gateway_outage = False
+        self.host._planned_reconnect_at = max(self.host._planned_reconnect_at, reconnect_at)
+        self.host._planned_reconnect_reason = reason
+        self.host._gateway_outage_scope = scope
+        self.host._livekit_disconnected_during_gateway_outage = False
 
-        if scope != "full" or not self._livekit_connected or self._room is None:
+        if scope != "full" or not self.host._livekit_connected or self.host._room is None:
             return
 
-        if self._planned_disconnect_notice_sent:
+        if self.host._planned_disconnect_notice_sent:
             return
 
-        self._planned_disconnect_notice_sent = True
+        self.host._planned_disconnect_notice_sent = True
         logger.info(
             "Planned %s across full stack; disconnecting LiveKit early to avoid noisy retries",
             reason,
         )
 
-        if self._shutdown_disconnect_task and not self._shutdown_disconnect_task.done():
+        if self.host._shutdown_disconnect_task and not self.host._shutdown_disconnect_task.done():
             return
 
-        self._shutdown_disconnect_task = asyncio.create_task(
+        self.host._shutdown_disconnect_task = asyncio.create_task(
             self._disconnect_livekit_for_shutdown(message)
         )
 
     async def _disconnect_livekit_for_shutdown(self, message: str) -> None:
-        room = self._room
+        room = self.host._room
         if room is None:
             return
 
         logger.info("%s", message)
-        self._livekit_connected = False
+        self.host._livekit_connected = False
         try:
             await room.disconnect()
         except Exception as exc:
             logger.debug("LiveKit disconnect during planned shutdown failed: %s", exc)
 
     async def _handle_gateway_disconnected(self, scope: str) -> None:
-        await self._trigger_hardware_stop("control_disconnected")
-        self.stats.control_disconnects += 1
-        self.stats.last_control_disconnect_reason = scope
+        await self.host._trigger_hardware_stop("control_disconnected")
+        self.host.stats.control_disconnects += 1
+        self.host.stats.last_control_disconnect_reason = scope
         if scope != "app":
             return
-        if self._gateway_outage_started_at <= 0:
-            self._gateway_outage_started_at = time.time()
-        self._gateway_outage_scope = scope
+        if self.host._gateway_outage_started_at <= 0:
+            self.host._gateway_outage_started_at = time.time()
+        self.host._gateway_outage_scope = scope
 
     async def _handle_gateway_reconnected(self, reason: str, scope: str) -> None:
-        outage_started_at = self._gateway_outage_started_at
-        outage_scope = self._gateway_outage_scope
-        livekit_disconnected = self._livekit_disconnected_during_gateway_outage
-        self._gateway_outage_started_at = 0.0
-        self._gateway_outage_scope = None
-        self._livekit_disconnected_during_gateway_outage = False
+        outage_started_at = self.host._gateway_outage_started_at
+        outage_scope = self.host._gateway_outage_scope
+        livekit_disconnected = self.host._livekit_disconnected_during_gateway_outage
+        self.host._gateway_outage_started_at = 0.0
+        self.host._gateway_outage_scope = None
+        self.host._livekit_disconnected_during_gateway_outage = False
+
+        if outage_started_at > 0:
+            self.host.stats.control_reconnect_ms.append((time.time() - outage_started_at) * 1000)
 
         if scope != "app" or outage_scope != "app":
             return
 
-        if not self._livekit_connected:
+        if not self.host._livekit_connected:
             return
 
         outage_duration_sec = time.time() - outage_started_at if outage_started_at > 0 else 0.0
@@ -355,15 +441,15 @@ class ClientMediaMixin:
                 )
                 return
 
-            if self._recovery_restart_task and not self._recovery_restart_task.done():
-                self._recovery_restart_task.cancel()
+            if self.host._recovery_restart_task and not self.host._recovery_restart_task.done():
+                self.host._recovery_restart_task.cancel()
 
             logger.info(
                 "Control gateway recovered after %s in %.1fs; scheduling direct publisher recovery",
                 reason,
                 outage_duration_sec,
             )
-            self._recovery_restart_task = asyncio.create_task(
+            self.host._recovery_restart_task = asyncio.create_task(
                 self._recover_direct_publish_after_gateway_reconnect(reason)
             )
             return
@@ -385,15 +471,15 @@ class ClientMediaMixin:
             )
             return
 
-        if self._recovery_restart_task and not self._recovery_restart_task.done():
-            self._recovery_restart_task.cancel()
+        if self.host._recovery_restart_task and not self.host._recovery_restart_task.done():
+            self.host._recovery_restart_task.cancel()
 
         logger.info(
             "Control gateway recovered after %s in %.1fs; scheduling LiveKit room recovery",
             reason,
             outage_duration_sec,
         )
-        self._recovery_restart_task = asyncio.create_task(
+        self.host._recovery_restart_task = asyncio.create_task(
             self._recover_livekit_room_after_gateway_reconnect(reason)
         )
 
@@ -401,8 +487,8 @@ class ClientMediaMixin:
         try:
             await asyncio.sleep(3)
             if (
-                not self._running
-                or not self._livekit_connected
+                not self.host._running
+                or not self.host._livekit_connected
                 or not self._uses_external_media_transport()
             ):
                 logger.info(
@@ -412,14 +498,18 @@ class ClientMediaMixin:
                 )
                 return
 
-            await self._restart_camera_pipeline(f"gateway recovered after {reason}")
+            await self.host._restart_camera_pipeline(f"gateway recovered after {reason}")
         except asyncio.CancelledError:
             pass
 
     async def _recover_livekit_room_after_gateway_reconnect(self, reason: str) -> None:
         try:
             await asyncio.sleep(5)
-            if not self._running or not self._livekit_connected or self._room is None:
+            if (
+                not self.host._running
+                or not self.host._livekit_connected
+                or self.host._room is None
+            ):
                 logger.info(
                     "Skipping delayed LiveKit recovery after %s because the room is no longer "
                     "ready",
@@ -427,37 +517,37 @@ class ClientMediaMixin:
                 )
                 return
 
-            if self._livekit_reconnect_task and not self._livekit_reconnect_task.done():
+            if self.host._livekit_reconnect_task and not self.host._livekit_reconnect_task.done():
                 return
 
-            self._livekit_reconnect_task = asyncio.create_task(
+            self.host._livekit_reconnect_task = asyncio.create_task(
                 self._force_livekit_reconnect_after_gateway_recovery(reason)
             )
         except asyncio.CancelledError:
             pass
 
     async def _force_livekit_reconnect_after_gateway_recovery(self, reason: str) -> None:
-        room = self._room
-        session_id = self._active_room_session_id
-        room_disconnected_event = self._active_room_disconnected_event
-        if room is None or not self._running or not self._livekit_connected:
+        room = self.host._room
+        session_id = self.host._active_room_session_id
+        room_disconnected_event = self.host._active_room_disconnected_event
+        if room is None or not self.host._running or not self.host._livekit_connected:
             return
 
-        if self._room_reconnect_in_progress:
+        if self.host._room_reconnect_in_progress:
             return
 
         try:
-            self._room_reconnect_in_progress = True
+            self.host._room_reconnect_in_progress = True
             logger.info(
                 "Forcing LiveKit room reconnect after %s so streams recover cleanly",
                 reason,
             )
 
-            self._planned_reconnect_reason = reason
-            self._planned_reconnect_at = time.time() + 5
-            self._livekit_connected = False
+            self.host._planned_reconnect_reason = reason
+            self.host._planned_reconnect_at = time.time() + 5
+            self.host._livekit_connected = False
 
-            await self._stop_media_tasks()
+            await self.host._stop_media_tasks()
 
             try:
                 await asyncio.wait_for(room.disconnect(), timeout=5)
@@ -466,13 +556,19 @@ class ClientMediaMixin:
             except Exception as exc:
                 logger.debug("LiveKit disconnect during recovery failed: %s", exc)
 
-            if room_disconnected_event is not None and self._active_room_session_id == session_id:
+            if (
+                room_disconnected_event is not None
+                and self.host._active_room_session_id == session_id
+            ):
                 with contextlib.suppress(asyncio.TimeoutError):
                     await asyncio.wait_for(room_disconnected_event.wait(), timeout=6)
 
-            shutdown_task = self._room_shutdown_task
+            shutdown_task = self.host._room_shutdown_task
             if shutdown_task and not shutdown_task.done():
                 with contextlib.suppress(asyncio.CancelledError, Exception):
                     await shutdown_task
         finally:
-            self._room_reconnect_in_progress = False
+            self.host._room_reconnect_in_progress = False
+
+
+ClientMediaMixin = ClientMediaComponent

@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import time
 from types import SimpleNamespace
 
 import botparty_robot.client_media as client_media_module
 from botparty_robot.client_media import ClientMediaMixin
+from botparty_robot.client_state import WatchdogStats
 from botparty_robot.config import (
     CameraStreamConfig,
     CameraVideoOverrideConfig,
@@ -17,11 +19,13 @@ from botparty_robot.config import (
 class _DummyClient(ClientMediaMixin):
     def __init__(self) -> None:
         self.config = SimpleNamespace()
+        self.stats = WatchdogStats()
 
 
 class _DummyRecoveryClient(ClientMediaMixin):
     def __init__(self) -> None:
         self.config = SimpleNamespace()
+        self.stats = WatchdogStats()
         self._camera_restart_lock = asyncio.Lock()
         self._camera_runtimes: list[SimpleNamespace] = []
         self._primary_camera_id = "front"
@@ -202,7 +206,7 @@ def test_handle_gateway_reconnected_schedules_direct_publish_recovery_after_long
 def test_audio_source_skips_disabled_and_non_audio_cameras(monkeypatch) -> None:
     class _Profile:
         def __init__(self, config) -> None:
-            self._audio = bool(config.video.options.get("audio_capable"))
+            self._audio = config.video.type == "ffmpeg_arecord"
 
         def has_audio(self) -> bool:
             return self._audio
@@ -217,19 +221,19 @@ def test_audio_source_skips_disabled_and_non_audio_cameras(monkeypatch) -> None:
             CameraStreamConfig(
                 id="disabled",
                 enabled=False,
-                video=CameraVideoOverrideConfig(options={"audio_capable": True}),
+                video=CameraVideoOverrideConfig(type="ffmpeg_arecord"),
             ),
             CameraStreamConfig(
                 id="silent",
-                video=CameraVideoOverrideConfig(options={"audio_capable": False}),
+                video=CameraVideoOverrideConfig(type="ffmpeg"),
             ),
             CameraStreamConfig(
                 id="rear",
-                video=CameraVideoOverrideConfig(options={"audio_capable": True}),
+                video=CameraVideoOverrideConfig(type="ffmpeg_arecord"),
             ),
             CameraStreamConfig(
                 id="side",
-                video=CameraVideoOverrideConfig(options={"audio_capable": True}),
+                video=CameraVideoOverrideConfig(type="ffmpeg_arecord"),
             ),
         ],
     )
@@ -251,6 +255,62 @@ def test_server_bitrate_is_a_hard_cap() -> None:
     assert (
         client._resolve_target_bitrate_kbps(remote=2_000, configured=1_200, default=2_200) == 1_200
     )
+
+
+def test_on_demand_secondary_starts_only_when_selected() -> None:
+    async def _scenario() -> None:
+        client = _DummyClient()
+        started: list[str] = []
+        cancelled: list[str] = []
+        client._primary_camera_id = "front"
+        front = SimpleNamespace(
+            camera_id="front",
+            publish_mode="always_on",
+            task=None,
+            manager=SimpleNamespace(frame_count=0),
+            restart_count=0,
+            state="stopped",
+        )
+        rear = SimpleNamespace(
+            camera_id="rear",
+            publish_mode="on_demand",
+            task=None,
+            manager=SimpleNamespace(frame_count=0),
+            restart_count=0,
+            state="stopped",
+        )
+        client._camera_runtimes = [front, rear]
+
+        async def _start(runtime) -> None:
+            started.append(runtime.camera_id)
+            await asyncio.sleep(3600)
+
+        async def _cancel(runtime) -> None:
+            cancelled.append(runtime.camera_id)
+            if runtime.task is not None:
+                runtime.task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await runtime.task
+            runtime.task = None
+
+        client._start_camera = _start  # type: ignore[method-assign]
+        client._cancel_camera_task = _cancel  # type: ignore[method-assign]
+        await client._start_all_cameras()
+        await asyncio.sleep(0)
+        assert started == ["front"]
+        assert rear.state == "idle"
+
+        client._primary_camera_id = "rear"
+        await client._sync_on_demand_cameras()
+        await asyncio.sleep(0)
+        assert started == ["front", "rear"]
+
+        client._primary_camera_id = "front"
+        await client._sync_on_demand_cameras()
+        assert cancelled == ["rear"]
+        await _cancel(front)
+
+    asyncio.run(_scenario())
 
 
 def test_gateway_disconnect_stops_before_recording_outage() -> None:

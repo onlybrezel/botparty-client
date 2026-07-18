@@ -15,7 +15,7 @@ cameras:
   - id: rear
     role: secondary
     enabled: true
-    publish_mode: always_on
+    publish_mode: on_demand
     device: /dev/v4l/by-id/rear-camera
     width: 640
     height: 360
@@ -23,7 +23,11 @@ cameras:
 audio_source_camera_id: front
 ```
 
-Only `always_on` is supported. Unsupported publish modes fail configuration validation.
+`always_on` starts with the media session. An `on_demand` secondary stays off until an authorized
+stream policy selects its ID; deselection stops and releases its pipeline. The primary stays
+published and the configured server camera cap is always enforced. On-demand startup can increase
+first-frame latency but reduces idle CPU and uplink use. Disabled cameras remain in configured
+capabilities but create no runtime task, device open or readiness requirement.
 
 `audio_source_camera_id` must name an enabled camera whose profile supports audio. Without an explicit ID, the first enabled audio-capable camera is selected. Exactly one camera publishes audio.
 

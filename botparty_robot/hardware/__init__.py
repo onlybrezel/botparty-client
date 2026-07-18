@@ -5,7 +5,6 @@ from __future__ import annotations
 import importlib
 import importlib.util
 import logging
-from pathlib import Path
 from typing import Final
 
 from ..config import RobotConfig
@@ -75,17 +74,10 @@ def normalize_profile_name(name: str) -> str:
 def _auto_detect_profile(config: RobotConfig) -> str:
     explicit = str(config.hardware.options.get("auto_profile", "")).strip()
     if explicit:
+        logger.warning("hardware auto_profile is an explicit operator choice, not device detection")
         return normalize_profile_name(explicit)
 
-    if any(
-        Path(path).exists()
-        for path in ("/dev/ttyUSB0", "/dev/ttyUSB1", "/dev/ttyACM0", "/dev/ttyACM1")
-    ):
-        return "serial_board"
-
-    if Path("/dev/i2c-1").exists():
-        return "adafruit_pwm"
-
+    logger.warning("No verified hardware identity was configured; auto mode selected none")
     return "none"
 
 

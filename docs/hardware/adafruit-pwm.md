@@ -1,5 +1,7 @@
 # Adafruit PCA9685 PWM HAT
 
+> **Release status: community.** No current HIL evidence exists. Production movement is blocked.
+
 The Adafruit 16-channel PWM/Servo HAT uses a PCA9685 I2C chip. In a BotParty context it is typically wired for one drive motor (ESC) and one steering servo, making it ideal for RC car-style robots.
 
 ```yaml
@@ -18,13 +20,9 @@ hardware:
     steer_right: 500
 ```
 
----
-
 ## How it works
 
 The adapter sets PWM pulse widths (0–4095) on the specified channels. Drive timings are built into the adapter: `forward` and `backward` use short drive pulses, while `left` and `right` apply steering and drive together before returning to center/neutral.
-
----
 
 ## Wiring
 
@@ -37,8 +35,6 @@ Channel 2 → Auxiliary servo (optional)
 ```
 
 Power your ESC and servos from the HAT's servo power rail. The HAT **does not** supply power to servos — you must connect a 5–6 V supply to the `V+` and `GND` pins on the terminal block.
-
----
 
 ## Options
 
@@ -87,8 +83,6 @@ The correct values depend on your specific ESC and servo. A good starting point:
 3. Adjust `steer_left` / `steer_right` to match the servo travel.
 
 Most hobby servos expect a PWM frequency of 50 Hz with pulse widths from ~1000 µs (full left) to ~2000 µs (full right). At 60 Hz that maps roughly to values 250–500 in PCA9685 counts.
-
----
 
 ## Dependencies
 

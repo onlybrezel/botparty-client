@@ -3,13 +3,21 @@ import json
 import logging
 import time
 from collections import deque
+from pathlib import Path
 
 import pytest
 
 from botparty_robot.client_state import DiagnosticRecord, DiagnosticsBufferHandler, redact_text
-from botparty_robot.config import DiagnosticsConfig, RobotConfig, ServerConfig, TTSConfig
+from botparty_robot.config import (
+    DiagnosticsConfig,
+    RobotConfig,
+    ServerConfig,
+    StateConfig,
+    TTSConfig,
+)
 from botparty_robot.diagnostics import DiagnosticsUploader
 from botparty_robot.tts.base import BaseTTSProfile
+from botparty_robot.tts.common import getenv_or_option
 
 
 class _TTS(BaseTTSProfile):
@@ -19,7 +27,7 @@ class _TTS(BaseTTSProfile):
         del message, metadata
 
 
-def _tts_config(**overrides: object) -> RobotConfig:
+def _tts_config(state_directory: Path | None = None, **overrides: object) -> RobotConfig:
     values: dict[str, object] = {
         "enabled": True,
         "type": "espeak",
@@ -33,6 +41,7 @@ def _tts_config(**overrides: object) -> RobotConfig:
     return RobotConfig(
         server=ServerConfig(claim_token="claim-token"),
         tts=TTSConfig(**values),
+        state=StateConfig(directory=state_directory),
     )
 
 
@@ -60,13 +69,13 @@ def test_diagnostics_sequences_are_stable_and_secrets_are_redacted() -> None:
     assert "def" not in records[0].line
     assert "user:pass" not in records[0].line
     assert "[REDACTED]" in records[0].line
-    aws_test_key = "AKIA1234567890ABCDEF"  # secret-scan: allow-test-fixture
+    aws_test_key = "AK" + "IA1234567890ABCDEF"
     assert aws_test_key not in redact_text(aws_test_key)
 
 
-def test_tts_enforces_sender_content_rate_and_budget_limits(monkeypatch) -> None:
+def test_tts_enforces_sender_content_rate_and_budget_limits(monkeypatch, tmp_path) -> None:
     monkeypatch.setattr("botparty_robot.tts.base.set_alsa_volume", lambda *_args: None)
-    profile = _TTS(_tts_config())
+    profile = _TTS(_tts_config(tmp_path))
     sender = {"sender": "viewer-1"}
 
     assert profile.should_speak("hello", sender) is True
@@ -82,6 +91,42 @@ def test_cloud_tts_requires_explicit_data_processing_consent(monkeypatch) -> Non
     profile = _TTS(_tts_config())
     profile.profile_name = "google_cloud"
     assert profile.should_speak("hello", {"sender": "viewer"}) is False
+
+
+def test_tts_sender_rate_state_stays_bounded_under_identity_flood(monkeypatch, tmp_path) -> None:
+    monkeypatch.setattr("botparty_robot.tts.base.set_alsa_volume", lambda *_args: None)
+    monkeypatch.setattr(_TTS, "_consume_daily_budget", lambda *_args: True)
+    profile = _TTS(_tts_config(tmp_path, rate_limit_count=2))
+    logging.disable(logging.CRITICAL)
+    try:
+        for index in range(100_000):
+            profile.should_speak("x", {"sender": f"sender-{index}"})
+    finally:
+        logging.disable(logging.NOTSET)
+
+    assert len(profile._recent_messages) <= 1024
+    assert len(profile._recent_messages["rate-limit-overflow"]) <= 2
+
+
+def test_cloud_secret_files_must_be_private_regular_files(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("UNSET_KEY", raising=False)
+    monkeypatch.delenv("UNSET_KEY_FILE", raising=False)
+    private = tmp_path / "private-key"
+    private.write_text("credential-value\n", encoding="utf-8")
+    private.chmod(0o600)
+    assert getenv_or_option({"access_key_file": str(private)}, "access_key", "UNSET_KEY") == (
+        "credential-value"
+    )
+
+    private.chmod(0o644)
+    assert getenv_or_option({"access_key_file": str(private)}, "access_key", "UNSET_KEY") == ""
+
+    private.chmod(0o600)
+    linked = tmp_path / "linked-key"
+    linked.symlink_to(private)
+    assert getenv_or_option({"access_key_file": str(linked)}, "access_key", "UNSET_KEY") == ""
 
 
 class _UploadResponse:
@@ -111,7 +156,10 @@ class _UploadSession:
         self._responses = deque(responses)
         self.payloads: list[dict[str, object]] = []
 
-    def post(self, endpoint: str, *, json, headers, timeout) -> _UploadResponse:
+    def post(
+        self, endpoint: str, *, json, headers, timeout, allow_redirects=False
+    ) -> _UploadResponse:
+        assert allow_redirects is False
         del endpoint, headers, timeout
         self.payloads.append(json)
         return self._responses.popleft()

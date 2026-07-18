@@ -3,6 +3,7 @@ import json
 
 import pytest
 
+from botparty_robot.auth import AuthFailure, ClientAuthenticator
 from botparty_robot.client_ops import ClientOpsMixin
 from botparty_robot.config import RobotConfig, ServerConfig
 from botparty_robot.protocol import MAX_CLAIM_RESPONSE_BYTES
@@ -44,7 +45,8 @@ class _AuthClient(ClientOpsMixin):
     def __init__(self, response: _Response) -> None:
         self.config = RobotConfig(
             server=ServerConfig(
-                claim_token="claim-token-not-for-logs",
+                claim_token="claim-token-not-for-logs",  # secret-scan: allow-test-fixture
+                device_key="d" * 64,
                 api_url="https://botparty.live",
             )
         )
@@ -124,3 +126,55 @@ def test_valid_claim_creates_complete_typed_auth_state() -> None:
     assert auth.token == "livekit-secret"
     assert auth.robot_auth_token == "robot-auth-secret"
     assert auth.livekit_url == "wss://botparty.live"
+
+
+def test_claim_transport_failure_is_a_typed_redacted_outcome() -> None:
+    class BrokenSession:
+        def post(self, *args, **kwargs):
+            del args, kwargs
+            raise TimeoutError("sensitive transport context")
+
+    config = RobotConfig(server=ServerConfig(claim_token="claim-token", device_key="d" * 64))
+    result = asyncio.run(
+        ClientAuthenticator(config, lambda: BrokenSession()).claim(
+            publish_camera_ids=[], capabilities={"hardware": "none"}
+        )
+    )
+
+    assert result == AuthFailure("transport_error", "TimeoutError")
+
+
+def test_claim_rejects_insecure_livekit_url_and_accepts_capability_payload() -> None:
+    response = _Response(
+        200,
+        json.dumps(
+            {
+                "token": "livekit-secret",
+                "robotId": "robot-1",
+                "livekitUrl": "ws://botparty.live",
+                "robotAuthToken": "robot-auth-secret",
+            }
+        ).encode(),
+    )
+    session = _Session(response)
+    config = RobotConfig(server=ServerConfig(claim_token="claim-token", device_key="d" * 64))
+    result = asyncio.run(
+        ClientAuthenticator(config, lambda: session).claim(
+            publish_camera_ids=["front"], capabilities={"hardware": "none"}
+        )
+    )
+
+    assert isinstance(result, AuthFailure)
+    assert result.code == "unsafe_livekit_url"
+
+
+def test_claim_rejects_missing_device_key_before_network_access() -> None:
+    session = _Session(_Response(200, _valid_claim()))
+    config = RobotConfig(server=ServerConfig(claim_token="claim-token"))
+
+    result = asyncio.run(
+        ClientAuthenticator(config, lambda: session).claim(publish_camera_ids=[], capabilities=None)
+    )
+
+    assert result == AuthFailure("protocol_rejected", "invalid claim request")
+    assert session.posts == 0

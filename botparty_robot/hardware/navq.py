@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+import concurrent.futures
+from collections.abc import Coroutine
 from typing import Any
 
+from ..config import RobotConfig
 from ..safety import CommandPermit, HardwareCommandCancelled
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "navq"
     description = "MAVSDK offboard control adapter for NavQ robots"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.mavsdk = optional_import("mavsdk", "mavsdk")
         self.rover = self.mavsdk.System() if self.mavsdk else None
@@ -22,7 +27,9 @@ class HardwareAdapter(BaseHardware):
         self.thrust = self.option_float("thrust", 0.1)
         self.system_address = self.option_str("system_address", "serial:///dev/ttymxc2:921600")
         self._ready = False
+        self._state = "disconnected"
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._connect_task: asyncio.Task[None] | None = None
 
     def setup(self) -> None:
         if self.rover is None:
@@ -32,7 +39,7 @@ class HardwareAdapter(BaseHardware):
         except RuntimeError:
             self.log.warning("no running event loop available; NavQ connection deferred")
             return
-        self._loop.create_task(self._connect())
+        self._connect_task = self._loop.create_task(self._connect())
 
     async def _connect(self) -> None:
         if self.rover is None:
@@ -42,14 +49,14 @@ class HardwareAdapter(BaseHardware):
             async for state in self.rover.core.connection_state():
                 if state.is_connected:
                     break
-            await self.rover.action.arm()
-            await self.rover.offboard.set_attitude(
-                self.mavsdk.offboard.Attitude(0.0, 0.0, 0.0, 0.0)
-            )
-            await self.rover.offboard.start()
             self._ready = True
-            self.log.info("connected on %s", self.system_address)
+            self._state = "connected_disarmed"
+            self.log.info("connected and disarmed on %s", self.system_address)
+        except asyncio.CancelledError:
+            self._state = "disconnected"
+            raise
         except Exception as exc:
+            self._state = "failed"
             self.log.warning("setup failed: %s", exc)
 
     async def _drive(
@@ -72,14 +79,14 @@ class HardwareAdapter(BaseHardware):
                 permit.ensure_active()
         await self.rover.offboard.set_attitude(self.mavsdk.offboard.Attitude(0.0, 0.0, yaw, 0.0))
 
-    def _schedule(self, coro) -> None:
+    def _schedule(self, coro: Coroutine[Any, Any, Any]) -> None:
         """Schedule a coroutine on the stored event loop, safe to call from any thread."""
         if self._loop is None:
             self.log.warning("no event loop stored; NavQ command dropped")
             return
         future = asyncio.run_coroutine_threadsafe(coro, self._loop)
 
-        def _consume_result(done) -> None:
+        def _consume_result(done: concurrent.futures.Future[Any]) -> None:
             try:
                 done.result()
             except HardwareCommandCancelled:
@@ -106,5 +113,33 @@ class HardwareAdapter(BaseHardware):
             self.emergency_stop()
 
     def emergency_stop(self) -> None:
-        if self.rover is not None:
-            self._schedule(self._drive(0.0, 0.0, 0.0))
+        if self.rover is None or self._loop is None:
+            return
+        future = asyncio.run_coroutine_threadsafe(self._stop_and_disarm(), self._loop)
+        try:
+            future.result(timeout=self.safety.stop_timeout_ms / 1000.0)
+        except concurrent.futures.TimeoutError as exc:
+            future.cancel()
+            raise TimeoutError("NavQ stop/disarm was not confirmed before its deadline") from exc
+
+    async def _stop_and_disarm(self) -> None:
+        if self.rover is None:
+            return
+        if self._state == "armed":
+            await self.rover.offboard.set_attitude(
+                self.mavsdk.offboard.Attitude(0.0, 0.0, 0.0, 0.0)
+            )
+            await self.rover.offboard.stop()
+        await self.rover.action.disarm()
+        self._ready = False
+        self._state = "connected_disarmed"
+
+    def _close_resources(self) -> None:
+        if (
+            self._connect_task is not None
+            and not self._connect_task.done()
+            and self._loop is not None
+        ):
+            self._loop.call_soon_threadsafe(self._connect_task.cancel)
+        self._ready = False
+        self._state = "closed"

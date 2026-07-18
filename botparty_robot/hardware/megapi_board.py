@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
@@ -24,10 +25,10 @@ class HardwareAdapter(BaseHardware):
     profile_name = "megapi_board"
     description = "Makeblock MegaPi-based tracked robot adapter"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.megapi = optional_import("megapi", "megapi")
-        self.bot = None
+        self.bot: Any = None
         self.motor_time = self.option_float("motor_time", 0.2)
         self.driving_speed = self.option_int("driving_speed", 150)
         self.arm_speed = self.option_int("arm_speed", 50)

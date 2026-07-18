@@ -8,8 +8,6 @@ video:
   options: {}
 ```
 
----
-
 ## When to use OpenCV
 
 - Quick testing on a development machine
@@ -17,8 +15,6 @@ video:
 - Situations where the camera does not work with V4L2 directly
 
 The tradeoff is slightly higher CPU usage and more latency compared to `ffmpeg`. For production robots on Raspberry Pi, `ffmpeg` is recommended.
-
----
 
 ## Options
 
@@ -47,8 +43,6 @@ Selects the OpenCV capture backend:
 | `v4l2` | `CAP_V4L2` | Linux V4L2 — most reliable on Pi |
 | `ffmpeg` | `CAP_FFMPEG` | FFmpeg backend inside OpenCV |
 
----
-
 ## Dependencies
 
 ```bash
@@ -56,8 +50,6 @@ pip install opencv-python-headless
 ```
 
 Use `opencv-python-headless` (no GUI dependencies) unless you also need `cv2.imshow()`.
-
----
 
 ## Troubleshooting
 

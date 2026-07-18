@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 1,
+  "branch": "main",
+  "requiredChecks": [
+    "Quality",
+    "Installer integration",
+    "Test Python 3.10",
+    "Test Python 3.11",
+    "Test Python 3.12",
+    "Test Python 3.13",
+    "Test Python 3.14",
+    "Package and audit",
+    "CodeQL"
+  ],
+  "requireConversationResolution": true,
+  "requireSignedCommits": true,
+  "requiredApprovingReviews": 1,
+  "enforceAdmins": true,
+  "allowForcePushes": false,
+  "allowDeletions": false
+}

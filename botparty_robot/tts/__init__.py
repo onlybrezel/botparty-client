@@ -11,8 +11,6 @@ from .base import BaseTTSProfile
 PROFILE_ALIASES: Final[dict[str, str]] = {
     "none": "none",
     "espeak": "espeak",
-    "espeak-loop": "espeak_loop",
-    "espeak_loop": "espeak_loop",
     "festival": "festival",
     "google_cloud": "google_cloud",
     "pico": "pico",

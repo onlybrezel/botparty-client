@@ -27,3 +27,8 @@
 Every moving adapter uses command-epoch checks around active writes and interruptible waits where the SDK permits them. Async/vendor firmware can add latency outside Python; measure it on the exact device before production.
 
 Video profiles and TTS engines are capability-reported separately. Direct native video binaries must pass signed artifact verification. Cloud TTS is experimental until the deployment records provider consent, limits and regional handling.
+
+The authoritative generated inventory is
+[`generated/adapter-inventory.json`](generated/adapter-inventory.json). CI compares it semantically
+with registries, option JSON schemas, Python dependencies and HIL reports; hand-edited tables cannot
+silently override adapter metadata.

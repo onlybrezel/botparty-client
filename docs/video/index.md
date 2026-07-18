@@ -8,7 +8,7 @@ Set `video.type` in `config.yaml` to choose the pipeline.
 |------|-------------|---------|
 | [`ffmpeg`](ffmpeg.md) | FFmpeg capture with automatic direct-publisher fallback logic | Easiest default |
 | [`ffmpeg_arecord`](ffmpeg.md#with-microphone-audio) | FFmpeg + ALSA microphone with the same automatic direct-publisher logic | Single-cam with mic |
-| `botparty_streamer` | Self-made direct H.264 streaming client | Manual power-user mode |
+| `botparty_streamer` | Native direct H.264 publisher | Manual power-user mode |
 | [`ffmpeg_libcamera`](libcamera.md) | libcamera path for Pi camera modules | CSI cameras on Raspberry Pi |
 | [`opencv`](opencv.md) | OpenCV fallback path | Dev/test machines |
 | `none` | Disable video publishing | Control-only setups |

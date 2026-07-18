@@ -11,7 +11,7 @@ import aiohttp
 from pydantic import ValidationError
 
 from .config import RobotConfig, _validate_transport_url, normalize_livekit_url
-from .protocol import MAX_CLAIM_RESPONSE_BYTES, ClaimResponse
+from .protocol import MAX_CLAIM_RESPONSE_BYTES, ClaimRequest, ClaimResponse
 
 
 @dataclass(frozen=True, slots=True)
@@ -52,13 +52,20 @@ class ClientAuthenticator:
         publish_camera_ids: list[str],
         capabilities: dict[str, object] | None,
     ) -> AuthResult | AuthFailure:
-        payload: dict[str, object] = {
-            "claimToken": self._config.server.claim_token_value(),
-            "deviceKey": self._config.server.device_key_value(),
-            "publishCameraIds": publish_camera_ids,
-        }
-        if self._config.server.report_capabilities_in_claim and capabilities is not None:
-            payload["capabilities"] = capabilities
+        try:
+            request = ClaimRequest(
+                claim_token=self._config.server.claim_token_value(),
+                device_key=self._config.server.device_key_value() or "",
+                publish_camera_ids=publish_camera_ids,
+                capabilities=(
+                    capabilities
+                    if self._config.server.report_capabilities_in_claim and capabilities is not None
+                    else None
+                ),
+            )
+        except ValidationError:
+            return AuthFailure("protocol_rejected", "invalid claim request")
+        payload = request.model_dump(by_alias=True, exclude_none=True)
         try:
             async with self._session().post(
                 f"{self._config.server.api_url}/api/v1/robots/claim",

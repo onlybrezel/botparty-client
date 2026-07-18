@@ -13,7 +13,6 @@ from typing import Any, TypeVar, cast
 from ..config import RobotConfig
 from ..safety import CommandPermit
 from .common import (
-    MOTION_COMMANDS,
     canonical_command,
     command_matches,
     get_float,
@@ -40,10 +39,10 @@ class BaseHardware(ABC):
 
     profile_name = "base"
     description = "Abstract BotParty hardware adapter"
-    supported_commands = tuple(sorted(MOTION_COMMANDS | {"stop"}))
-    motion_commands = tuple(sorted(MOTION_COMMANDS))
+    supported_commands: tuple[str, ...] = ()
+    motion_commands: tuple[str, ...] = ()
     support_level = "community"
-    safe_stop_capable = True
+    safe_stop_capable = False
     close_capable = True
 
     def __init__(self, config: RobotConfig) -> None:
@@ -92,6 +91,8 @@ class BaseHardware(ABC):
         """Run a command under a permit that a concurrent stop can invalidate."""
 
         permit.ensure_active()
+        if not self.supports_command(command):
+            raise ValueError(f"unsupported hardware command: {canonical_command(command)}")
         self._worker_context.permit = permit
         try:
             self.set_command_context(context)
@@ -132,6 +133,18 @@ class BaseHardware(ABC):
         )
         return canonical_command(command) in set(self.motion_commands) | extra
 
+    def supports_command(self, command: str) -> bool:
+        configured = self.options.get("supported_commands")
+        extra = (
+            {canonical_command(str(value)) for value in configured}
+            if isinstance(configured, list)
+            else set()
+        )
+        return (
+            canonical_command(command)
+            in {canonical_command(value) for value in self.supported_commands} | extra
+        )
+
     def capabilities(self) -> HardwareCapabilities:
         return HardwareCapabilities(
             commands=tuple(sorted(set(self.supported_commands))),
@@ -150,23 +163,31 @@ class BaseHardware(ABC):
         with self._close_lock:
             if self._closed:
                 return
-            self.apply_emergency_stop()
+            stop_error: BaseException | None = None
             try:
-                self._close_resources()
+                self.apply_emergency_stop()
+            except BaseException as exc:
+                stop_error = exc
             finally:
-                self._closed = True
+                try:
+                    self._close_resources()
+                finally:
+                    self._closed = True
+            if stop_error is not None:
+                raise stop_error
 
     def _close_resources(self) -> None:
         """Adapter-specific resource cleanup hook."""
         return None
 
     def apply_emergency_stop(self) -> None:
-        """Exception-safe entry point used by the client safety controller."""
+        """Apply a stop and propagate failure to the safety controller."""
 
         try:
             self.emergency_stop()
         except Exception as exc:
             self.log.error("emergency stop failed: %s", exc)
+            raise
 
     def value_float(self, value: Any, default: float = 0.0) -> float:
         if isinstance(value, (int, float)):
@@ -223,6 +244,7 @@ class LoggingHardware(BaseHardware):
     supported_commands: tuple[str, ...] = ()
     motion_commands: tuple[str, ...] = ()
     support_level = "supported"
+    safe_stop_capable = True
 
     def on_command(self, command: str, value: Any = None) -> None:
         self.log.info("command=%s value=%s", command, value)

@@ -11,8 +11,6 @@ tts:
   options: {}
 ```
 
----
-
 ## Install
 
 ```bash
@@ -24,8 +22,6 @@ Test it:
 ```bash
 echo "Hello from BotParty" | text2wave -o /tmp/test.wav && aplay /tmp/test.wav
 ```
-
----
 
 ## Options
 
@@ -43,8 +39,6 @@ festival --pipe <<< "(voice.list)"
 # Example additional English voice
 sudo apt install festvox-rablpc16k
 ```
-
----
 
 ## Troubleshooting
 

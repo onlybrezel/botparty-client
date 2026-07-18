@@ -4,21 +4,24 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "thunderborg"
     description = "PiBorg ThunderBorg motor driver"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         module = optional_import("ThunderBorg3", "thunderborg")
         if module is None:
             module = optional_import("ThunderBorg", "thunderborg")
         self.module = module
-        self.board = None
+        self.board: Any = None
         self.left_motor_max = self.option_float("left_motor_max", 1.0)
         self.right_motor_max = self.option_float("right_motor_max", 1.0)
         self.sleep_time = self.option_float("sleep_time", 0.3)

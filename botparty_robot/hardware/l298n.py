@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .gpio import import_gpio, set_low, setup_output_pins
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "l298n"
     description = "GPIO pulse adapter for L298N-style direction pins"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
-        self.gpio = import_gpio()
+        self.gpio: Any = import_gpio()
         self.forward_pins = tuple(self.option_pins("forward_pins"))
         self.backward_pins = tuple(self.option_pins("backward_pins"))
         self.left_pins = tuple(self.option_pins("left_pins"))
@@ -58,7 +61,11 @@ class HardwareAdapter(BaseHardware):
             return
 
         for pin in pins:
-            self.guarded_write(lambda pin=pin: self.gpio.output(pin, self.gpio.HIGH))
+
+            def write_high(selected_pin: int = pin) -> None:
+                self.gpio.output(selected_pin, self.gpio.HIGH)
+
+            self.guarded_write(write_high)
         self.interruptible_sleep(duration)
         set_low(self.gpio, pins)
 

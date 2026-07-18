@@ -1,5 +1,7 @@
 # Adafruit Motor HAT
 
+> **Release status: community.** No current HIL evidence exists. Production movement is blocked.
+
 The Adafruit DC + Stepper Motor HAT uses an I2C interface and can drive up to 4 DC motors or 2 stepper motors. It is commonly used on Raspberry Pi-based robots with tank/differential drive.
 
 ```yaml
@@ -16,15 +18,11 @@ hardware:
     turn_time: 0.20
 ```
 
----
-
 ## How it works
 
 The adapter uses the Adafruit MotorHAT Python library. On each command it sets motor speed and direction, waits for the configured duration, then releases all motors. This is open-loop; there is no encoder feedback.
 
 Channels 1–4 map to the four motor terminals on the HAT (M1–M4).
-
----
 
 ## Wiring
 
@@ -38,8 +36,6 @@ M3, M4 → right side motors
 ```
 
 If you only have two motors use `left_motors: [1]` and `right_motors: [2]`.
-
----
 
 ## Options
 
@@ -55,8 +51,6 @@ If you only have two motors use `left_motors: [1]` and `right_motors: [2]`.
 | `turn_time` | float | `0.20` | Duration of turn commands in seconds |
 | `up_motor` | int | `0` | Optional accessory motor channel for `up`/`down` commands |
 | `open_motor` | int | `0` | Optional accessory motor channel for `open`/`close` commands |
-
----
 
 ## Dependencies
 

@@ -53,7 +53,7 @@ class CommandPermit:
         self.ensure_active()
 
     def run_guarded(self, operation: Callable[[], _T]) -> _T:
-        """Run one actuator write atomically with respect to a safety stop."""
+        """Run a write without holding the global latch lock across device I/O."""
 
         return self._controller.run_if_epoch_active(self.epoch, operation)
 
@@ -113,11 +113,21 @@ class SafetyController:
             return not self._latched and self._epoch == epoch
 
     def run_if_epoch_active(self, epoch: int, operation: Callable[[], _T]) -> _T:
-        """Prevent a write from crossing the instant at which stop is latched."""
+        """Reject stale work while keeping ``stop`` independent from blocking I/O.
+
+        Adapters that cannot cancel an already-started device write must not
+        advertise confirmed safe-stop capability. The second epoch check makes
+        a late completion observable to the command pipeline.
+        """
 
         with self._lock:
             if self._latched or self._epoch != epoch:
                 raise HardwareCommandCancelled(
                     "hardware command was cancelled before an actuator write"
                 )
-            return operation()
+        result = operation()
+        if not self.is_epoch_active(epoch):
+            raise HardwareCommandCancelled(
+                "hardware command completed after the safety latch changed"
+            )
+        return result

@@ -4,18 +4,33 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = (
+        "forward",
+        "backward",
+        "left",
+        "right",
+        "bl",
+        "br",
+        "s2inc",
+        "s2dec",
+        "pos60",
+        "neg60",
+        "stop",
+    )
+    motion_commands = supported_commands[:-1]
     profile_name = "adafruit_pwm"
     description = "Adafruit PCA9685 steering and drive PWM adapter"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.module = optional_import("Adafruit_PCA9685", "Adafruit_PCA9685")
-        self.pwm = None
+        self.pwm: Any = None
         self.address = self.options.get("address", "0x40")
         self.pwm_freq = self.option_int("pwm_freq", 60)
         self.drive_channel = self.option_int("drive_channel", 0)

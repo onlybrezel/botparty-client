@@ -11,13 +11,15 @@ To use:
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 import os
 from pathlib import Path
+from types import ModuleType
 from typing import Any
 
-from .base import BaseHardware
+from ..config import RobotConfig
+from ..device_state import DeviceStateError, read_configuration_file
+from .base import BaseHardware, HardwareCapabilities
 
 logger = logging.getLogger("botparty.hardware.custom")
 
@@ -30,20 +32,20 @@ def _custom_search_paths(config_path: Path | None = None) -> list[Path]:
     ]
 
 
-def _load_custom_module(config_path: Path | None = None):
+def _load_custom_module(config_path: Path | None = None) -> ModuleType:
     search_paths = list(dict.fromkeys(_custom_search_paths(config_path)))
     for path in search_paths:
         if path.exists():
-            # Use the botparty_robot.hardware package context so legacy templates
-            # with "from .base import BaseHardware" still import correctly.
-            spec = importlib.util.spec_from_file_location(
-                "botparty_robot.hardware.hardware_custom", path
-            )
-            if spec is None or spec.loader is None:
-                raise ImportError(f"Could not load module spec from {path}")
-            module = importlib.util.module_from_spec(spec)
+            try:
+                source = read_configuration_file(path)
+            except DeviceStateError as exc:
+                raise ImportError(f"Custom hardware file is not trusted: {path}") from exc
+            name = "botparty_robot.hardware.hardware_custom"
+            module = ModuleType(name)
+            module.__file__ = str(path)
+            module.__name__ = name
             module.__package__ = "botparty_robot.hardware"
-            spec.loader.exec_module(module)
+            exec(compile(source, str(path), "exec"), module.__dict__)
             logger.info("Loaded custom hardware from: %s", path)
             return module
 
@@ -60,7 +62,7 @@ class HardwareAdapter(BaseHardware):
     description = "Load HardwareAdapter from hardware_custom.py next to the config file"
     safe_stop_capable = False
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         module = _load_custom_module(config._source_path)
         if not hasattr(module, "HardwareAdapter"):
@@ -85,7 +87,19 @@ class HardwareAdapter(BaseHardware):
             return
         self.inner.on_command(command, value)
 
-    def capabilities(self):
+    def supports_command(self, command: str) -> bool:
+        if isinstance(self.inner, BaseHardware):
+            return self.inner.supports_command(command)
+        supported = getattr(self.inner, "supported_commands", ())
+        return command.strip().lower() in {str(value).strip().lower() for value in supported}
+
+    def is_motion_command(self, command: str) -> bool:
+        if isinstance(self.inner, BaseHardware):
+            return self.inner.is_motion_command(command)
+        moving = getattr(self.inner, "motion_commands", ())
+        return command.strip().lower() in {str(value).strip().lower() for value in moving}
+
+    def capabilities(self) -> HardwareCapabilities:
         if isinstance(self.inner, BaseHardware):
             capabilities = self.inner.capabilities()
             return type(capabilities)(

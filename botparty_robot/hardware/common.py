@@ -24,6 +24,8 @@ COMMAND_ALIASES: dict[str, set[str]] = {
 }
 
 MOTION_COMMANDS = frozenset({"forward", "backward", "left", "right"})
+DRIVE_MOTION_COMMANDS = tuple(sorted(MOTION_COMMANDS))
+DRIVE_COMMANDS = (*DRIVE_MOTION_COMMANDS, "stop")
 
 
 def normalize_command(command: str) -> str:

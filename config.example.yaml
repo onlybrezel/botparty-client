@@ -1,4 +1,6 @@
 # BotParty Robot Client - example configuration
+# Schema: generate the version-matched JSON Schema with
+#   botparty-robot config schema --output robot-config.schema.json
 #
 # The automatic installer copies this file to /etc/botparty/config.yaml and
 # downloads the verified video streamer. For the first start:
@@ -9,7 +11,8 @@
 #      sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
 #        --config /etc/botparty/config.yaml config validate
 #
-# Keep this file readable only by its owner: chmod 600 config.yaml
+# Local development: service-owner mode 0600. Installed production:
+# root:botparty mode 0640, managed through sudoedit and the installer.
 
 server:
   # Public BotParty API and LiveKit endpoints. Change both when using a
@@ -133,7 +136,8 @@ tts:
   operation_timeout_sec: 20
 
   # Engine-specific settings belong here. Cloud engines also require explicit
-  # consent and credentials as described in their docs/tts/ guide.
+  # consent and credentials as described in their docs/tts/ guide. Keep cloud
+  # credential paths and secrets out of this shared example.
   options: {}
 
 safety:
@@ -193,6 +197,8 @@ ota:
   # Base64-encoded Ed25519 public key used to reject unsigned or modified
   # releases. Private release channels must use their own URL and public key.
   public_key_file: "/etc/botparty/botparty-ota.pub"
+  # Optional SHA-256 of the decoded 32-byte Ed25519 public key.
+  public_key_sha256: null
 
   # Writable A/B slots, activation markers and rollback state.
   state_directory: "/var/lib/botparty/ota"

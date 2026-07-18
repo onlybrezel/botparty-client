@@ -1,0 +1,78 @@
+groups:
+  - name: botparty-client
+    rules:
+      - alert: BotPartyControlDisconnected
+        expr: botparty_gateway_connected == 0
+        for: 30s
+        labels:
+          severity: critical
+        annotations:
+          summary: BotParty control channel is disconnected
+      - alert: BotPartyReadinessFailed
+        expr: botparty_ready == 0
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty client is not ready
+      - alert: BotPartyCameraRestartLoop
+        expr: increase(botparty_camera_restarts_total[10m]) >= 5
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty camera pipeline is repeatedly restarting
+      - alert: BotPartySafetyStopFailure
+        expr: botparty_safety_stop_confirmed == 0
+        labels:
+          severity: critical
+        annotations:
+          summary: BotParty safety stop was not confirmed
+      - alert: BotPartyOutcomeBacklog
+        expr: botparty_outbox_oldest_seconds > 60 or botparty_outbox_pending > 100
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty control outcomes are not reaching the gateway
+      - alert: BotPartyCommandLatencySLOBurn
+        expr: botparty_command_execution_ms_p99 > 150
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty command execution exceeds the medium-device SLO
+      - alert: BotPartyStopLatencySLOBurn
+        expr: botparty_stop_confirmation_ms_p99 > 100
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: BotParty confirmed stop latency exceeds the medium-device SLO
+      - alert: BotPartyControlReconnectSLOBurn
+        expr: botparty_control_reconnect_ms_p95 > 15000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty control recovery exceeds the fleet SLO
+      - alert: BotPartyFirstFrameSLOBurn
+        expr: botparty_first_frame_ms_p95 > 12000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty media readiness exceeds the medium-device SLO
+      - alert: BotPartyMediaRestartSLOBurn
+        expr: botparty_media_restart_ms_p95 > 12000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty media restart exceeds the medium-device SLO
+      - alert: BotPartyClaimLatencySLOBurn
+        expr: botparty_claim_latency_ms_p95 > 5000
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: BotParty robot claim exceeds the platform SLO

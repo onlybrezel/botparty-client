@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .base import BaseTTSProfile
-from .common import command_exists, make_temp_path, run_shell, shell_quote
+from .common import command_exists, make_temp_path, run_process
 
 
 class TTSProfile(BaseTTSProfile):
@@ -19,19 +21,20 @@ class TTSProfile(BaseTTSProfile):
             self.enabled and command_exists(self.pico2wave_path) and command_exists(self.aplay_path)
         )
 
-    def say(self, message: str, metadata=None) -> None:
+    def say(self, message: str, metadata: dict[str, Any] | None = None) -> None:
         if not self.can_handle():
             return
         wave_path = make_temp_path(".wav")
         try:
-            run_shell(
-                f"{shell_quote(self.pico2wave_path)} --lang={shell_quote(self.voice)} "
-                f"--wave={shell_quote(str(wave_path))} "
-                f"{shell_quote(message)}"
+            run_process(
+                [
+                    self.pico2wave_path,
+                    f"--lang={self.voice}",
+                    f"--wave={wave_path}",
+                    message,
+                ]
             )
-            run_shell(
-                f"{shell_quote(self.aplay_path)} -D {shell_quote(self.playback_device)} "
-                f"{shell_quote(str(wave_path))}"
-            )
+            if self.operation_is_active():
+                run_process([self.aplay_path, "-D", self.playback_device, str(wave_path)])
         finally:
             wave_path.unlink(missing_ok=True)

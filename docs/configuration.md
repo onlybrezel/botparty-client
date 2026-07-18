@@ -20,7 +20,7 @@ Unknown keys, invalid ranges, duplicate camera IDs, unsupported profiles and uns
 | `video` | `type`, `options` | Registered video adapter and adapter-specific options |
 | `cameras[]` | `id`, `label`, `role`, `enabled` | Up to eight unique cameras; at most one enabled primary |
 | `cameras[]` | camera overrides, `video` | Per-camera overrides of the base blocks |
-| `cameras[]` | `publish_mode` | Only `always_on` is supported |
+| `cameras[]` | `publish_mode` | `always_on` or policy-selected `on_demand` secondary |
 | root | `audio_source_camera_id` | Enabled audio-capable camera ID |
 | `hardware` | `type`, `options` | Registered hardware adapter and adapter-specific options |
 | `tts` | engine, volume, sender/content/rate/budget/time limits | Disabled by default; cloud engines also require explicit consent |
@@ -36,6 +36,13 @@ Unknown keys, invalid ranges, duplicate camera IDs, unsupported profiles and uns
 
 The complete, executable example is [config.example.yaml](../config.example.yaml). CI loads this file through the same Pydantic schema as production.
 
+Export the editor schema with
+`botparty-robot config schema --output robot-config.schema.json`. It includes every built-in
+hardware, video and TTS options model with ranges and closed-key validation. Shell snippets are
+available from `botparty-robot completion bash`, `zsh` or `fish`. The generated adapter registry at
+[`generated/adapter-inventory.json`](generated/adapter-inventory.json) binds commands, motion,
+support level, dependencies, option schemas and HIL evidence to the implementation.
+
 OTA does not poll for releases. An authorized `update_client` action from the BotParty server
 downloads the current signed manifest, installs the verified bundle in the inactive slot and
 restarts into it. The standard manifest URL, public-key path and state directory are prefilled;
@@ -49,8 +56,14 @@ Hardware: `none`, `auto`, `custom`, `l298n`, `adafruit_pwm`, `motor_hat`, `seria
 
 Video: `none`, `ffmpeg`, `ffmpeg_arecord`, `ffmpeg_hud`, `ffmpeg_libcamera`, `botparty_streamer`, `opencv`, `cozmo_vid`, `vector_vid`.
 
-TTS: `none`, `espeak`, `pico`, `festival`, `polly`, `google_cloud`, `custom`, `cozmo_tts`, `vector_tts`; `espeak_loop` remains a documented migration alias.
+TTS: `none`, `espeak`, `pico`, `festival`, `polly`, `google_cloud`, `custom`, `cozmo_tts`, `vector_tts`.
+
+The former `espeak_loop` alias was removed in 0.2.0. Use `tts.type: espeak`; playback behavior is
+unchanged.
 
 ## Migrations
 
-The loader maps the legacy `camera.pipeline` value to a video profile and accepts known profile aliases with a warning. The nonfunctional `emergency_stop_pin`, `preview_only` and `on_demand` options are removed. Add a physical stop in the motor power circuit; it is independent of software and network state.
+The loader maps the legacy `camera.pipeline` value to a video profile and accepts known profile
+aliases with a warning through 2026-09-01. The nonfunctional `emergency_stop_pin` and
+`preview_only` options are removed. Add a physical stop in the motor power circuit; it is
+independent of software and network state.

@@ -1,8 +1,9 @@
 # Custom Hardware Adapter
 
-If your motor controller is not in the built-in list, write a `hardware_custom.py` file that the client will discover automatically.
+> **Release status: experimental.** Custom adapters are operator-owned and production movement is
+> blocked until their safety contract and current HIL evidence are independently verified.
 
----
+If your motor controller is not in the built-in list, write a `hardware_custom.py` file that the client will discover automatically.
 
 ## Quick start
 
@@ -22,8 +23,6 @@ hardware:
 ```
 
 The client looks for `hardware_custom.py` in the current working directory, next to `config.yaml`.
-
----
 
 ## Minimal template
 
@@ -77,9 +76,8 @@ class HardwareAdapter(BaseHardware):
         pass
 ```
 
-The shipped template in `botparty_robot/hardware/hardware_custom_example.py` (in the installed package or in the repo) contains a fuller example including `self.command_context`. You copy it to `hardware_custom.py` next to your `config.yaml`.
-
----
+The template in `botparty_robot/hardware/hardware_custom_example.py` includes
+`self.command_context`. Copy it to `hardware_custom.py` next to `config.yaml`.
 
 ## BaseHardware helpers
 
@@ -95,8 +93,6 @@ Your class inherits from `BaseHardware` which provides:
 | `self.option_str(key, default)` | Read a string option with fallback |
 | `self.option_pins(key)` | Read a list of integers |
 | `self.matches(command, name)` | Case-insensitive command and alias matching |
-
----
 
 ## Emergency stop requirements
 

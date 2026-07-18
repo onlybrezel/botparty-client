@@ -6,12 +6,15 @@ import asyncio
 import os
 import re
 import shutil
-import subprocess
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, ClassVar
 
+from ..artifacts import VerifiedExecutable, open_verified_streamer, verify_installed_streamer
 from ..config import RobotConfig
+from ..process_group import ManagedProcessGroup, run_sandboxed
+
+MediaProcess = asyncio.subprocess.Process | ManagedProcessGroup
 
 
 class BaseVideoProfile:
@@ -86,14 +89,29 @@ class BaseVideoProfile:
                 continue
         return None
 
-    def transform_rgba(self, frame_rgba: Any, frame_width: int, frame_height: int):
+    def transform_rgba(self, frame_rgba: Any, frame_width: int, frame_height: int) -> Any:
         return frame_rgba
 
-    async def spawn_ffmpeg_process(self):
+    async def spawn_ffmpeg_process(self) -> MediaProcess:
+        raise NotImplementedError
+
+    async def spawn_livekit_process(
+        self,
+        *,
+        livekit_url: str,
+        token: str,
+        target_bitrate_kbps: int | None,
+    ) -> MediaProcess:
+        """Start a native direct publisher when supported by the profile."""
+
         raise NotImplementedError
 
     async def capture_sdk_frames(
-        self, rtc, source, running: Callable[[], bool], on_frame: Callable[[], None]
+        self,
+        rtc: Any,
+        source: Any,
+        running: Callable[[], bool],
+        on_frame: Callable[[], None],
     ) -> None:
         raise NotImplementedError
 
@@ -125,6 +143,20 @@ class BaseVideoProfile:
     def managed_streamer_version_file(self) -> Path:
         return self.managed_streamer_dir() / "botparty-streamer.version"
 
+    def verify_streamer_binary(self, binary_path: str | os.PathLike[str]) -> str:
+        expected = self.options.get("publisher_sha256")
+        return verify_installed_streamer(
+            Path(binary_path),
+            str(expected) if isinstance(expected, str) and expected.strip() else None,
+        )
+
+    def open_streamer_binary(self, binary_path: str | os.PathLike[str]) -> VerifiedExecutable:
+        expected = self.options.get("publisher_sha256")
+        return open_verified_streamer(
+            Path(binary_path),
+            str(expected) if isinstance(expected, str) and expected.strip() else None,
+        )
+
     def read_streamer_version_for_binary(
         self, binary_path: str | os.PathLike[str] | None
     ) -> str | None:
@@ -133,24 +165,8 @@ class BaseVideoProfile:
 
         path = Path(binary_path)
 
-        # Primary: ask the binary directly (supported since v0.1.0 with --version flag).
-        if path.is_file() and os.access(path, os.X_OK):
-            try:
-                result = subprocess.run(
-                    [str(path), "--version"],
-                    capture_output=True,
-                    text=True,
-                    check=False,
-                    timeout=3,
-                )
-                output = (result.stdout or "").strip()
-                normalized = self.normalize_streamer_version(output)
-                if normalized:
-                    return normalized
-            except Exception:
-                pass
-
-        # Fallback: companion version file written by the install script.
+        # Version metadata is read from the trusted installation sidecar. Runtime
+        # discovery must never execute a native binary merely to identify it.
         candidate_files = (
             path.parent / f"{path.name}.version",
             path.parent / "botparty-streamer.version",
@@ -183,7 +199,7 @@ class BaseVideoProfile:
             return f"v{value}"
         return None
 
-    async def start_audio(self, rtc, room, running: Callable[[], bool]) -> None:
+    async def start_audio(self, rtc: Any, room: Any, running: Callable[[], bool]) -> None:
         return
 
     def ffmpeg_supports(self, kind: str, name: str) -> bool:
@@ -201,7 +217,7 @@ class BaseVideoProfile:
             return False
 
         try:
-            result = subprocess.run(
+            result = run_sandboxed(
                 [ffmpeg_path, "-hide_banner", flag],
                 capture_output=True,
                 text=True,

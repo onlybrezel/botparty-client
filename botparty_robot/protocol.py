@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from typing import Any, Literal
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -9,6 +10,123 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 PROTOCOL_VERSION = 1
 MAX_CLAIM_RESPONSE_BYTES = 128 * 1024
 MAX_WEBSOCKET_MESSAGE_BYTES = 64 * 1024
+MAX_JSON_DEPTH = 6
+MAX_JSON_NODES = 512
+MAX_JSON_KEYS = 64
+MAX_JSON_LIST_ITEMS = 128
+MAX_JSON_STRING_LENGTH = 4096
+STANDARD_MOTION_COMMANDS = {"forward", "backward", "left", "right"}
+TTS_TEXT_COMMANDS = {"chat", "say", "speak", "tts", "tts:say", "tts.say"}
+
+
+def validate_bounded_json(value: Any) -> Any:
+    """Reject values that are not bounded, finite JSON data."""
+
+    nodes = 0
+
+    def visit(item: Any, depth: int) -> None:
+        nonlocal nodes
+        nodes += 1
+        if nodes > MAX_JSON_NODES:
+            raise ValueError("JSON value contains too many nodes")
+        if depth > MAX_JSON_DEPTH:
+            raise ValueError("JSON value exceeds maximum nesting depth")
+        if item is None or isinstance(item, bool):
+            return
+        if isinstance(item, str):
+            if len(item) > MAX_JSON_STRING_LENGTH:
+                raise ValueError("JSON string exceeds 4096 characters")
+            return
+        if isinstance(item, int):
+            if abs(item) > 2**53:
+                raise ValueError("JSON integer exceeds the interoperable range")
+            return
+        if isinstance(item, float):
+            if not math.isfinite(item):
+                raise ValueError("JSON number must be finite")
+            return
+        if isinstance(item, list):
+            if len(item) > MAX_JSON_LIST_ITEMS:
+                raise ValueError("JSON list contains too many items")
+            for child in item:
+                visit(child, depth + 1)
+            return
+        if isinstance(item, dict):
+            if len(item) > MAX_JSON_KEYS:
+                raise ValueError("JSON object contains too many keys")
+            for key, child in item.items():
+                if not isinstance(key, str) or not key or len(key) > 128:
+                    raise ValueError("JSON object key is invalid")
+                visit(child, depth + 1)
+            return
+        raise ValueError("value is not JSON-compatible")
+
+    visit(value, 0)
+    return value
+
+
+def validate_command_value(
+    command: str,
+    value: Any,
+    *,
+    is_motion: bool = False,
+    hardware_command: bool = False,
+) -> Any:
+    """Apply closed common command-value schemas before profile dispatch."""
+
+    validate_bounded_json(value)
+    normalized = command.strip().lower().replace("-", "_")
+    if is_motion or normalized in STANDARD_MOTION_COMMANDS:
+        if value is None:
+            return value
+        if isinstance(value, bool):
+            raise ValueError("motion value must not be boolean")
+        if isinstance(value, (int, float)) and -100 <= float(value) <= 100:
+            return value
+        if isinstance(value, dict) and set(value) == {"x", "y"}:
+            axes = (value["x"], value["y"])
+            if all(
+                isinstance(axis, (int, float))
+                and not isinstance(axis, bool)
+                and -1 <= float(axis) <= 1
+                for axis in axes
+            ):
+                return value
+        raise ValueError("motion value must be null, -100..100 or normalized x/y")
+    if normalized in TTS_TEXT_COMMANDS:
+        if isinstance(value, str):
+            return value
+        if isinstance(value, dict):
+            allowed = {"text", "message", "value", "sender", "userId", "anonymous", "type"}
+            if not set(value) <= allowed:
+                raise ValueError("speech value contains unknown fields")
+            text = next((value.get(key) for key in ("text", "message", "value")), None)
+            if text is not None and not isinstance(text, str):
+                raise ValueError("speech text must be a string")
+            if "anonymous" in value and not isinstance(value["anonymous"], bool):
+                raise ValueError("speech anonymous flag must be boolean")
+            if any(
+                key in value and not isinstance(value[key], str)
+                for key in ("sender", "userId", "type")
+            ):
+                raise ValueError("speech identity fields must be strings")
+            return value
+        raise ValueError("speech value must be a string or closed speech object")
+    if normalized in {"tts:volume", "tts.volume"}:
+        raw = value
+        if isinstance(value, dict) and set(value) <= {"level", "volume"}:
+            raw = value.get("level", value.get("volume"))
+        if isinstance(raw, bool):
+            raise ValueError("speech volume must be numeric")
+        try:
+            volume = int(raw)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("speech volume must be numeric") from exc
+        if not 0 <= volume <= 100:
+            raise ValueError("speech volume must be between 0 and 100")
+    elif hardware_command and value is not None:
+        raise ValueError("non-motion hardware commands do not accept a value")
+    return value
 
 
 class WireModel(BaseModel):
@@ -27,6 +145,43 @@ class StreamPolicy(WireModel):
         validation_alias=AliasChoices("activeCameraId", "active_camera_id"),
         max_length=32,
     )
+
+
+class ClaimRequest(WireModel):
+    claim_token: str = Field(serialization_alias="claimToken", min_length=1, max_length=16_384)
+    device_key: str = Field(
+        serialization_alias="deviceKey",
+        min_length=64,
+        max_length=64,
+        pattern=r"^[0-9a-f]{64}$",
+    )
+    publish_camera_ids: list[str] = Field(
+        default_factory=list, serialization_alias="publishCameraIds", max_length=8
+    )
+    capabilities: dict[str, Any] | None = None
+
+    @field_validator("claim_token", "device_key")
+    @classmethod
+    def _nonblank_request_secret(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("claim request credential must not be blank")
+        return normalized
+
+    @field_validator("publish_camera_ids")
+    @classmethod
+    def _bounded_camera_ids(cls, values: list[str]) -> list[str]:
+        normalized = [value.strip() for value in values]
+        if any(not value or len(value) > 32 for value in normalized):
+            raise ValueError("publish camera id is invalid")
+        if len(set(normalized)) != len(normalized):
+            raise ValueError("publish camera ids must be unique")
+        return normalized
+
+    @field_validator("capabilities")
+    @classmethod
+    def _bounded_capabilities(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return validate_bounded_json(value) if value is not None else None
 
 
 class ClaimResponse(WireModel):
@@ -77,6 +232,11 @@ class ClaimResponse(WireModel):
             raise ValueError("publishTokens contains an invalid camera id or token")
         return {camera_id.strip(): token.strip() for camera_id, token in values.items()}
 
+    @field_validator("ingress")
+    @classmethod
+    def _bounded_ingress(cls, value: dict[str, Any] | None) -> dict[str, Any] | None:
+        return validate_bounded_json(value) if value is not None else None
+
     @field_validator("protocol_version")
     @classmethod
     def _supported_version(cls, value: int) -> int:
@@ -114,11 +274,33 @@ class ControlCommand(WireModel):
         validation_alias=AliasChoices("ackRequired", "ack_required"),
     )
 
+    @field_validator("value", "metadata")
+    @classmethod
+    def _bounded_command_json(cls, value: Any) -> Any:
+        return validate_bounded_json(value)
+
 
 class ControlAck(WireModel):
     command_id: str = Field(serialization_alias="commandId", min_length=1, max_length=128)
     status: Literal["ACK", "NACK"]
+    state: Literal[
+        "accepted",
+        "completed",
+        "rejected",
+        "failed",
+        "superseded",
+        "cancelled_by_stop",
+    ]
     message: str | None = Field(default=None, max_length=256)
+
+
+class OutcomeDeliveryAck(WireModel):
+    outcome_id: str = Field(
+        validation_alias=AliasChoices("outcomeId", "outcome_id"),
+        min_length=64,
+        max_length=64,
+        pattern=r"^[a-f0-9]{64}$",
+    )
 
 
 class RemoteAction(WireModel):
@@ -134,7 +316,6 @@ class RemoteAction(WireModel):
         "reset_safety",
         "restart_tts",
         "restart_audio",
-        "restart_chat",
         "update_client",
         "set_log_stream",
     ]
@@ -162,6 +343,11 @@ class RemoteAction(WireModel):
         if self.type != "set_log_stream" and self.duration_sec is not None:
             raise ValueError("durationSec is only valid for set_log_stream")
         return self
+
+
+class RemoteActionsPayload(WireModel):
+    stream: StreamPolicy | None = None
+    actions: list[RemoteAction] = Field(default_factory=list, max_length=32)
 
 
 class ActionResult(WireModel):

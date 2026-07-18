@@ -1,15 +1,20 @@
 """Camera pipeline for BotParty robot client."""
 
 import asyncio
+import concurrent.futures
 import contextlib
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
+from typing import Any
 
 from livekit import rtc
 
 from .config import RobotConfig
+from .process_group import terminate_async_process
+from .video.base import BaseVideoProfile, MediaProcess
 
 logger = logging.getLogger("botparty.camera")
 
@@ -21,13 +26,87 @@ CAMERA_BACKEND_MAP = {
 }
 
 
+class _OpenCVCaptureWorker:
+    """Own one OpenCV capture and bridge its blocking reads into asyncio."""
+
+    def __init__(self, cap: Any, *, warmup_frames: int, camera_id: str) -> None:
+        self._cap = cap
+        self._warmup_frames = warmup_frames
+        self._loop = asyncio.get_running_loop()
+        self._frames: asyncio.Queue[tuple[bool, Any]] = asyncio.Queue(maxsize=1)
+        self._stop = threading.Event()
+        self._finished = asyncio.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=f"botparty-camera-{camera_id}",
+            daemon=True,
+        )
+
+    def start(self) -> None:
+        self._thread.start()
+
+    def _mark_finished(self) -> None:
+        self._finished.set()
+
+    def _publish(self, result: tuple[bool, Any]) -> bool:
+        try:
+            delivery = asyncio.run_coroutine_threadsafe(self._frames.put(result), self._loop)
+        except RuntimeError:
+            return False
+        while not self._stop.is_set():
+            try:
+                delivery.result(timeout=0.2)
+                return True
+            except concurrent.futures.TimeoutError:
+                continue
+            except (concurrent.futures.CancelledError, RuntimeError):
+                return False
+        delivery.cancel()
+        return False
+
+    def _run(self) -> None:
+        try:
+            for _ in range(self._warmup_frames):
+                if self._stop.is_set():
+                    return
+                self._cap.read()
+            while not self._stop.is_set():
+                result = self._cap.read()
+                if not self._publish(result):
+                    return
+        finally:
+            with contextlib.suppress(Exception):
+                self._cap.release()
+            with contextlib.suppress(RuntimeError):
+                self._loop.call_soon_threadsafe(self._mark_finished)
+
+    async def read(self) -> tuple[bool, Any]:
+        return await self._frames.get()
+
+    async def close(self) -> None:
+        self._stop.set()
+        try:
+            await asyncio.wait_for(self._finished.wait(), timeout=1.2)
+        except asyncio.TimeoutError:
+            # Some V4L2/OpenCV backends wake a blocked read only when the descriptor closes.
+            with contextlib.suppress(Exception):
+                self._cap.release()
+            try:
+                await asyncio.wait_for(self._finished.wait(), timeout=0.5)
+            except asyncio.TimeoutError as exc:
+                raise RuntimeError("camera capture owner did not stop within deadline") from exc
+        self._thread.join(timeout=0.1)
+        if self._thread.is_alive():
+            raise RuntimeError("camera capture owner remained alive after release")
+
+
 class CameraManager:
     """Manages camera capture and publishing to a LiveKit room."""
 
     def __init__(
         self,
         config: RobotConfig,
-        video_profile,
+        video_profile: BaseVideoProfile,
         *,
         track_name: str = "camera",
         audio_enabled: bool = True,
@@ -39,25 +118,34 @@ class CameraManager:
         self.audio_enabled = audio_enabled
         self.camera_id = camera_id
         self._frame_count = 0
-        self._audio_task: asyncio.Task | None = None
+        self._video_track_published = False
+        self._audio_task: asyncio.Task[None] | None = None
 
     @property
     def frame_count(self) -> int:
         return self._frame_count
 
     @property
-    def audio_task(self) -> asyncio.Task | None:
+    def video_track_published(self) -> bool:
+        return self._video_track_published
+
+    @property
+    def audio_task(self) -> asyncio.Task[None] | None:
         return self._audio_task
 
     async def run(
         self,
-        room: rtc.Room,
+        room: rtc.Room | None,
         target_bitrate_kbps: int | None,
         running_fn: Callable[[], bool],
         connected_fn: Callable[[], bool],
     ) -> None:
         """Full camera pipeline. Designed to run as an asyncio.Task."""
+        if room is None:
+            raise RuntimeError("LiveKit room is required for the camera publisher")
         cap = None
+        capture_handed_off = False
+        self._video_track_published = False
         try:
             mode = self._pipeline_mode()
             if mode == "none":
@@ -78,9 +166,11 @@ class CameraManager:
 
             if target_bitrate_kbps:
                 try:
-                    publish_options.video_encoding = rtc.VideoEncoding(
-                        max_bitrate=target_bitrate_kbps * 1000,
-                        max_framerate=round(camera_fps),
+                    publish_options.video_encoding.CopyFrom(
+                        rtc.VideoEncoding(
+                            max_bitrate=target_bitrate_kbps * 1000,
+                            max_framerate=round(camera_fps),
+                        )
                     )
                     logger.info("Applying target bitrate: %d kbps", target_bitrate_kbps)
                 except Exception:
@@ -90,6 +180,7 @@ class CameraManager:
                     )
 
             await room.local_participant.publish_track(track, publish_options)
+            self._video_track_published = True
             logger.info("Camera track published: id=%s track=%s", self.camera_id, self.track_name)
 
             if self.audio_enabled and self.video_profile.has_audio():
@@ -106,6 +197,7 @@ class CameraManager:
                     rtc, source, running_fn, lambda: self._inc_frame()
                 )
             else:
+                capture_handed_off = True
                 await self._loop_cv2(
                     cap, source, frame_width, frame_height, camera_fps, running_fn, connected_fn
                 )
@@ -116,7 +208,8 @@ class CameraManager:
             logger.error("Camera pipeline error: %s", e)
             raise
         finally:
-            if cap is not None:
+            self._video_track_published = False
+            if cap is not None and not capture_handed_off:
                 cap.release()
                 logger.info("Camera released")
             if self._audio_task is not None and not self._audio_task.done():
@@ -125,7 +218,7 @@ class CameraManager:
                     await self._audio_task
                 self._audio_task = None
 
-    def restart_audio(self, room: rtc.Room, running_fn: Callable[[], bool]) -> asyncio.Task:
+    def restart_audio(self, room: rtc.Room, running_fn: Callable[[], bool]) -> asyncio.Task[None]:
         """(Re)start the audio task and return it. Caller is responsible for storing the ref."""
         task = asyncio.create_task(self.video_profile.start_audio(rtc, room, running_fn))
         self._audio_task = task
@@ -139,9 +232,9 @@ class CameraManager:
         self._frame_count += 1
 
     def _pipeline_mode(self) -> str:
-        return self.video_profile.capture_mode().strip().lower()
+        return str(self.video_profile.capture_mode()).strip().lower()
 
-    def _open_camera(self):
+    def _open_camera(self) -> tuple[Any, int, int, float]:
         import cv2
 
         device = self._resolve_device()
@@ -155,12 +248,6 @@ class CameraManager:
             raise RuntimeError(f"Could not open camera: {self.config.camera.device}")
 
         self._configure_capture(cap, cv2)
-
-        for _ in range(self.config.camera.warmup_frames):
-            try:
-                cap.read()
-            except Exception as exc:
-                logger.debug("Camera warmup frame error (non-fatal): %s", exc)
 
         frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or self.config.camera.width
         frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or self.config.camera.height
@@ -183,9 +270,9 @@ class CameraManager:
             self.config.camera.height,
             self.config.camera.fps,
         )
-        return cap, frame_width, frame_height, camera_fps
+        return cap, frame_width, frame_height, float(camera_fps)
 
-    def _resolve_device(self):
+    def _resolve_device(self) -> str | int:
         device = self.config.camera.device
         if isinstance(device, int):
             return device
@@ -197,7 +284,7 @@ class CameraManager:
             return int(match.group(1))
         return device
 
-    def _configure_capture(self, cap, cv2) -> None:
+    def _configure_capture(self, cap: Any, cv2: Any) -> None:
         if self.config.camera.fourcc:
             fourcc = self.config.camera.fourcc.strip().upper()
             if len(fourcc) == 4:
@@ -211,8 +298,13 @@ class CameraManager:
             cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.camera.height)
         with contextlib.suppress(Exception):
             cap.set(cv2.CAP_PROP_FPS, self.config.camera.fps)
+        for attribute in ("CAP_PROP_OPEN_TIMEOUT_MSEC", "CAP_PROP_READ_TIMEOUT_MSEC"):
+            timeout_property = getattr(cv2, attribute, None)
+            if timeout_property is not None:
+                with contextlib.suppress(Exception):
+                    cap.set(timeout_property, 1000)
 
-    def _resolve_backend(self, cv2):
+    def _resolve_backend(self, cv2: Any) -> Any | None:
         attr = CAMERA_BACKEND_MAP.get(self.config.camera.backend.strip().lower())
         if attr is None:
             return None
@@ -359,7 +451,8 @@ class CameraManager:
 
             if proc.stderr is not None:
                 stderr_task = asyncio.create_task(self._drain_stderr(proc.stderr))
-            if proc.stdout is None:
+            stdout = proc.stdout
+            if stdout is None:
                 raise RuntimeError("ffmpeg process has no stdout pipe")
 
             async def read_frames() -> None:
@@ -367,7 +460,7 @@ class CameraManager:
 
                 try:
                     while True:
-                        frame = await proc.stdout.readexactly(frame_bytes)
+                        frame = await stdout.readexactly(frame_bytes)
                         latest_frame = frame
                         latest_frame_seq += 1
                         frame_ready.set()
@@ -476,27 +569,11 @@ class CameraManager:
                 with contextlib.suppress(asyncio.CancelledError):
                     await stderr_task
 
-    async def _shutdown_process(self, proc, name: str) -> None:
-        with contextlib.suppress(ProcessLookupError):
-            proc.terminate()
+    async def _shutdown_process(self, proc: MediaProcess, name: str) -> None:
+        if not await terminate_async_process(proc):
+            logger.error("%s process group could not be reaped after SIGKILL", name)
 
-        try:
-            await asyncio.wait_for(proc.wait(), timeout=5)
-            return
-        except asyncio.TimeoutError:
-            logger.warning("%s did not exit after SIGTERM; killing", name)
-        except asyncio.CancelledError:
-            # Cleanup must continue even if the owning task was cancelled.
-            pass
-
-        if proc.returncode is None:
-            with contextlib.suppress(ProcessLookupError):
-                proc.kill()
-
-        with contextlib.suppress(asyncio.TimeoutError, asyncio.CancelledError):
-            await asyncio.wait_for(proc.wait(), timeout=2)
-
-    async def _drain_stderr(self, stderr) -> None:
+    async def _drain_stderr(self, stderr: asyncio.StreamReader) -> None:
         while True:
             line = await stderr.readline()
             if not line:
@@ -507,7 +584,7 @@ class CameraManager:
 
     async def _loop_cv2(
         self,
-        cap,
+        cap: Any,
         source: rtc.VideoSource,
         frame_width: int,
         frame_height: int,
@@ -525,44 +602,54 @@ class CameraManager:
         consecutive_failures = 0
         frames_since_report = 0
         report_started_at = time.monotonic()
+        worker = _OpenCVCaptureWorker(
+            cap,
+            warmup_frames=self.config.camera.warmup_frames,
+            camera_id=self.camera_id,
+        )
+        worker.start()
+        try:
+            while running_fn() and connected_fn():
+                ret, frame = await worker.read()
+                if not ret:
+                    consecutive_failures += 1
+                    logger.warning("Camera read failure #%d", consecutive_failures)
+                    if consecutive_failures >= 30:
+                        logger.error("Camera failed 30 times - aborting loop")
+                        break
+                    await asyncio.sleep(0.1)
+                    continue
 
-        while running_fn() and connected_fn():
-            ret, frame = await asyncio.to_thread(cap.read)
-            if not ret:
-                consecutive_failures += 1
-                logger.warning("Camera read failure #%d", consecutive_failures)
-                if consecutive_failures >= 30:
-                    logger.error("Camera failed 30 times - aborting loop")
-                    break
-                await asyncio.sleep(0.1)
-                continue
-
-            consecutive_failures = 0
-            frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
-            frame_rgba = self.video_profile.transform_rgba(frame_rgba, frame_width, frame_height)
-            lk_frame = rtc.VideoFrame(
-                frame_width, frame_height, rtc.VideoBufferType.RGBA, frame_rgba.tobytes()
-            )
-            source.capture_frame(lk_frame)
-            self._inc_frame()
-            frames_since_report += 1
-
-            now = time.monotonic()
-            elapsed = now - report_started_at
-            if elapsed >= 10:
-                logger.info(
-                    "Camera runtime: sent_fps=%.1f target_fps=%.1f resolution=%dx%d",
-                    frames_since_report / elapsed,
-                    camera_fps,
-                    frame_width,
-                    frame_height,
+                consecutive_failures = 0
+                frame_rgba = cv2.cvtColor(frame, cv2.COLOR_BGR2RGBA)
+                frame_rgba = self.video_profile.transform_rgba(
+                    frame_rgba, frame_width, frame_height
                 )
-                frames_since_report = 0
-                report_started_at = now
+                lk_frame = rtc.VideoFrame(
+                    frame_width, frame_height, rtc.VideoBufferType.RGBA, frame_rgba.tobytes()
+                )
+                source.capture_frame(lk_frame)
+                self._inc_frame()
+                frames_since_report += 1
 
-            next_frame_at += interval
-            sleep_for = next_frame_at - time.monotonic()
-            if sleep_for > 0:
-                await asyncio.sleep(sleep_for)
-            else:
-                next_frame_at = time.monotonic()
+                now = time.monotonic()
+                elapsed = now - report_started_at
+                if elapsed >= 10:
+                    logger.info(
+                        "Camera runtime: sent_fps=%.1f target_fps=%.1f resolution=%dx%d",
+                        frames_since_report / elapsed,
+                        camera_fps,
+                        frame_width,
+                        frame_height,
+                    )
+                    frames_since_report = 0
+                    report_started_at = now
+
+                next_frame_at += interval
+                sleep_for = next_frame_at - time.monotonic()
+                if sleep_for > 0:
+                    await asyncio.sleep(sleep_for)
+                else:
+                    next_frame_at = time.monotonic()
+        finally:
+            await asyncio.shield(worker.close())

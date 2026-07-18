@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 from .base import BaseVideoProfile
 
@@ -13,7 +14,7 @@ class VideoProfile(BaseVideoProfile):
     def capture_mode(self) -> str:
         return "opencv"
 
-    def transform_rgba(self, frame_rgba, frame_width: int, frame_height: int):
+    def transform_rgba(self, frame_rgba: Any, frame_width: int, frame_height: int) -> Any:
         try:
             import numpy as np
             from PIL import Image, ImageDraw

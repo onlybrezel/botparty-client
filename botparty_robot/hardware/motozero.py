@@ -4,17 +4,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .gpio import import_gpio
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = ("forward", "backward", "left", "right", "stop")
+    motion_commands = supported_commands[:-1]
     profile_name = "motozero"
     description = "4-channel GPIO adapter for MotoZero"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
-        self.gpio = import_gpio()
+        self.gpio: Any = import_gpio()
         self.delay = self.option_float("motor_delay", 0.25)
         self.pins = {
             "motor1a": self.option_int("motor1a", 24),
@@ -44,7 +47,11 @@ class HardwareAdapter(BaseHardware):
         if self.gpio is None:
             return
         for key in keys:
-            self.guarded_write(lambda key=key: self.gpio.output(self.pins[key], self.gpio.HIGH))
+
+            def write_high(pin: int = self.pins[key]) -> None:
+                self.gpio.output(pin, self.gpio.HIGH)
+
+            self.guarded_write(write_high)
 
     def _low_all(self) -> None:
         if self.gpio is None:

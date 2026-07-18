@@ -14,8 +14,6 @@ tts:
     speed: 165
 ```
 
----
-
 ## Install
 
 ```bash
@@ -27,8 +25,6 @@ Test it:
 ```bash
 echo "Hello from your robot" | espeak -v en-us+m1 -s 165 --stdout | aplay
 ```
-
----
 
 ## Options
 
@@ -67,8 +63,6 @@ options:
   voice_variant: "f3"
   speed: 150
 ```
-
----
 
 ## Troubleshooting
 

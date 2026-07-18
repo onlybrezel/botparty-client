@@ -4,31 +4,33 @@ BotParty's Python robot client connects a camera, control adapter and optional t
 
 ## Install
 
-The automatic bootstrap installs Git when needed, clones the client and runs the production
-installer:
+Download the versioned bootstrap artifact and verify its GitHub build attestation before running it.
+Store the trusted release SSH principals in `/etc/botparty/release-allowed-signers` and use the
+40-character commit ID named by the verified release:
 
 ```bash
-curl -fsSLo /tmp/install-botparty.sh \
-  https://raw.githubusercontent.com/onlybrezel/botparty-client/main/scripts/bootstrap-install.sh
-sudo bash /tmp/install-botparty.sh --device-groups video
-rm /tmp/install-botparty.sh
+gh release download v0.2.0 --repo onlybrezel/botparty-client \
+  --pattern bootstrap-install.sh --pattern SHA256SUMS \
+  --pattern 'botparty-robot-0.2.0-linux-amd64.zip' --dir /tmp/botparty-release
+gh attestation verify /tmp/botparty-release/bootstrap-install.sh --repo onlybrezel/botparty-client
+gh attestation verify /tmp/botparty-release/botparty-robot-0.2.0-linux-amd64.zip \
+  --repo onlybrezel/botparty-client
+BOTPARTY_BUNDLE_SHA256="$(grep 'botparty-robot-0.2.0-linux-amd64.zip$' \
+  /tmp/botparty-release/SHA256SUMS | cut -d' ' -f1)"
+BOTPARTY_RELEASE_COMMIT="<verified-40-character-release-commit>"
+sudo env BOTPARTY_INSTALL_REF="$BOTPARTY_RELEASE_COMMIT" \
+  BOTPARTY_INSTALL_ALLOWED_SIGNERS=/etc/botparty/release-allowed-signers \
+  BOTPARTY_INSTALL_BUNDLE_URL=https://github.com/onlybrezel/botparty-client/releases/download/v0.2.0/botparty-robot-0.2.0-linux-amd64.zip \
+  BOTPARTY_INSTALL_BUNDLE_SHA256="$BOTPARTY_BUNDLE_SHA256" \
+  bash /tmp/botparty-release/bootstrap-install.sh --device-groups video
 sudoedit /etc/botparty/config.yaml
 sudo systemctl enable --now botparty-robot.service
 ```
 
-For a manual first installation, clone the repository yourself and run the same installer:
-
-```bash
-sudo apt-get update
-sudo apt-get install -y git
-git clone --depth 1 https://github.com/onlybrezel/botparty-client.git
-cd botparty-client
-sudo ./scripts/install-botparty-client.sh --device-groups video
-```
-
-Both paths build an immutable wheel, download the verified video streamer, create the `botparty`
-service user and install the hardened systemd service. The automatic bootstrap keeps its checkout
-at `/opt/botparty/source`; the installed service itself runs from `/opt/botparty/venv`.
+Production installation is supported only through the verified bootstrap above. The bootstrap keeps
+its immutable checkout at `/opt/botparty/source`; the installed service runs from
+`/opt/botparty/venv`. For local source development, use the unprivileged virtual-environment setup
+below instead of installing a system service.
 
 Start with `hardware.type: none`. Validate the host before enabling motors:
 
@@ -43,11 +45,16 @@ For a local development environment:
 
 ```bash
 python3 -m venv .venv
-.venv/bin/pip install -e '.[dev]'
+.venv/bin/pip install --require-hashes --no-deps -r requirements/build-toolchain.txt
+.venv/bin/pip install --require-hashes -r requirements/dev.txt
+.venv/bin/pip install --no-deps -e .
 .venv/bin/botparty-robot --config config.example.yaml config validate
 ```
 
 ## Safety contract
+
+The current release profile is **media-only**. `hardware.type: none` is the only released hardware
+profile; moving adapters remain blocked until release-specific HIL evidence exists.
 
 - Every control-plane disconnect, watchdog expiry, update and shutdown latches a local stop.
 - A latched robot accepts no movement until an authorized `reset_safety` action with `safety:reset` scope arrives.
@@ -64,8 +71,9 @@ pins the exact URL, architecture, size and SHA-256; ELF and version checks run b
 activation. The standalone installer uses the same verified default:
 
 ```bash
-sudo -u botparty BOTPARTY_PYTHON=/opt/botparty/venv/bin/python \
-  BOTPARTY_STREAMER_DIR=/var/lib/botparty/bin \
+sudo BOTPARTY_PYTHON=/opt/botparty/venv/bin/python \
+  BOTPARTY_STREAMER_DIR=/opt/botparty/libexec \
+  BOTPARTY_TRUSTED_ARTIFACT_OWNER_UID=0 \
   ./scripts/install-botparty-streamer.sh
 ```
 
@@ -84,11 +92,12 @@ botparty-robot --config config.yaml doctor --network
 botparty-robot --config config.yaml support-bundle --output support.zip
 botparty-robot setup --output config.yaml
 botparty-robot --config config.yaml config export --output config.redacted.yaml
-botparty-robot --config config.yaml backup generate-key --key backup.key
+botparty-robot backup generate-key --key-file backup.key
 ```
 
 ## Documentation
 
+- [Developer guide](DEVELOPER_GUIDE.md)
 - [Installation and recovery](docs/installation.md)
 - [Configuration reference](docs/configuration.md)
 - [Security and threat model](docs/security.md)

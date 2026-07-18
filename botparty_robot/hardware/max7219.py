@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
@@ -23,10 +24,10 @@ class HardwareAdapter(BaseHardware):
     profile_name = "max7219"
     description = "SPI LED matrix expressions and brightness"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.spidev = optional_import("spidev", "spidev")
-        self.spi = None
+        self.spi: Any = None
         self.columns = [1, 2, 3, 4, 5, 6, 7, 8]
         self.rotate = self.option_int("rotate", 0)
 

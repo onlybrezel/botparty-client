@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .base import BaseTTSProfile
-from .common import command_exists, run_shell, shell_quote, write_text_file
+from .common import command_exists, run_pipeline, write_text_file
 
 
 class TTSProfile(BaseTTSProfile):
@@ -19,18 +21,25 @@ class TTSProfile(BaseTTSProfile):
     def can_handle(self) -> bool:
         return self.enabled and command_exists(self.espeak_path) and command_exists(self.aplay_path)
 
-    def say(self, message: str, metadata=None) -> None:
+    def say(self, message: str, metadata: dict[str, Any] | None = None) -> None:
         if not self.can_handle():
             return
         text_path = write_text_file(message)
         try:
-            voice = shell_quote(self.voice + "+" + self.voice_variant)
-            playback_device = shell_quote(self.playback_device)
-            command = (
-                f"cat {shell_quote(str(text_path))} | "
-                f"{shell_quote(self.espeak_path)} -v {voice} -s {self.speed} --stdout | "
-                f"{shell_quote(self.aplay_path)} -D {playback_device}"
+            run_pipeline(
+                [
+                    [
+                        self.espeak_path,
+                        "-v",
+                        self.voice + "+" + self.voice_variant,
+                        "-s",
+                        str(self.speed),
+                        "-f",
+                        str(text_path),
+                        "--stdout",
+                    ],
+                    [self.aplay_path, "-D", self.playback_device],
+                ]
             )
-            run_shell(command)
         finally:
             text_path.unlink(missing_ok=True)

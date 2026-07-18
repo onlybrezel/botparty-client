@@ -41,9 +41,10 @@ def _zip_entry(archive: zipfile.ZipFile, source: Path, destination: str) -> None
     archive.writestr(info, source.read_bytes())
 
 
-def build_bundle(wheel: Path, lock: Path, output: Path) -> Path:
+def build_bundle(wheel: Path, lock: Path, installer_lock: Path, output: Path) -> Path:
     wheel = wheel.resolve(strict=True)
     lock = lock.resolve(strict=True)
+    installer_lock = installer_lock.resolve(strict=True)
     package_name, version = _wheel_name_and_version(wheel)
     wheel_hash = hashlib.sha256(wheel.read_bytes()).hexdigest()
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -59,10 +60,13 @@ def build_bundle(wheel: Path, lock: Path, output: Path) -> Path:
                 "download",
                 "--quiet",
                 "--require-hashes",
+                "--only-binary=:all:",
                 "--dest",
                 str(wheelhouse),
                 "-r",
                 str(lock),
+                "-r",
+                str(installer_lock),
             ],
             check=True,
             timeout=600,
@@ -70,6 +74,8 @@ def build_bundle(wheel: Path, lock: Path, output: Path) -> Path:
         app_wheel = wheelhouse / wheel.name
         app_wheel.write_bytes(wheel.read_bytes())
         requirements = temporary / "requirements.txt"
+        temporary_installer_lock = temporary / "installer-requirements.txt"
+        temporary_installer_lock.write_bytes(installer_lock.read_bytes())
         lock_text = lock.read_text(encoding="utf-8").rstrip()
         app_requirement = f"{package_name}=={version} " + "\\\n" + f"    --hash=sha256:{wheel_hash}"
         requirements.write_text(
@@ -81,6 +87,11 @@ def build_bundle(wheel: Path, lock: Path, output: Path) -> Path:
         try:
             with zipfile.ZipFile(staging, "w") as archive:
                 _zip_entry(archive, requirements, "requirements.txt")
+                _zip_entry(
+                    archive,
+                    temporary_installer_lock,
+                    "installer-requirements.txt",
+                )
                 for artifact in sorted(wheelhouse.iterdir(), key=lambda path: path.name):
                     if not artifact.is_file():
                         raise ValueError("OTA wheelhouse contains a non-file entry")
@@ -96,13 +107,14 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Build a BotParty offline OTA bundle")
     parser.add_argument("--wheel", type=Path, required=True)
     parser.add_argument("--lock", type=Path, required=True)
+    parser.add_argument("--installer-lock", type=Path, required=True)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     output = args.output
     if output is None:
         _name, version = _wheel_name_and_version(args.wheel)
         output = Path("dist") / f"botparty-robot-{version}-linux-{_normalized_architecture()}.zip"
-    result = build_bundle(args.wheel, args.lock, output)
+    result = build_bundle(args.wheel, args.lock, args.installer_lock, output)
     sys.stdout.write(f"{result}\n")
     return 0
 

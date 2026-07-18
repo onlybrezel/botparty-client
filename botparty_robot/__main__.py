@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import contextlib
 import json
 import logging
 import os
+import shutil
 import signal
+import sys
 from dataclasses import asdict
 from pathlib import Path
 from typing import Any
@@ -25,15 +28,23 @@ from .backup import (
 )
 from .client import BotPartyClient, should_emit_runtime_log
 from .config import RobotConfig, normalize_cameras
-from .device_state import DeviceStateError, load_or_create_device_key, resolve_state_directory
+from .device_state import (
+    DeviceStateError,
+    load_or_create_device_key,
+    read_configuration_file,
+    resolve_state_directory,
+)
 from .operator import (
     apply_imported_config,
     create_setup_config,
     export_config,
     import_config_preview,
     run_doctor,
+    systemd_device_allow_rules,
+    write_config_schema,
     write_support_bundle,
 )
+from .process_group import run_sandboxed
 
 
 class ConfigLoadError(RuntimeError):
@@ -53,6 +64,45 @@ logging.basicConfig(
 logger = logging.getLogger("botparty")
 SHUTDOWN_TIMEOUT_SECONDS = 15.0
 LEGACY_CONFIG_DEPRECATION_DEADLINE = "2026-09-01"
+
+_DE_MESSAGES = {
+    "description": "BotParty-Roboterclient",
+    "config_path": "Pfad zur YAML-Konfiguration (Standard: BOTPARTY_CONFIG oder ./config.yaml)",
+    "config": "Konfiguration prüfen oder übertragen",
+    "validate": "Ohne Netzwerk- oder Hardwarezugriff prüfen",
+    "export": "Bereinigte, portable Konfiguration schreiben",
+    "import": "Konfigurationsimport anzeigen oder anwenden",
+    "schema": "Versioniertes JSON-Schema schreiben",
+    "doctor": "Nichtbewegende Host-Prüfungen ausführen",
+    "commission": "Geführte nichtbewegende Freigabeprüfung ausführen",
+    "network": "Zusätzlich DNS und TLS prüfen",
+    "device_policy": "systemd-DeviceAllow-Regeln der Konfiguration ausgeben",
+    "support": "Bereinigtes Support-ZIP erstellen",
+    "setup": "Minimale Konfiguration interaktiv erstellen",
+    "answers": "Setup-Antworten aus einem JSON-Objekt lesen",
+    "completion": "Shell-Vervollständigung ausgeben",
+    "backup": "Verschlüsselten Gerätestand sichern oder wiederherstellen",
+    "generate_key": "Backup-Schlüssel für Betreiber erstellen",
+    "backup_create": "Verschlüsseltes Backup erstellen",
+    "backup_restore": "Verschlüsseltes Backup wiederherstellen",
+    "valid": "Konfiguration ist gültig.",
+    "no_changes": "Keine Änderungen.",
+}
+
+
+def _human(locale: str, key: str, english: str) -> str:
+    return _DE_MESSAGES.get(key, english) if locale == "de" else english
+
+
+def _selected_locale(argv: list[str] | None) -> str:
+    arguments = list(argv if argv is not None else sys.argv[1:])
+    configured = os.getenv("BOTPARTY_LOCALE", "en").strip().lower()
+    for index, argument in enumerate(arguments):
+        if argument.startswith("--locale="):
+            configured = argument.partition("=")[2].strip().lower()
+        elif argument == "--locale" and index + 1 < len(arguments):
+            configured = arguments[index + 1].strip().lower()
+    return configured if configured in {"en", "de"} else "en"
 
 
 class PlannedReconnectNoiseFilter(logging.Filter):
@@ -142,7 +192,11 @@ def _apply_legacy_tts_defaults(raw: dict[str, Any]) -> dict[str, Any]:
     tts["enabled"] = bool(tts.get("enabled", tts.get("type", "none") != "none"))
     tts["type"] = str(tts.get("type", "none"))
     tts["playback_device"] = str(speaker_device or "default")
-    tts["volume"] = int(tts.get("volume", legacy_volume))
+    volume_value = tts.get("volume", legacy_volume)
+    try:
+        tts["volume"] = int(volume_value) if volume_value is not None else 70
+    except (TypeError, ValueError):
+        tts["volume"] = 70
     tts["filter_urls"] = bool(tts.get("filter_urls", legacy_filter))
     tts["allow_anonymous"] = bool(tts.get("allow_anonymous", legacy_anonymous))
     tts["blocked_senders"] = list(tts.get("blocked_senders", []))
@@ -161,6 +215,35 @@ def _migrate_raw_config(raw: dict[str, Any]) -> dict[str, Any]:
         safety.pop("emergency_stop_pin")
         _warn_legacy_config("safety.emergency_stop_pin", "external hardware stop circuit")
     return raw
+
+
+def _uses_legacy_config(raw: dict[str, Any]) -> bool:
+    controls = raw.get("controls")
+    camera = raw.get("camera")
+    tts = raw.get("tts")
+    safety = raw.get("safety")
+    return bool(
+        isinstance(controls, dict)
+        or (isinstance(camera, dict) and "pipeline" in camera)
+        or (
+            isinstance(tts, dict)
+            and any(
+                name in tts
+                for name in (
+                    "speaker_device",
+                    "audio_device",
+                    "speaker_num",
+                    "hw_num",
+                    "delay_tts",
+                    "delay",
+                    "tts_volume",
+                    "filter_url_tts",
+                    "anon_tts",
+                )
+            )
+        )
+        or (isinstance(safety, dict) and "emergency_stop_pin" in safety)
+    )
 
 
 def _format_validation_error(exc: ValidationError) -> str:
@@ -183,16 +266,24 @@ def _load_config_from(
 ) -> RobotConfig:
     config_path = _resolve_config_path(path_override)
     try:
-        raw = yaml.safe_load(config_path.read_text(encoding="utf-8"))
+        raw = yaml.safe_load(
+            read_configuration_file(
+                config_path,
+                allow_public_example=config_path.name == "config.example.yaml",
+            ).decode("utf-8")
+        )
     except FileNotFoundError as exc:
         raise ConfigLoadError(
             f"{config_path} does not exist; copy config.example.yaml or run 'botparty-robot setup'"
         ) from exc
+    except DeviceStateError as exc:
+        raise ConfigLoadError(str(exc)) from exc
     except (OSError, UnicodeError, yaml.YAMLError) as exc:
         raise ConfigLoadError(f"cannot read YAML configuration: {config_path}") from exc
     if not isinstance(raw, dict):
         raise ConfigLoadError("configuration must contain a YAML object at the top level")
 
+    legacy_migration_used = _uses_legacy_config(raw)
     raw = _migrate_raw_config(raw)
     server = raw.get("server")
     if isinstance(server, dict):
@@ -214,6 +305,7 @@ def _load_config_from(
     except ValidationError as exc:
         raise ConfigLoadError(_format_validation_error(exc)) from exc
     config._source_path = config_path
+    config._legacy_migration_used = legacy_migration_used
 
     if persist_device_key and config.server.device_key is None:
         try:
@@ -228,43 +320,113 @@ def load_config() -> RobotConfig:
     return _load_config_from(None)
 
 
-def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="BotParty Robot Client")
+def _build_parser(locale: str = "en") -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(
+        description=_human(locale, "description", "BotParty Robot Client")
+    )
     parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    parser.add_argument(
+        "--locale",
+        choices=["en", "de"],
+        default=locale,
+        help="Operator language / Sprache (default: BOTPARTY_LOCALE or en)",
+    )
     parser.add_argument(
         "--config",
         metavar="PATH",
-        help="Config YAML path (default: BOTPARTY_CONFIG or ./config.yaml)",
+        help=_human(
+            locale,
+            "config_path",
+            "Config YAML path (default: BOTPARTY_CONFIG or ./config.yaml)",
+        ),
     )
     commands = parser.add_subparsers(dest="command")
 
-    config_parser = commands.add_parser("config", help="Validate or transfer configuration")
+    config_parser = commands.add_parser(
+        "config", help=_human(locale, "config", "Validate or transfer configuration")
+    )
     config_commands = config_parser.add_subparsers(dest="config_command", required=True)
-    config_commands.add_parser("validate", help="Validate without network or hardware access")
-    export_parser = config_commands.add_parser("export", help="Write a redacted portable config")
+    config_commands.add_parser(
+        "validate",
+        help=_human(locale, "validate", "Validate without network or hardware access"),
+    )
+    export_parser = config_commands.add_parser(
+        "export", help=_human(locale, "export", "Write a redacted portable config")
+    )
     export_parser.add_argument("--output", type=Path, required=True)
-    import_parser = config_commands.add_parser("import", help="Preview or apply a config import")
+    import_parser = config_commands.add_parser(
+        "import", help=_human(locale, "import", "Preview or apply a config import")
+    )
     import_parser.add_argument("--input", type=Path, required=True)
     import_parser.add_argument("--apply", action="store_true")
+    schema_parser = config_commands.add_parser(
+        "schema", help=_human(locale, "schema", "Write the versioned JSON schema")
+    )
+    schema_parser.add_argument("--output", type=Path, required=True)
 
-    doctor_parser = commands.add_parser("doctor", help="Run non-moving host checks")
-    doctor_parser.add_argument("--network", action="store_true", help="Also check DNS and TLS")
+    doctor_parser = commands.add_parser(
+        "doctor", help=_human(locale, "doctor", "Run non-moving host checks")
+    )
+    doctor_parser.add_argument(
+        "--network",
+        action="store_true",
+        help=_human(locale, "network", "Also check DNS and TLS"),
+    )
     doctor_parser.add_argument("--json", action="store_true")
 
-    support_parser = commands.add_parser("support-bundle", help="Create a secret-free support ZIP")
+    commission_parser = commands.add_parser(
+        "commission",
+        help=_human(locale, "commission", "Run a guided non-moving release check"),
+    )
+    commission_parser.add_argument("--online", action="store_true")
+    commission_parser.add_argument("--timeout", type=float, default=45.0)
+    commission_parser.add_argument("--output", type=Path)
+
+    commands.add_parser(
+        "device-policy",
+        help=_human(
+            locale,
+            "device_policy",
+            "Print systemd DeviceAllow rules for the effective configuration",
+        ),
+    )
+
+    support_parser = commands.add_parser(
+        "support-bundle", help=_human(locale, "support", "Create a secret-free support ZIP")
+    )
     support_parser.add_argument("--output", type=Path, required=True)
 
-    setup_parser = commands.add_parser("setup", help="Create a minimal config interactively")
+    setup_parser = commands.add_parser(
+        "setup", help=_human(locale, "setup", "Create a minimal config interactively")
+    )
     setup_parser.add_argument("--output", type=Path)
+    setup_parser.add_argument(
+        "--answers",
+        type=Path,
+        help=_human(locale, "answers", "Read non-interactive setup answers from a JSON object"),
+    )
 
-    backup_parser = commands.add_parser("backup", help="Create or restore encrypted device state")
+    completion_parser = commands.add_parser(
+        "completion", help=_human(locale, "completion", "Print shell completion setup")
+    )
+    completion_parser.add_argument("shell", choices=["bash", "zsh", "fish"])
+
+    backup_parser = commands.add_parser(
+        "backup", help=_human(locale, "backup", "Create or restore encrypted device state")
+    )
     backup_commands = backup_parser.add_subparsers(dest="backup_command", required=True)
-    key_parser = backup_commands.add_parser("generate-key", help="Create an operator backup key")
+    key_parser = backup_commands.add_parser(
+        "generate-key", help=_human(locale, "generate_key", "Create an operator backup key")
+    )
     key_parser.add_argument("--key-file", type=Path, required=True)
-    create_parser = backup_commands.add_parser("create", help="Create an encrypted backup")
+    create_parser = backup_commands.add_parser(
+        "create", help=_human(locale, "backup_create", "Create an encrypted backup")
+    )
     create_parser.add_argument("--key-file", type=Path, required=True)
     create_parser.add_argument("--output", type=Path, required=True)
-    restore_parser = backup_commands.add_parser("restore", help="Restore an encrypted backup")
+    restore_parser = backup_commands.add_parser(
+        "restore", help=_human(locale, "backup_restore", "Restore an encrypted backup")
+    )
     restore_parser.add_argument("--key-file", type=Path, required=True)
     restore_parser.add_argument("--input", type=Path, required=True)
     restore_parser.add_argument("--state-dir", type=Path)
@@ -327,19 +489,25 @@ async def _run_client(config: RobotConfig) -> int:
     except asyncio.CancelledError:
         if shutdown_task is None or not shutdown_task.done():
             raise
+    if shutdown_task is not None:
+        await shutdown_task
     return 0
 
 
 def _command_config(args: argparse.Namespace) -> int:
     if args.config_command == "import":
         raw, diff = import_config_preview(args.input, _resolve_config_path(args.config))
-        print(diff or "No changes.")
+        print(diff or _human(args.locale, "no_changes", "No changes."))
         if args.apply and diff:
             apply_imported_config(raw, _resolve_config_path(args.config))
         return 0
+    if args.config_command == "schema":
+        write_config_schema(args.output)
+        print(args.output)
+        return 0
     config = _load_config_from(args.config, persist_device_key=False)
     if args.config_command == "validate":
-        print("Configuration is valid.")
+        print(_human(args.locale, "valid", "Configuration is valid."))
         return 0
     if args.config_command == "export":
         export_config(config, args.output)
@@ -386,6 +554,138 @@ def _command_backup(args: argparse.Namespace) -> int:
     return 0
 
 
+async def _command_commission(args: argparse.Namespace) -> int:
+    if not 5 <= args.timeout <= 300:
+        raise ValueError("commission timeout must be between 5 and 300 seconds")
+    config = _load_config_from(args.config, persist_device_key=args.online)
+    checks = run_doctor(config, network=args.online)
+    phases: list[dict[str, object]] = [
+        {
+            "id": "host",
+            "status": "failed" if any(check.status == "ERROR" for check in checks) else "passed",
+            "checks": [asdict(check) for check in checks],
+        }
+    ]
+    unit_path = Path("/etc/systemd/system/botparty-robot.service")
+    systemctl = shutil.which("systemctl")
+    if unit_path.is_file() and systemctl is not None:
+        enabled = run_sandboxed(
+            [systemctl, "is-enabled", "botparty-robot.service"],
+            timeout=5,
+            capture_output=True,
+            text=True,
+        )
+        phases.append(
+            {
+                "id": "service",
+                "status": "passed" if enabled.returncode == 0 else "failed",
+                "code": "unit_enabled" if enabled.returncode == 0 else "unit_not_enabled",
+            }
+        )
+    else:
+        phases.append({"id": "service", "status": "skipped", "code": "systemd_not_detected"})
+    cloud_tts = config.tts.enabled and config.tts.type in {"google_cloud", "polly"}
+    cloud_consent = bool(config.tts.options.get("cloud_data_processing_accepted", False))
+    phases.append(
+        {
+            "id": "data_processing",
+            "status": "failed" if cloud_tts and not cloud_consent else "passed",
+            "code": (
+                "cloud_tts_consent_missing"
+                if cloud_tts and not cloud_consent
+                else "configured_opt_in_state_recorded"
+            ),
+            "diagnosticsEnabled": config.diagnostics.upload_enabled,
+            "telemetryEnabled": config.telemetry.operational_enabled,
+            "productAnalyticsEnabled": config.telemetry.product_analytics_enabled,
+        }
+    )
+    non_moving = config.hardware.type == "none"
+    phases.append(
+        {
+            "id": "motion_guard",
+            "status": "passed" if non_moving else "failed",
+            "code": "hardware_none" if non_moving else "moving_hardware_configured",
+        }
+    )
+    if args.online and non_moving:
+        client = BotPartyClient(config)
+        run_task = asyncio.create_task(client.run())
+        deadline = asyncio.get_running_loop().time() + args.timeout
+        try:
+            while asyncio.get_running_loop().time() < deadline:
+                if run_task.done():
+                    break
+                media_ok = not client._media_required() or client._total_camera_frames() > 0
+                if client._gateway.connected and media_ok:
+                    break
+                await asyncio.sleep(0.1)
+        finally:
+            with contextlib.suppress(Exception):
+                await asyncio.wait_for(client.shutdown(), timeout=10)
+            if not run_task.done():
+                run_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError, Exception):
+                await run_task
+        claimed = bool(client._robot_id)
+        control_ready = client._gateway.connected
+        media_required = client._media_required()
+        media_ready = not media_required or client._total_camera_frames() > 0
+        phases.extend(
+            [
+                {
+                    "id": "claim",
+                    "status": "passed" if claimed else "failed",
+                    "code": "identity_claimed" if claimed else "claim_not_completed",
+                },
+                {
+                    "id": "control",
+                    "status": "passed" if control_ready else "failed",
+                    "code": "gateway_ready" if control_ready else "gateway_not_ready",
+                },
+                {
+                    "id": "media",
+                    "status": "passed" if media_ready else "failed",
+                    "code": (
+                        "media_not_required"
+                        if not media_required
+                        else "first_frame_received"
+                        if media_ready
+                        else "first_frame_missing"
+                    ),
+                },
+            ]
+        )
+    elif args.online:
+        phases.extend(
+            {"id": phase, "status": "skipped", "code": "motion_guard_failed"}
+            for phase in ("claim", "control", "media")
+        )
+    else:
+        phases.extend(
+            {"id": phase, "status": "skipped", "code": "offline_mode"}
+            for phase in ("claim", "control", "media")
+        )
+
+    passed = all(phase["status"] != "failed" for phase in phases)
+    report = {
+        "schemaVersion": 1,
+        "clientVersion": __version__,
+        "buildId": __build_id__,
+        "mode": "online" if args.online else "offline",
+        "passed": passed,
+        "phases": phases,
+    }
+    rendered = json.dumps(report, indent=2, sort_keys=True) + "\n"
+    if args.output is not None:
+        args.output.parent.mkdir(parents=True, exist_ok=True)
+        args.output.write_text(rendered, encoding="utf-8")
+        print(args.output)
+    else:
+        print(rendered, end="")
+    return 0 if passed else 1
+
+
 async def async_main(args: argparse.Namespace) -> int:
     if args.command is None:
         return await _run_client(_load_config_from(args.config))
@@ -393,8 +693,25 @@ async def async_main(args: argparse.Namespace) -> int:
         return _command_config(args)
     if args.command == "setup":
         output = args.output or _resolve_config_path(args.config)
-        create_setup_config(output)
+        answers = None
+        if args.answers is not None:
+            payload = json.loads(args.answers.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict):
+                raise ValueError("setup answers must contain a JSON object")
+            answers = payload
+        create_setup_config(output, answers=answers, locale=args.locale)
         print(output)
+        return 0
+    if args.command == "completion":
+        command_names = (
+            "config doctor commission device-policy support-bundle setup backup completion"
+        )
+        snippets = {
+            "bash": f'complete -W "{command_names}" botparty-robot',
+            "zsh": f"compdef \"_arguments '1:command:({command_names})'\" botparty-robot",
+            "fish": f"complete -c botparty-robot -f -a '{command_names}'",
+        }
+        print(snippets[args.shell])
         return 0
     if args.command == "doctor":
         checks = run_doctor(
@@ -405,10 +722,17 @@ async def async_main(args: argparse.Namespace) -> int:
             print(json.dumps([asdict(check) for check in checks], indent=2))
         else:
             for check in checks:
-                print(f"{check.status:5} {check.name}: {check.detail}")
+                status = (
+                    "FEHLER" if args.locale == "de" and check.status == "ERROR" else check.status
+                )
+                label = "Prüfung" if args.locale == "de" else ""
+                print(f"{status:6} {label + ' ' if label else ''}{check.name}: {check.detail}")
                 if check.fix:
-                    print(f"      {check.fix}")
+                    prefix = "Behebung:" if args.locale == "de" else ""
+                    print(f"       {prefix + ' ' if prefix else ''}{check.fix}")
         return 1 if any(check.status == "ERROR" for check in checks) else 0
+    if args.command == "commission":
+        return await _command_commission(args)
     if args.command == "support-bundle":
         write_support_bundle(
             _load_config_from(args.config, persist_device_key=False),
@@ -416,13 +740,18 @@ async def async_main(args: argparse.Namespace) -> int:
         )
         print(args.output)
         return 0
+    if args.command == "device-policy":
+        config = _load_config_from(args.config, persist_device_key=False)
+        for rule in systemd_device_allow_rules(config):
+            print(rule)
+        return 0
     if args.command == "backup":
         return _command_backup(args)
     raise RuntimeError(f"unsupported command: {args.command}")
 
 
 def main(argv: list[str] | None = None) -> int:
-    parser = _build_parser()
+    parser = _build_parser(_selected_locale(argv))
     args = parser.parse_args(argv)
     try:
         return asyncio.run(async_main(args))

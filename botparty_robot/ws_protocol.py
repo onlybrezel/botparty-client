@@ -12,6 +12,7 @@ WS_EVENTS: dict[str, str] = {
     "ROBOT_ACTIONS_PULL": "robot:actions:pull",
     "ROBOT_ACTIONS": "robot:actions",
     "ROBOT_ACTION_RESULT": "robot:action-result",
+    "ROBOT_OUTCOME_ACK": "robot:outcome-ack",
     "CONTROL_COMMAND": "control:command",
     "CONTROL_ACK": "control:ack",
     "CONTROL_EMERGENCY_STOP": "control:emergency-stop",

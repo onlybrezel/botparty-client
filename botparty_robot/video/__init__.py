@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import importlib
-from typing import Final
+from typing import Final, cast
 
 from ..config import RobotConfig
 from .base import BaseVideoProfile
@@ -38,7 +38,7 @@ def normalize_profile_name(name: str) -> str:
 def create_video_profile(config: RobotConfig) -> BaseVideoProfile:
     profile = normalize_profile_name(config.video.type)
     module = importlib.import_module(f".{profile}", package=__name__)
-    return module.VideoProfile(config)
+    return cast(BaseVideoProfile, module.VideoProfile(config))
 
 
 __all__ = ["BaseVideoProfile", "create_video_profile", "normalize_profile_name"]

@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from .base import BaseTTSProfile
-from .common import command_exists, getenv_or_option, run_shell, shell_quote, write_bytes_file
+from .common import command_exists, getenv_or_option, run_process, write_bytes_file
 
 
 class TTSProfile(BaseTTSProfile):
@@ -43,7 +45,7 @@ class TTSProfile(BaseTTSProfile):
             and command_exists(self.mpg123_path)
         )
 
-    def say(self, message: str, metadata=None) -> None:
+    def say(self, message: str, metadata: dict[str, Any] | None = None) -> None:
         if not self.can_handle():
             return
         response = self.client.synthesize_speech(
@@ -53,9 +55,11 @@ class TTSProfile(BaseTTSProfile):
         )
         if "AudioStream" not in response:
             return
+        if not self.operation_is_active():
+            return
         mp3_path = write_bytes_file(response["AudioStream"].read(), ".mp3")
         try:
-            command = [shell_quote(self.mpg123_path)]
+            command = [self.mpg123_path]
             output_module = self.output_module
             if not output_module:
                 if self.playback_device.strip().lower() in {"pulse", "default"}:
@@ -64,12 +68,13 @@ class TTSProfile(BaseTTSProfile):
                     output_module = "alsa"
 
             if output_module in {"pulse", "alsa"}:
-                command.extend(["-o", shell_quote(output_module)])
+                command.extend(["-o", output_module])
 
             if output_module != "pulse":
-                command.extend(["-a", shell_quote(self.playback_device)])
+                command.extend(["-a", self.playback_device])
 
-            command.extend(["-q", shell_quote(str(mp3_path))])
-            run_shell(" ".join(command))
+            command.extend(["-q", str(mp3_path)])
+            if self.operation_is_active():
+                run_process(command)
         finally:
             mp3_path.unlink(missing_ok=True)

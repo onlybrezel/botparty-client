@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Callable
+from typing import Any
 
 from ..hardware.vector import get_vector_robot
 from .base import BaseVideoProfile
@@ -14,7 +16,13 @@ class VideoProfile(BaseVideoProfile):
     def capture_mode(self) -> str:
         return "sdk"
 
-    async def capture_sdk_frames(self, rtc, source, running, on_frame) -> None:
+    async def capture_sdk_frames(
+        self,
+        rtc: Any,
+        source: Any,
+        running: Callable[[], bool],
+        on_frame: Callable[[], None],
+    ) -> None:
         while running():
             robot = get_vector_robot()
             if robot is None:

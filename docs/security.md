@@ -11,6 +11,7 @@
 ## Trust boundaries
 
 The browser, API, WebSocket gateway, LiveKit, release host, robot service and hardware buses are separate trust zones. Network input is bounded and validated before dispatch. Secrets are redacted from validation errors, logs, exports and support bundles.
+See [`architecture.md`](architecture.md) for the process, credential and storage boundary.
 
 ## Controls
 
@@ -31,12 +32,20 @@ Software E-STOP does not replace a normally closed, hard-wired power cutoff. Val
 
 ## Server contract
 
-The client requires robot-bound short-lived authentication, per-action IDs/timestamps, authorization for control, diagnostics and updates, and an E-STOP path that is not delayed by the normal command queue. The current companion backend enforces robot JWT binding, access policy, stale-control rejection, per-event rate limits and idempotent paid-command IDs. Fine-grained media/motion/speak/update scopes and immutable action auditing remain platform release gates.
+The client requires robot-bound short-lived authentication, per-action IDs/timestamps,
+authorization for control, diagnostics and updates, and an E-STOP path that is not delayed by the
+normal command queue. These backend properties are not inferred from client code. Every release
+must carry the protected, attested platform test record described in
+[`protocol.md`](protocol.md), including tenant isolation, token rejection, scope, rate-limit,
+idempotency, media-room and audit scenarios.
 
 ## Device identity rotation
 
-Stop the service, revoke the existing robot/device binding in the platform, create an encrypted
-backup, remove only the local `device-key`, and restart to generate a new owner-only key. Re-claim
-the robot with a short-lived claim token and verify the new binding before restoring control.
-Never copy one active device key to two robots. Loss or sale requires server revocation before the
-local config, state, OTA slots and backup material are erased.
+The current platform contract does not expose an authenticated revoke-and-rebind operation to this
+client. Do not remove or replace `device-key` as a local shortcut: the client cannot prove that the
+old binding was revoked, and an interrupted handover could leave two identities or lock out the
+device. Keep the service stopped and the physical actuator cutoff open while an operator revokes
+the old binding in the platform. Rotation remains blocked until the backend provides an atomic,
+audited revocation and re-claim contract that the CLI can verify. Never copy one active device key
+to two robots. Loss or sale requires platform revocation before local config, state, OTA slots and
+backup material are erased.

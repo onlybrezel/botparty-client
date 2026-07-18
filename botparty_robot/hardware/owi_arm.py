@@ -4,18 +4,35 @@ from __future__ import annotations
 
 from typing import Any
 
+from ..config import RobotConfig
 from .base import BaseHardware
 from .common import optional_import
 
 
 class HardwareAdapter(BaseHardware):
+    supported_commands = (
+        "forward",
+        "backward",
+        "left",
+        "right",
+        "lift_up",
+        "lift_down",
+        "head_up",
+        "head_down",
+        "open",
+        "close",
+        "1",
+        "0",
+        "stop",
+    )
+    motion_commands = supported_commands[:10]
     profile_name = "owi_arm"
     description = "OWI USB robotic arm controller"
 
-    def __init__(self, config) -> None:
+    def __init__(self, config: RobotConfig) -> None:
         super().__init__(config)
         self.usb = optional_import("usb.core", "pyusb")
-        self.arm = None
+        self.arm: Any = None
         self.led = 0
         self.step_seconds = self.option_float("step_seconds", 0.15)
         self.vendor_id = self.option_int("vendor_id", 0x1267)

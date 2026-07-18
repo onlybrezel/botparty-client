@@ -15,6 +15,16 @@ build/
 .venv/
 venv/
 *.egg
+.coverage
+coverage.json
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+# Local review and audit reports
+audits/
 
 # Editor
 .vscode/
