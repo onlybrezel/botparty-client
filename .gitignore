@@ -16,6 +16,7 @@ build/
 venv/
 *.egg
 .coverage
+.coverage.*
 coverage.json
 coverage.xml
 htmlcov/
@@ -23,9 +24,78 @@ htmlcov/
 .pytest_cache/
 .ruff_cache/
 
-# Local review and audit reports
-audits/
-
 # Editor
 .vscode/
 .idea/
+
+# Local AI assistants and coding agents
+.agent/
+.agents/
+.ai/
+.amazonq/
+.aider*
+.chatgpt/
+.claude/
+.claude.json
+.claudeignore
+.cline/
+.clinerules*
+.codex/
+.codexignore
+.copilot/
+.continue/
+.cursor/
+.cursorrules*
+.gemini/
+.goose/
+.goosehints
+.junie/
+.roo/
+.roorules*
+.serena/
+.warp/
+.windsurf/
+.windsurfrules*
+
+# Repository-specific agent instructions
+AGENTS*.md
+CLAUDE*.md
+CODEX*.md
+COPILOT*.md
+GEMINI*.md
+CHATGPT*.md
+copilot-instructions.md
+llms*.txt
+.mcp.json
+mcp.json
+*.instructions.md
+*.prompt.md
+*.agent.md
+.github/copilot-instructions.md
+.github/agents/
+.github/chatmodes/
+.github/copilot/
+.github/instructions/
+.github/prompts/
+.github/skills/
+
+# Local agent notes and handoffs
+AI_NOTES.md
+AI_TODO.md
+CONTEXT.md
+CONTEXT-MAP.md
+HANDOFF*.md
+PROMPT*.md
+SESSION_NOTES.md
+TODO_AI.md
+
+# Local audits and generated review reports
+.audit/
+.reviews/
+audit/
+audits/
+[Aa][Uu][Dd][Ii][Tt]*
+[Rr][Ee][Vv][Ii][Ee][Ww]-[Rr][Ee][Pp][Oo][Rr][Tt]*
+[Ss][Ee][Cc][Uu][Rr][Ii][Tt][Yy]-[Rr][Ee][Vv][Ii][Ee][Ww]*
+security-audit*
+security_audit*
