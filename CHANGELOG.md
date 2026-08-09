@@ -27,8 +27,6 @@ This project follows Semantic Versioning and Keep a Changelog structure.
   probe or execution.
 - Offline installs pin their temporary pip frontend from the bundle and remove it from the
   validated runtime environment before activation.
-- Locked dependencies remain installable across every supported Python version.
-- Installer rollback preserves every untouched active component when activation stops early.
 - The declared release scope is media-only until a moving adapter has current, attested HIL
   evidence.
 
@@ -38,6 +36,14 @@ This project follows Semantic Versioning and Keep a Changelog structure.
 - The unused `livekit-api` dependency and its otherwise unused protocol/JWT packages.
 - The obsolete source-tree start wrapper; installed services continue to use the transactional
   service launcher.
+
+## [0.2.1] - 2026-08-09
+
+### Fixed
+
+- Locked dependencies remain installable across every supported Python version.
+- Installer rollback preserves every untouched active component when activation stops early.
+- Installation paths containing symlink components are rejected before canonicalization.
 
 ## [0.2.0] - 2026-07-18
 

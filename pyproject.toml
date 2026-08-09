@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "botparty-robot"
-version = "0.2.0"
+version = "0.2.1"
 description = "BotParty Robot Client – connect your robot to the world"
 readme = "README.md"
 license = "MIT"

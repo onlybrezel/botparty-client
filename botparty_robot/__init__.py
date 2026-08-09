@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import re
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 
 def _resolve_build_id() -> str:
