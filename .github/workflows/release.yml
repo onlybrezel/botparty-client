@@ -75,7 +75,7 @@ jobs:
             done < /tmp/hil-evidence-paths
           fi
       - run: python -m build --no-isolation
-      - run: twine check dist/*
+      - run: twine check dist/*.whl dist/*.tar.gz
       - name: Record immutable build ID
         run: |
           wheel="$(find dist -maxdepth 1 -name '*.whl' -print -quit)"
