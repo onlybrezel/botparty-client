@@ -95,6 +95,7 @@ canonical_path() {
     echo "$label must be absolute" >&2
     exit 1
   fi
+  reject_symlink_components "$label" "$value"
   realpath -m -- "$value"
 }
 
@@ -435,7 +436,7 @@ fi
 
 ACTIVATION_STARTED="false"
 ACTIVATION_COMPLETE="false"
-rollback_stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+rollback_stamp="$(date -u +%Y%m%dT%H%M%S.%NZ).$$"
 rollback_venv="$PREFIX/venv.rollback.$rollback_stamp"
 rollback_streamer="$PREFIX/libexec.rollback.$rollback_stamp"
 rollback_launcher="$PREFIX/botparty-service-launcher.rollback.$rollback_stamp"
@@ -447,6 +448,23 @@ VENV_EXISTED_BEFORE="false"
 STREAMER_EXISTED_BEFORE="false"
 LAUNCHER_EXISTED_BEFORE="false"
 METADATA_EXISTED_BEFORE="false"
+VENV_SWAPPED="false"
+STREAMER_SWAPPED="false"
+LAUNCHER_SWAPPED="false"
+METADATA_SWAPPED="false"
+
+if [[ -d "$PREFIX/venv" ]]; then
+  VENV_EXISTED_BEFORE="true"
+fi
+if [[ -d "$STREAMER_DIR" ]]; then
+  STREAMER_EXISTED_BEFORE="true"
+fi
+if [[ -e "$PREFIX/botparty-service-launcher.sh" ]]; then
+  LAUNCHER_EXISTED_BEFORE="true"
+fi
+if [[ -e "$PREFIX/installed-wheel.sha256" ]]; then
+  METADATA_EXISTED_BEFORE="true"
+fi
 
 inject_failure() {
   if [[ "${BOTPARTY_TEST_SIGNAL_AT:-}" == "$1" ]]; then
@@ -462,23 +480,31 @@ inject_failure() {
 rollback_activation() {
   if [[ "$ACTIVATION_STARTED" == "true" && "$ACTIVATION_COMPLETE" != "true" ]]; then
     set +e
-    $SUDO rm -rf "$PREFIX/venv"
-    if [[ "$VENV_EXISTED_BEFORE" == "true" && -e "$rollback_venv" ]]; then
-      $SUDO mv "$rollback_venv" "$PREFIX/venv"
+    if [[ "$VENV_SWAPPED" == "true" ]]; then
+      $SUDO rm -rf "$PREFIX/venv"
+      if [[ "$VENV_EXISTED_BEFORE" == "true" && -e "$rollback_venv" ]]; then
+        $SUDO mv "$rollback_venv" "$PREFIX/venv"
+      fi
     fi
-    $SUDO rm -rf "$STREAMER_DIR"
-    if [[ "$STREAMER_EXISTED_BEFORE" == "true" && -e "$rollback_streamer" ]]; then
-      $SUDO mv "$rollback_streamer" "$STREAMER_DIR"
+    if [[ "$STREAMER_SWAPPED" == "true" ]]; then
+      $SUDO rm -rf "$STREAMER_DIR"
+      if [[ "$STREAMER_EXISTED_BEFORE" == "true" && -e "$rollback_streamer" ]]; then
+        $SUDO mv "$rollback_streamer" "$STREAMER_DIR"
+      fi
     fi
-    if [[ "$LAUNCHER_EXISTED_BEFORE" == "true" && -e "$rollback_launcher" ]]; then
-      $SUDO mv -f "$rollback_launcher" "$PREFIX/botparty-service-launcher.sh"
-    else
-      $SUDO rm -f "$PREFIX/botparty-service-launcher.sh"
+    if [[ "$LAUNCHER_SWAPPED" == "true" ]]; then
+      if [[ "$LAUNCHER_EXISTED_BEFORE" == "true" && -e "$rollback_launcher" ]]; then
+        $SUDO mv -f "$rollback_launcher" "$PREFIX/botparty-service-launcher.sh"
+      else
+        $SUDO rm -f "$PREFIX/botparty-service-launcher.sh"
+      fi
     fi
-    if [[ "$METADATA_EXISTED_BEFORE" == "true" && -e "$rollback_metadata" ]]; then
-      $SUDO mv -f "$rollback_metadata" "$PREFIX/installed-wheel.sha256"
-    else
-      $SUDO rm -f "$PREFIX/installed-wheel.sha256"
+    if [[ "$METADATA_SWAPPED" == "true" ]]; then
+      if [[ "$METADATA_EXISTED_BEFORE" == "true" && -e "$rollback_metadata" ]]; then
+        $SUDO mv -f "$rollback_metadata" "$PREFIX/installed-wheel.sha256"
+      else
+        $SUDO rm -f "$PREFIX/installed-wheel.sha256"
+      fi
     fi
     if [[ -e "$rollback_config" ]]; then
       $SUDO install -m 0640 -o root -g "$INSTALL_USER" "$rollback_config" "$CONFIG_PATH"
@@ -531,29 +557,29 @@ if [[ "$WITH_SERVICE" == "true" ]] && $SUDO systemctl is-active --quiet "${SERVI
 fi
 
 ACTIVATION_STARTED="true"
-if [[ -d "$PREFIX/venv" ]]; then
-  VENV_EXISTED_BEFORE="true"
+if [[ "$VENV_EXISTED_BEFORE" == "true" ]]; then
   $SUDO mv "$PREFIX/venv" "$rollback_venv"
 fi
 $SUDO mv "$STAGED_VENV" "$PREFIX/venv"
+VENV_SWAPPED="true"
 inject_failure venv
-if [[ -d "$STREAMER_DIR" ]]; then
-  STREAMER_EXISTED_BEFORE="true"
+if [[ "$STREAMER_EXISTED_BEFORE" == "true" ]]; then
   $SUDO mv "$STREAMER_DIR" "$rollback_streamer"
 fi
 $SUDO mv "$STAGED_STREAMER_DIR" "$STREAMER_DIR"
+STREAMER_SWAPPED="true"
 inject_failure streamer
-if [[ -e "$PREFIX/botparty-service-launcher.sh" ]]; then
-  LAUNCHER_EXISTED_BEFORE="true"
+if [[ "$LAUNCHER_EXISTED_BEFORE" == "true" ]]; then
   $SUDO mv "$PREFIX/botparty-service-launcher.sh" "$rollback_launcher"
 fi
 $SUDO mv "$STAGING_ROOT/botparty-service-launcher.sh" "$PREFIX/botparty-service-launcher.sh"
+LAUNCHER_SWAPPED="true"
 inject_failure launcher
-if [[ -e "$PREFIX/installed-wheel.sha256" ]]; then
-  METADATA_EXISTED_BEFORE="true"
+if [[ "$METADATA_EXISTED_BEFORE" == "true" ]]; then
   $SUDO mv "$PREFIX/installed-wheel.sha256" "$rollback_metadata"
 fi
 $SUDO mv "$STAGING_ROOT/installed-wheel.sha256" "$PREFIX/installed-wheel.sha256"
+METADATA_SWAPPED="true"
 inject_failure metadata
 $SUDO install -m 0640 -o root -g "$INSTALL_USER" "$STAGED_CONFIG" "$CONFIG_PATH"
 inject_failure config

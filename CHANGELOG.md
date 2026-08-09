@@ -27,6 +27,8 @@ This project follows Semantic Versioning and Keep a Changelog structure.
   probe or execution.
 - Offline installs pin their temporary pip frontend from the bundle and remove it from the
   validated runtime environment before activation.
+- Locked dependencies remain installable across every supported Python version.
+- Installer rollback preserves every untouched active component when activation stops early.
 - The declared release scope is media-only until a moving adapter has current, attested HIL
   evidence.
 
