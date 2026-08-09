@@ -114,8 +114,6 @@ jobs:
           python scripts/generate-license-inventory.py
           --python /tmp/release-artifact/bin/python
           --output dist/THIRD_PARTY_NOTICES.md
-      - name: Add verified bootstrap artifact
-        run: install -m 0755 scripts/bootstrap-install.sh dist/bootstrap-install.sh
       - run: sha256sum dist/* > dist/SHA256SUMS
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
@@ -251,6 +249,28 @@ jobs:
             --contract contracts/platform-contract-v1.json \
             --client-version "${GITHUB_REF_NAME#v}" \
             --commit "$GITHUB_SHA"
+      - name: Build version-bound installer
+        env:
+          RELEASE_ALLOWED_SIGNERS: ${{ secrets.RELEASE_ALLOWED_SIGNERS }}
+        run: |
+          test -n "$RELEASE_ALLOWED_SIGNERS"
+          signer_file="$(mktemp)"
+          trap 'rm -f "$signer_file"' EXIT
+          printf '%s\n' "$RELEASE_ALLOWED_SIGNERS" > "$signer_file"
+          bundle_args=()
+          for arch in amd64 arm64 armv7; do
+            bundle="$(find dist -maxdepth 1 -name "botparty-robot-*-linux-${arch}.zip" -print -quit)"
+            test -n "$bundle"
+            url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${GITHUB_REF_NAME}/$(basename "$bundle")"
+            digest="$(sha256sum "$bundle" | cut -d' ' -f1)"
+            bundle_args+=(--bundle "${arch},${url},${digest}")
+          done
+          python scripts/render-release-bootstrap.py \
+            --template scripts/bootstrap-install.sh \
+            --output dist/install-botparty.sh \
+            --ref "$GITHUB_SHA" \
+            --allowed-signers "$signer_file" \
+            "${bundle_args[@]}"
       - name: Rebuild complete release checksums
         run: |
           rm -f dist/SHA256SUMS

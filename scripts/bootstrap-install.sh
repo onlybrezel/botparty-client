@@ -2,11 +2,53 @@
 set -euo pipefail
 
 REPOSITORY="${BOTPARTY_INSTALL_REPOSITORY:-https://github.com/onlybrezel/botparty-client.git}"
+EMBEDDED_REF="__BOTPARTY_RELEASE_REF__"
+EMBEDDED_ALLOWED_SIGNERS="__BOTPARTY_RELEASE_ALLOWED_SIGNERS_BASE64__"
+EMBEDDED_BUNDLES="__BOTPARTY_RELEASE_BUNDLES_BASE64__"
+UNSET_REF_MARKER="__BOTPARTY_RELEASE_"'REF__'
+UNSET_ALLOWED_SIGNERS_MARKER="__BOTPARTY_RELEASE_ALLOWED_SIGNERS_"'BASE64__'
+
 REF="${BOTPARTY_INSTALL_REF:-}"
 SOURCE_DIR="${BOTPARTY_INSTALL_SOURCE_DIR:-/opt/botparty/source}"
 ALLOWED_SIGNERS="${BOTPARTY_INSTALL_ALLOWED_SIGNERS:-}"
 BUNDLE_URL="${BOTPARTY_INSTALL_BUNDLE_URL:-}"
 BUNDLE_SHA256="${BOTPARTY_INSTALL_BUNDLE_SHA256:-}"
+
+# Release builds replace these markers. Environment variables remain available for
+# private channels and for exercising the source template in installer tests.
+if [[ "$EMBEDDED_REF" != "$UNSET_REF_MARKER" ]]; then
+  REF="${REF:-$EMBEDDED_REF}"
+  case "$(uname -m)" in
+    x86_64 | amd64) release_arch="amd64" ;;
+    aarch64 | arm64) release_arch="arm64" ;;
+    armv7l | armv7) release_arch="armv7" ;;
+    *) echo "This release has no bundle for $(uname -m)" >&2; exit 1 ;;
+  esac
+  release_bundle="$({ printf '%s' "$EMBEDDED_BUNDLES" | base64 --decode; } \
+    | awk -F '\t' -v arch="$release_arch" '$1 == arch { print $2 "\t" $3 }')"
+  if [[ -z "$release_bundle" ]]; then
+    echo "This release has no bundle for $release_arch" >&2
+    exit 1
+  fi
+  IFS=$'\t' read -r embedded_bundle_url embedded_bundle_sha256 <<<"$release_bundle"
+  BUNDLE_URL="${BUNDLE_URL:-$embedded_bundle_url}"
+  BUNDLE_SHA256="${BUNDLE_SHA256:-$embedded_bundle_sha256}"
+fi
+
+temporary_allowed_signers=""
+cleanup() {
+  [[ -z "$temporary_allowed_signers" ]] || rm -f "$temporary_allowed_signers"
+  [[ -z "${bundle_directory:-}" ]] || rm -rf "$bundle_directory"
+}
+trap cleanup EXIT
+
+if [[ -z "$ALLOWED_SIGNERS" \
+  && "$EMBEDDED_ALLOWED_SIGNERS" != "$UNSET_ALLOWED_SIGNERS_MARKER" ]]; then
+  temporary_allowed_signers="$(mktemp)"
+  chmod 0600 "$temporary_allowed_signers"
+  printf '%s' "$EMBEDDED_ALLOWED_SIGNERS" | base64 --decode >"$temporary_allowed_signers"
+  ALLOWED_SIGNERS="$temporary_allowed_signers"
+fi
 
 case "$REPOSITORY" in
   https://*) ;;
@@ -85,7 +127,6 @@ fi
   -c "gpg.ssh.allowedSignersFile=$ALLOWED_SIGNERS" \
   verify-commit "$REF"
 bundle_directory="$(mktemp -d)"
-trap 'rm -rf "$bundle_directory"' EXIT
 bundle_path="$bundle_directory/install-bundle.zip"
 BUNDLE_URL="$BUNDLE_URL" BUNDLE_PATH="$bundle_path" python3 - <<'PY'
 import os

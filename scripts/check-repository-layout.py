@@ -13,6 +13,7 @@ REQUIRED_CONTEXT_FILES = (
     "requirements/dev.txt",
     "requirements/installer.txt",
     "scripts/install-botparty-client.sh",
+    "scripts/render-release-bootstrap.py",
     "tests/installer/Dockerfile",
     "tests/installer/run.sh",
 )

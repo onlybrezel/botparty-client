@@ -10,39 +10,27 @@ Install only the extras required by the configured profile. The default core sup
 
 ## Automatic production install
 
-Obtain the commit ID and SSH signer identity from a verified signed release. Provision the
-operator-controlled allowed-signers file, download the versioned bootstrap release artifact and
-verify its build attestation before running it.
+Download the version-bound installer and verify its GitHub build attestation before running it.
 
 ```bash
-gh release download v0.2.0 --repo onlybrezel/botparty-client \
-  --pattern bootstrap-install.sh --pattern SHA256SUMS \
-  --pattern 'botparty-robot-0.2.0-linux-amd64.zip' --dir /tmp/botparty-release
-gh attestation verify /tmp/botparty-release/bootstrap-install.sh --repo onlybrezel/botparty-client
-gh attestation verify /tmp/botparty-release/botparty-robot-0.2.0-linux-amd64.zip \
+gh release download --repo onlybrezel/botparty-client \
+  --pattern install-botparty.sh --dir /tmp/botparty-release --clobber
+gh attestation verify /tmp/botparty-release/install-botparty.sh \
   --repo onlybrezel/botparty-client
-BOTPARTY_BUNDLE_SHA256="$(grep 'botparty-robot-0.2.0-linux-amd64.zip$' \
-  /tmp/botparty-release/SHA256SUMS | cut -d' ' -f1)"
-BOTPARTY_RELEASE_COMMIT="<verified-40-character-release-commit>"
-sudo env BOTPARTY_INSTALL_REF="$BOTPARTY_RELEASE_COMMIT" \
-  BOTPARTY_INSTALL_ALLOWED_SIGNERS=/etc/botparty/release-allowed-signers \
-  BOTPARTY_INSTALL_BUNDLE_URL=https://github.com/onlybrezel/botparty-client/releases/download/v0.2.0/botparty-robot-0.2.0-linux-amd64.zip \
-  BOTPARTY_INSTALL_BUNDLE_SHA256="$BOTPARTY_BUNDLE_SHA256" \
-  bash /tmp/botparty-release/bootstrap-install.sh --device-groups video
+sudo /tmp/botparty-release/install-botparty.sh --device-groups video
 sudoedit /etc/botparty/config.yaml
 sudo -u botparty /opt/botparty/venv/bin/botparty-robot \
   --config /etc/botparty/config.yaml doctor
 sudo systemctl enable --now botparty-robot.service
 ```
 
-The bootstrap accepts only a full immutable commit ID. It verifies that exact commit against the
-operator-controlled SSH allowed-signers file, checks it out detached at `/opt/botparty/source` and
-runs the installer. Unsigned commits require the explicit development-only
+The release installer contains the immutable commit ID, trusted signer list, bundle URL and bundle
+checksum for its version. It verifies the exact commit, checks it out detached at
+`/opt/botparty/source` and runs the installer. Unsigned commits require the explicit development-only
 workflow through an unprivileged local virtual environment; the root bootstrap has no unsigned
 override. An existing checkout is reused only when its origin matches and it has no local changes.
-The bundle SHA-256 and GitHub attestation bind the
-architecture-specific offline wheelhouse; package installation uses `--no-index` and
-`--require-hashes`.
+The embedded SHA-256 and the installer's GitHub attestation bind the architecture-specific offline
+wheelhouse; package installation uses `--no-index` and `--require-hashes`.
 
 ## Production source policy
 

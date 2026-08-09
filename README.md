@@ -4,31 +4,20 @@ BotParty's Python robot client connects a camera, control adapter and optional t
 
 ## Install
 
-Download the versioned bootstrap artifact and verify its GitHub build attestation before running it.
-Store the trusted release SSH principals in `/etc/botparty/release-allowed-signers` and use the
-40-character commit ID named by the verified release:
+Download the installer for the release, verify it and run it:
 
 ```bash
-gh release download v0.2.0 --repo onlybrezel/botparty-client \
-  --pattern bootstrap-install.sh --pattern SHA256SUMS \
-  --pattern 'botparty-robot-0.2.0-linux-amd64.zip' --dir /tmp/botparty-release
-gh attestation verify /tmp/botparty-release/bootstrap-install.sh --repo onlybrezel/botparty-client
-gh attestation verify /tmp/botparty-release/botparty-robot-0.2.0-linux-amd64.zip \
+gh release download --repo onlybrezel/botparty-client \
+  --pattern install-botparty.sh --dir /tmp/botparty-release --clobber
+gh attestation verify /tmp/botparty-release/install-botparty.sh \
   --repo onlybrezel/botparty-client
-BOTPARTY_BUNDLE_SHA256="$(grep 'botparty-robot-0.2.0-linux-amd64.zip$' \
-  /tmp/botparty-release/SHA256SUMS | cut -d' ' -f1)"
-BOTPARTY_RELEASE_COMMIT="<verified-40-character-release-commit>"
-sudo env BOTPARTY_INSTALL_REF="$BOTPARTY_RELEASE_COMMIT" \
-  BOTPARTY_INSTALL_ALLOWED_SIGNERS=/etc/botparty/release-allowed-signers \
-  BOTPARTY_INSTALL_BUNDLE_URL=https://github.com/onlybrezel/botparty-client/releases/download/v0.2.0/botparty-robot-0.2.0-linux-amd64.zip \
-  BOTPARTY_INSTALL_BUNDLE_SHA256="$BOTPARTY_BUNDLE_SHA256" \
-  bash /tmp/botparty-release/bootstrap-install.sh --device-groups video
+sudo /tmp/botparty-release/install-botparty.sh --device-groups video
 sudoedit /etc/botparty/config.yaml
 sudo systemctl enable --now botparty-robot.service
 ```
 
-Production installation is supported only through the verified bootstrap above. The bootstrap keeps
-its immutable checkout at `/opt/botparty/source`; the installed service runs from
+The release installer downloads the matching release bundle and verifies its checksum, commit and
+signer. It keeps its immutable checkout at `/opt/botparty/source`; the installed service runs from
 `/opt/botparty/venv`. For local source development, use the unprivileged virtual-environment setup
 below instead of installing a system service.
 

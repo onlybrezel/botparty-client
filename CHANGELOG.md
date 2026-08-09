@@ -15,6 +15,8 @@ This project follows Semantic Versioning and Keep a Changelog structure.
 
 ### Changed
 
+- Production setup now uses one attested, version-bound installer that selects and verifies the
+  release bundle for the host architecture.
 - Runtime components now use explicit composition; command queues and remote actions own their
   state behind focused services.
 - Operator diagnostics, runtime supervision and command dispatch now expose their major steps as
