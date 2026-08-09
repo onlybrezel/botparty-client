@@ -1,0 +1,56 @@
+name: Publish release installer
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing release tag
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Download release bundle
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release download "${{ inputs.tag }}"
+          --pattern 'botparty-robot-*-linux-amd64.zip'
+          --dir release
+      - name: Build version-bound installer
+        env:
+          RELEASE_ALLOWED_SIGNERS: ${{ secrets.RELEASE_ALLOWED_SIGNERS }}
+        run: |
+          test -n "$RELEASE_ALLOWED_SIGNERS"
+          signer_file="$(mktemp)"
+          trap 'rm -f "$signer_file"' EXIT
+          printf '%s\n' "$RELEASE_ALLOWED_SIGNERS" > "$signer_file"
+          bundle="$(find release -maxdepth 1 -name 'botparty-robot-*-linux-amd64.zip' -print -quit)"
+          test -n "$bundle"
+          url="https://github.com/${GITHUB_REPOSITORY}/releases/download/${{ inputs.tag }}/$(basename "$bundle")"
+          python scripts/render-release-bootstrap.py \
+            --template scripts/bootstrap-install.sh \
+            --output release/install-botparty.sh \
+            --ref "$(git rev-list -n 1 '${{ inputs.tag }}')" \
+            --allowed-signers "$signer_file" \
+            --bundle "amd64,${url},$(sha256sum "$bundle" | cut -d' ' -f1)"
+      - uses: actions/attest-build-provenance@0f67c3f4856b2e3261c31976d6725780e5e4c373 # v4.1.1
+        with:
+          subject-path: release/install-botparty.sh
+      - name: Upload installer
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${{ inputs.tag }}" release/install-botparty.sh
