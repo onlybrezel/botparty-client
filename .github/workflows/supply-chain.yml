@@ -44,6 +44,9 @@ jobs:
       - name: Install locked profile
         run: |
           python -m venv /tmp/profile
+          if [ "${{ matrix.profile }}" = "dev" ]; then
+            /tmp/profile/bin/pip install --require-hashes --no-deps -r requirements/build-toolchain.txt
+          fi
           /tmp/profile/bin/pip install --require-hashes -r "requirements/${{ matrix.profile }}.txt"
       - name: Generate profile SBOM and notices
         run: |
