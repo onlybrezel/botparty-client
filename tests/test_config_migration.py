@@ -162,6 +162,24 @@ def test_cli_migration_does_not_overwrite_source_or_print_credentials(tmp_path: 
     config = _load_config_from(str(output), persist_device_key=False)
     assert config.hardware.type == "l298n"
     assert config.server.claim_token_value() == "private-claim"
+    retry = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "botparty_robot",
+            "--config",
+            str(source),
+            "config",
+            "migrate",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert retry.returncode == 2
+    assert "choose a new output file" in retry.stderr
+    assert "Traceback" not in retry.stderr
     with pytest.raises(FileExistsError):
         migrate_config_file(source, output)
     with pytest.raises(ValueError, match="differ"):
@@ -221,6 +239,14 @@ def test_nested_video_aliases_and_normalized_names_require_migration() -> None:
 def test_untyped_video_override_is_valid_without_legacy_fields() -> None:
     raw = {"server": {"claim_token": "test-claim-token"}, "cameras": [{"id": "front", "video": {}}]}
     assert migrate_config(raw) == raw
+
+
+def test_null_tts_is_explicitly_disabled_and_invalid_camera_blocks_are_not_interpreted() -> None:
+    raw = {"server": {"claim_token": "test-claim-token"}, "tts": None}
+    with pytest.raises(ValueError, match="config migrate"):
+        reject_legacy_config(raw)
+    assert migrate_config(raw)["tts"] == {"enabled": False, "type": "none"}
+    assert legacy_fields({"cameras": [None, {"video": "invalid"}]}) == []
 
 
 def test_legacy_backup_is_rejected_before_replacing_files(tmp_path: Path) -> None:

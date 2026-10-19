@@ -61,6 +61,8 @@ def legacy_fields(raw: dict[str, Any]) -> list[str]:
     camera, tts, safety = (raw.get(name) for name in ("camera", "tts", "safety"))
     if isinstance(camera, dict) and "pipeline" in camera:
         fields.append("camera.pipeline")
+    if "tts" in raw and tts is None:
+        fields.append("tts (null)")
     if isinstance(tts, dict):
         fields.extend(f"tts.{key}" for key in sorted(TTS_KEYS & tts.keys()))
         if "enabled" not in tts and tts.get("type", "none") != "none":
@@ -122,6 +124,8 @@ def migrate_config(raw: dict[str, Any]) -> dict[str, Any]:
             "options": {},
         }
     tts = raw.get("tts")
+    if "tts" in raw and tts is None:
+        raw["tts"] = {"enabled": False, "type": "none"}
     if isinstance(tts, dict):
         legacy = {key: tts.pop(key) for key in TTS_KEYS if key in tts}
         speaker = legacy.get("speaker_device") or legacy.get("audio_device")
