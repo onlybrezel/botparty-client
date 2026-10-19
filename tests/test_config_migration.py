@@ -11,6 +11,7 @@ import yaml
 from pydantic import ValidationError
 
 from botparty_robot.__main__ import ConfigLoadError, _load_config_from
+from botparty_robot.backup import create_encrypted_backup, generate_backup_key
 from botparty_robot.config_migration import (
     legacy_fields,
     migrate_config,
@@ -193,4 +194,84 @@ def test_migration_removes_incomplete_output_on_write_failure(tmp_path: Path, mo
     monkeypatch.setattr(os, "fsync", fail)
     with pytest.raises(OSError, match="disk failure"):
         migrate_config_file(source, output)
+    assert not output.exists()
+
+
+def test_disabled_controls_keep_safe_defaults() -> None:
+    raw = {"server": {"claim_token": "test"}, "controls": {"gpio_enabled": False}}
+    result = migrate_config(raw)
+    assert "controls" not in result
+    assert "hardware" not in result
+
+
+def test_legacy_backup_is_rejected_before_replacing_files(tmp_path: Path) -> None:
+    source, key, device, archive, target = (
+        tmp_path / name for name in ("old.yaml", "backup.key", "device", "state.bpb", "target")
+    )
+    source.write_text(yaml.safe_dump(_legacy()), encoding="utf-8")
+    device.write_text("a" * 64 + "\n", encoding="ascii")
+    source.chmod(0o600)
+    device.chmod(0o600)
+    generate_backup_key(key)
+    create_encrypted_backup(
+        config_path=source,
+        device_key_path=device,
+        output_path=archive,
+        key_path=key,
+    )
+    target.write_text("preserve-current-configuration", encoding="utf-8")
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "botparty_robot",
+            "--config",
+            str(target),
+            "backup",
+            "restore",
+            "--key-file",
+            str(key),
+            "--input",
+            str(archive),
+            "--state-dir",
+            str(tmp_path / "state"),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "previous client" in result.stderr
+    assert target.read_text() == "preserve-current-configuration"
+    assert not (tmp_path / "state").exists()
+
+
+@pytest.mark.parametrize(
+    "content",
+    [
+        "server: [",
+        "server:\n  claim_token: private-claim\ntts:\n  volume: 999\n",
+    ],
+)
+def test_cli_invalid_input_is_actionable_and_redacts_values(tmp_path: Path, content: str) -> None:
+    source, output = tmp_path / "old.yaml", tmp_path / "new.yaml"
+    source.write_text(content, encoding="utf-8")
+    source.chmod(0o600)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "botparty_robot",
+            "--config",
+            str(source),
+            "config",
+            "migrate",
+            "--output",
+            str(output),
+        ],
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 2
+    assert "Traceback" not in result.stderr
+    assert "private-claim" not in result.stdout + result.stderr
     assert not output.exists()
