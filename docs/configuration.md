@@ -67,6 +67,10 @@ The automatic compatibility period ended on **2026-09-01**. Startup, validation 
 now reject legacy fields with migration instructions, before connecting to hardware or writing
 device state. Convert an old file explicitly before upgrading a running installation:
 
+Run the new release's CLI from a separate trusted environment for this offline conversion.
+Keep the existing service on its previous release until conversion, review and validation are
+complete; the previous release does not have the new migration command.
+
 ```bash
 botparty-robot --config old-config.yaml config migrate --output migrated-config.yaml
 botparty-robot --config migrated-config.yaml config validate
