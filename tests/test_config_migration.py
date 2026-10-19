@@ -10,7 +10,7 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from botparty_robot.__main__ import ConfigLoadError, _load_config_from
+from botparty_robot.__main__ import ConfigLoadError, _load_config_from, main
 from botparty_robot.backup import create_encrypted_backup, generate_backup_key
 from botparty_robot.config_migration import (
     legacy_fields,
@@ -286,6 +286,23 @@ def test_legacy_backup_is_rejected_before_replacing_files(tmp_path: Path) -> Non
     )
     assert result.returncode == 2
     assert "previous client" in result.stderr
+    assert (
+        main(
+            [
+                "--config",
+                str(target),
+                "backup",
+                "restore",
+                "--key-file",
+                str(key),
+                "--input",
+                str(archive),
+                "--state-dir",
+                str(tmp_path / "state"),
+            ]
+        )
+        == 2
+    )
     assert target.read_text() == "preserve-current-configuration"
     assert not (tmp_path / "state").exists()
 
@@ -320,3 +337,34 @@ def test_cli_invalid_input_is_actionable_and_redacts_values(tmp_path: Path, cont
     assert "Traceback" not in result.stderr
     assert "private-claim" not in result.stdout + result.stderr
     assert not output.exists()
+
+
+@pytest.mark.parametrize("case", ["valid", "bad_yaml", "invalid_schema", "existing_output"])
+def test_migration_command_result_and_errors(tmp_path: Path, capsys, caplog, case: str) -> None:
+    source, output = tmp_path / "old.yaml", tmp_path / "new.yaml"
+    content = yaml.safe_dump(_legacy())
+    if case == "bad_yaml":
+        content = "server: ["
+    elif case == "invalid_schema":
+        raw = _legacy()
+        raw["tts"]["tts_volume"] = 999
+        content = yaml.safe_dump(raw)
+    source.write_text(content, encoding="utf-8")
+    source.chmod(0o600)
+    if case == "existing_output":
+        output.write_text("untouched", encoding="utf-8")
+    result = main(["--config", str(source), "config", "migrate", "--output", str(output)])
+    captured = capsys.readouterr()
+    assert "private-claim" not in captured.out + captured.err + caplog.text
+    assert "private-device" not in captured.out + captured.err + caplog.text
+    assert source.read_text(encoding="utf-8") == content
+    if case == "valid":
+        assert result == 0
+        assert "physical emergency stop" in captured.out
+        assert _load_config_from(str(output), persist_device_key=False).hardware.type == "l298n"
+    else:
+        assert result == 2
+        if case == "existing_output":
+            assert output.read_text() == "untouched"
+        else:
+            assert not output.exists()
