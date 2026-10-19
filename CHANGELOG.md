@@ -15,6 +15,10 @@ This project follows Semantic Versioning and Keep a Changelog structure.
 
 ### Changed
 
+- Legacy configuration conversion is now an explicit offline `config migrate --output` command.
+  Runtime loading and backup restore reject retired formats with migration instructions after
+  the previously announced 2026-09-01 deadline. Review and migrate old configurations before
+  upgrading; existing files and motor pin mappings are preserved by the converter.
 - Production setup now uses one attested, version-bound installer that selects and verifies the
   release bundle for the host architecture.
 - Runtime components now use explicit composition; command queues and remote actions own their

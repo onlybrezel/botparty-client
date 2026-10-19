@@ -46,15 +46,35 @@ def _iso(delta: dt.timedelta) -> str:
     return (dt.datetime.now(dt.timezone.utc) + delta).isoformat().replace("+00:00", "Z")
 
 
-def test_legacy_removal_deadline_is_enforced() -> None:
+def test_legacy_removal_deadline_is_enforced(tmp_path: Path) -> None:
+    entrypoint = tmp_path / "legacy.py"
+    entrypoint.write_text(
+        'LEGACY_CONFIG_DEPRECATION_DEADLINE = "2026-09-01"\n'
+        "def _apply_legacy_hardware_defaults(): pass\n",
+        encoding="utf-8",
+    )
     before = subprocess.run(
-        [sys.executable, "scripts/check-legacy-deadline.py", "--as-of", "2026-08-31"],
+        [
+            sys.executable,
+            "scripts/check-legacy-deadline.py",
+            "--entrypoint",
+            str(entrypoint),
+            "--as-of",
+            "2026-08-31",
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
     )
     at_deadline = subprocess.run(
-        [sys.executable, "scripts/check-legacy-deadline.py", "--as-of", "2026-09-01"],
+        [
+            sys.executable,
+            "scripts/check-legacy-deadline.py",
+            "--entrypoint",
+            str(entrypoint),
+            "--as-of",
+            "2026-09-01",
+        ],
         cwd=ROOT,
         capture_output=True,
         text=True,
