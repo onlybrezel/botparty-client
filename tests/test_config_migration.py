@@ -96,7 +96,7 @@ def test_modern_values_win_over_legacy_fields() -> None:
     ],
 )
 def test_profile_aliases_require_explicit_migration(section, profile, expected) -> None:
-    raw = {"server": {"claim_token": "test"}, section: {"type": profile}}
+    raw = {"server": {"claim_token": "test-claim-token"}, section: {"type": profile}}
     with pytest.raises(ValueError, match="config migrate"):
         reject_legacy_config(raw)
     assert migrate_config(raw)[section]["type"] == expected
@@ -112,7 +112,7 @@ def test_profile_aliases_require_explicit_migration(section, profile, expected) 
     ],
 )
 def test_tts_device_variants(tts, expected) -> None:
-    result = migrate_config({"server": {"claim_token": "test"}, "tts": tts})
+    result = migrate_config({"server": {"claim_token": "test-claim-token"}, "tts": tts})
     assert result["tts"].get("playback_device", "default") == expected
 
 
@@ -131,7 +131,7 @@ def test_tts_device_variants(tts, expected) -> None:
 )
 def test_invalid_legacy_settings_are_not_silently_replaced(patch) -> None:
     with pytest.raises((ValueError, ValidationError)):
-        migrate_config({"server": {"claim_token": "test"}, **patch})
+        migrate_config({"server": {"claim_token": "test-claim-token"}, **patch})
 
 
 def test_cli_migration_does_not_overwrite_source_or_print_credentials(tmp_path: Path) -> None:
@@ -200,7 +200,7 @@ def test_migration_removes_incomplete_output_on_write_failure(tmp_path: Path, mo
 
 
 def test_disabled_controls_keep_safe_defaults() -> None:
-    raw = {"server": {"claim_token": "test"}, "controls": {"gpio_enabled": False}}
+    raw = {"server": {"claim_token": "test-claim-token"}, "controls": {"gpio_enabled": False}}
     result = migrate_config(raw)
     assert "controls" not in result
     assert "hardware" not in result
@@ -208,7 +208,7 @@ def test_disabled_controls_keep_safe_defaults() -> None:
 
 def test_nested_video_aliases_and_normalized_names_require_migration() -> None:
     raw = {
-        "server": {"claim_token": "test"},
+        "server": {"claim_token": "test-claim-token"},
         "hardware": {"type": " Hardware-Custom "},
         "cameras": [{"id": "front", "video": {"type": "GO-H264-PUBLISHER"}}],
     }
@@ -219,7 +219,7 @@ def test_nested_video_aliases_and_normalized_names_require_migration() -> None:
 
 
 def test_untyped_video_override_is_valid_without_legacy_fields() -> None:
-    raw = {"server": {"claim_token": "test"}, "cameras": [{"id": "front", "video": {}}]}
+    raw = {"server": {"claim_token": "test-claim-token"}, "cameras": [{"id": "front", "video": {}}]}
     assert migrate_config(raw) == raw
 
 
