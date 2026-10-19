@@ -18,8 +18,8 @@ LEGACY_FUNCTIONS = {
 }
 
 
-def _deadline_and_functions() -> tuple[date, set[str]]:
-    tree = ast.parse(ENTRYPOINT.read_text(encoding="utf-8"), filename=str(ENTRYPOINT))
+def _deadline_and_functions(entrypoint: Path = ENTRYPOINT) -> tuple[date, set[str]]:
+    tree = ast.parse(entrypoint.read_text(encoding="utf-8"), filename=str(entrypoint))
     deadline: date | None = None
     functions: set[str] = set()
     for node in tree.body:
@@ -42,8 +42,9 @@ def _deadline_and_functions() -> tuple[date, set[str]]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--as-of", type=date.fromisoformat, default=date.today())
+    parser.add_argument("--entrypoint", type=Path, default=ENTRYPOINT)
     args = parser.parse_args()
-    deadline, functions = _deadline_and_functions()
+    deadline, functions = _deadline_and_functions(args.entrypoint)
     remaining = sorted(LEGACY_FUNCTIONS & functions)
     if args.as_of >= deadline and remaining:
         parser.error(

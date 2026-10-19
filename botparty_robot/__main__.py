@@ -13,7 +13,6 @@ import signal
 import sys
 from dataclasses import asdict
 from pathlib import Path
-from typing import Any
 
 import yaml
 from pydantic import SecretStr, ValidationError
@@ -28,6 +27,7 @@ from .backup import (
 )
 from .client import BotPartyClient, should_emit_runtime_log
 from .config import RobotConfig, normalize_cameras
+from .config_migration import migrate_config_file, reject_legacy_config
 from .device_state import (
     DeviceStateError,
     load_or_create_device_key,
@@ -114,138 +114,6 @@ for handler in logging.getLogger().handlers:
     handler.addFilter(PlannedReconnectNoiseFilter())
 
 
-def _warn_legacy_config(section: str, target: str) -> None:
-    logger.warning(
-        "Deprecated config section '%s'; migrate to '%s' before %s",
-        section,
-        target,
-        LEGACY_CONFIG_DEPRECATION_DEADLINE,
-    )
-
-
-def _apply_legacy_hardware_defaults(raw: dict[str, Any]) -> dict[str, Any]:
-    controls = raw.pop("controls", None)
-    if "hardware" in raw:
-        if controls is not None:
-            _warn_legacy_config("controls", "hardware")
-        return raw
-    controls = controls if isinstance(controls, dict) else {}
-    if controls.get("gpio_enabled"):
-        _warn_legacy_config("controls", "hardware")
-        raw["hardware"] = {
-            "type": "l298n",
-            "options": {
-                "forward_pins": [controls.get("motor_left_forward")],
-                "backward_pins": [controls.get("motor_left_backward")],
-                "left_pins": [controls.get("motor_right_forward")],
-                "right_pins": [controls.get("motor_right_backward")],
-            },
-        }
-    else:
-        raw["hardware"] = {"type": "none", "options": {}}
-    return raw
-
-
-def _apply_legacy_video_defaults(raw: dict[str, Any]) -> dict[str, Any]:
-    camera = raw.get("camera")
-    pipeline_raw = camera.pop("pipeline", None) if isinstance(camera, dict) else None
-    if "video" in raw:
-        if pipeline_raw is not None:
-            _warn_legacy_config("camera.pipeline", "video.type")
-        return raw
-    if isinstance(pipeline_raw, str) and pipeline_raw.strip():
-        _warn_legacy_config("camera.pipeline", "video.type")
-        pipeline = pipeline_raw.strip().lower()
-        mapping = {
-            "opencv": "opencv",
-            "ffmpeg": "ffmpeg",
-            "libcamera": "ffmpeg_libcamera",
-            "ffmpeg-libcamera": "ffmpeg_libcamera",
-        }
-        raw["video"] = {"type": mapping.get(pipeline, pipeline), "options": {}}
-    else:
-        raw["video"] = {"type": "ffmpeg", "options": {}}
-    return raw
-
-
-def _apply_legacy_tts_defaults(raw: dict[str, Any]) -> dict[str, Any]:
-    tts = raw.get("tts")
-    if not isinstance(tts, dict):
-        raw["tts"] = {"enabled": False, "type": "none"}
-        return raw
-
-    speaker_device = tts.get("playback_device") or tts.pop("speaker_device", None)
-    speaker_device = speaker_device or tts.pop("audio_device", None)
-    speaker_num = tts.pop("speaker_num", None) or tts.pop("hw_num", None)
-    if not speaker_device and isinstance(speaker_num, str) and speaker_num.strip():
-        speaker_device = f"plughw:{speaker_num.strip()}"
-
-    delay_ms = tts.get("delay_ms", 0)
-    delay_tts = tts.pop("delay_tts", None)
-    delay_value = tts.pop("delay", None)
-    if not delay_ms and delay_tts and isinstance(delay_value, (int, float)):
-        delay_ms = int(delay_value * 1_000)
-
-    legacy_volume = tts.pop("tts_volume", 70)
-    legacy_filter = tts.pop("filter_url_tts", True)
-    legacy_anonymous = tts.pop("anon_tts", False)
-    tts["enabled"] = bool(tts.get("enabled", tts.get("type", "none") != "none"))
-    tts["type"] = str(tts.get("type", "none"))
-    tts["playback_device"] = str(speaker_device or "default")
-    volume_value = tts.get("volume", legacy_volume)
-    try:
-        tts["volume"] = int(volume_value) if volume_value is not None else 70
-    except (TypeError, ValueError):
-        tts["volume"] = 70
-    tts["filter_urls"] = bool(tts.get("filter_urls", legacy_filter))
-    tts["allow_anonymous"] = bool(tts.get("allow_anonymous", legacy_anonymous))
-    tts["blocked_senders"] = list(tts.get("blocked_senders", []))
-    tts["delay_ms"] = int(delay_ms or 0)
-    tts["options"] = dict(tts.get("options", {}))
-    raw["tts"] = tts
-    return raw
-
-
-def _migrate_raw_config(raw: dict[str, Any]) -> dict[str, Any]:
-    raw = _apply_legacy_hardware_defaults(raw)
-    raw = _apply_legacy_video_defaults(raw)
-    raw = _apply_legacy_tts_defaults(raw)
-    safety = raw.get("safety")
-    if isinstance(safety, dict) and "emergency_stop_pin" in safety:
-        safety.pop("emergency_stop_pin")
-        _warn_legacy_config("safety.emergency_stop_pin", "external hardware stop circuit")
-    return raw
-
-
-def _uses_legacy_config(raw: dict[str, Any]) -> bool:
-    controls = raw.get("controls")
-    camera = raw.get("camera")
-    tts = raw.get("tts")
-    safety = raw.get("safety")
-    return bool(
-        isinstance(controls, dict)
-        or (isinstance(camera, dict) and "pipeline" in camera)
-        or (
-            isinstance(tts, dict)
-            and any(
-                name in tts
-                for name in (
-                    "speaker_device",
-                    "audio_device",
-                    "speaker_num",
-                    "hw_num",
-                    "delay_tts",
-                    "delay",
-                    "tts_volume",
-                    "filter_url_tts",
-                    "anon_tts",
-                )
-            )
-        )
-        or (isinstance(safety, dict) and "emergency_stop_pin" in safety)
-    )
-
-
 def _format_validation_error(exc: ValidationError) -> str:
     lines = []
     for error in exc.errors(include_input=False, include_url=False):
@@ -283,8 +151,10 @@ def _load_config_from(
     if not isinstance(raw, dict):
         raise ConfigLoadError("configuration must contain a YAML object at the top level")
 
-    legacy_migration_used = _uses_legacy_config(raw)
-    raw = _migrate_raw_config(raw)
+    try:
+        reject_legacy_config(raw)
+    except ValueError as exc:
+        raise ConfigLoadError(str(exc)) from exc
     server = raw.get("server")
     if isinstance(server, dict):
         claim_override = os.environ.get("BOTPARTY_CLAIM_TOKEN", "").strip()
@@ -305,7 +175,6 @@ def _load_config_from(
     except ValidationError as exc:
         raise ConfigLoadError(_format_validation_error(exc)) from exc
     config._source_path = config_path
-    config._legacy_migration_used = legacy_migration_used
 
     if persist_device_key and config.server.device_key is None:
         try:
@@ -359,6 +228,11 @@ def _build_parser(locale: str = "en") -> argparse.ArgumentParser:
     )
     import_parser.add_argument("--input", type=Path, required=True)
     import_parser.add_argument("--apply", action="store_true")
+    migrate_parser = config_commands.add_parser(
+        "migrate",
+        help="Convert legacy YAML to a new private file without changing the source",
+    )
+    migrate_parser.add_argument("--output", type=Path, required=True)
     schema_parser = config_commands.add_parser(
         "schema", help=_human(locale, "schema", "Write the versioned JSON schema")
     )
@@ -495,6 +369,20 @@ async def _run_client(config: RobotConfig) -> int:
 
 
 def _command_config(args: argparse.Namespace) -> int:
+    if args.config_command == "migrate":
+        try:
+            migrate_config_file(_resolve_config_path(args.config), args.output)
+        except ValidationError as exc:
+            raise ConfigLoadError(_format_validation_error(exc)) from exc
+        except yaml.YAMLError as exc:
+            raise ConfigLoadError("migration input is not readable YAML") from exc
+        except OSError as exc:
+            raise ConfigLoadError(
+                "cannot migrate configuration; check the input and choose a new output file"
+            ) from exc
+        print(f"Migrated configuration: {args.output}; review it before replacing the source.")
+        print("Motor pin mappings are preserved; a physical emergency stop is still required.")
+        return 0
     if args.config_command == "import":
         raw, diff = import_config_preview(args.input, _resolve_config_path(args.config))
         print(diff or _human(args.locale, "no_changes", "No changes."))
@@ -539,9 +427,12 @@ def _command_backup(args: argparse.Namespace) -> int:
     if not isinstance(raw, dict):
         raise BackupError("backup configuration is invalid")
     try:
-        restored_config = RobotConfig.model_validate(_migrate_raw_config(raw))
+        reject_legacy_config(raw)
+        restored_config = RobotConfig.model_validate(raw)
     except ValidationError as exc:
         raise BackupError(_format_validation_error(exc)) from exc
+    except ValueError as exc:
+        raise BackupError(str(exc)) from exc
     state_dir = args.state_dir or resolve_state_directory(restored_config.state)
     device_key_path = state_dir / restored_config.state.device_key_file
     restore_encrypted_backup(

@@ -186,7 +186,7 @@ def test_load_config_applies_ota_service_overrides(monkeypatch, tmp_path: Path):
     assert config.ota.state_directory == tmp_path / "ota"
 
 
-def test_load_config_maps_legacy_camera_pipeline_to_video_type(tmp_path: Path):
+def test_load_config_rejects_legacy_camera_pipeline_with_migration_command(tmp_path: Path):
     config_path = tmp_path / "config.yaml"
     config_path.write_text(
         "server:\n"
@@ -202,10 +202,8 @@ def test_load_config_maps_legacy_camera_pipeline_to_video_type(tmp_path: Path):
     )
     config_path.chmod(0o600)
 
-    config = _load_config_from(str(config_path))
-
-    assert config.video.type == "ffmpeg_libcamera"
-    assert config._legacy_migration_used is True
+    with pytest.raises(ConfigLoadError, match="config migrate --output"):
+        _load_config_from(str(config_path), persist_device_key=False)
 
 
 def test_production_mode_rejects_service_owned_configuration(
