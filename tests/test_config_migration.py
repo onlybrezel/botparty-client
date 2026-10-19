@@ -124,6 +124,8 @@ def test_tts_device_variants(tts, expected) -> None:
         {"camera": {"pipeline": ""}},
         {"camera": {"pipeline": 1}},
         {"tts": {"delay_tts": True, "delay": "secret-invalid-delay"}},
+        {"tts": {"delay_tts": True, "delay": float("inf")}},
+        {"tts": {"delay_tts": True, "delay": float("nan")}},
         {"tts": {"tts_volume": 101}},
     ],
 )
@@ -202,6 +204,23 @@ def test_disabled_controls_keep_safe_defaults() -> None:
     result = migrate_config(raw)
     assert "controls" not in result
     assert "hardware" not in result
+
+
+def test_nested_video_aliases_and_normalized_names_require_migration() -> None:
+    raw = {
+        "server": {"claim_token": "test"},
+        "hardware": {"type": " Hardware-Custom "},
+        "cameras": [{"id": "front", "video": {"type": "GO-H264-PUBLISHER"}}],
+    }
+    assert legacy_fields(raw) == ["hardware.type", "cameras.0.video.type"]
+    result = migrate_config(raw)
+    assert result["hardware"]["type"] == "custom"
+    assert result["cameras"][0]["video"]["type"] == "botparty_streamer"
+
+
+def test_untyped_video_override_is_valid_without_legacy_fields() -> None:
+    raw = {"server": {"claim_token": "test"}, "cameras": [{"id": "front", "video": {}}]}
+    assert migrate_config(raw) == raw
 
 
 def test_legacy_backup_is_rejected_before_replacing_files(tmp_path: Path) -> None:

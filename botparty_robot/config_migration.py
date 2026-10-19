@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import copy
+import math
 import os
+from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -33,6 +35,27 @@ PROFILE_ALIASES = {
 }
 
 
+def _profile_blocks(raw: dict[str, Any]) -> Iterator[tuple[str, dict[str, Any], dict[str, str]]]:
+    for section, aliases in PROFILE_ALIASES.items():
+        block = raw.get(section)
+        if isinstance(block, dict):
+            yield section, block, aliases
+    cameras = raw.get("cameras")
+    if isinstance(cameras, list):
+        for index, camera in enumerate(cameras):
+            if isinstance(camera, dict) and isinstance(camera.get("video"), dict):
+                yield f"cameras.{index}.video", camera["video"], PROFILE_ALIASES["video"]
+
+
+def _normalized_profile(block: dict[str, Any]) -> str:
+    profile = block.get("type")
+    return (
+        profile.strip().lower().replace("-", "_").replace("/", "_")
+        if isinstance(profile, str)
+        else ""
+    )
+
+
 def legacy_fields(raw: dict[str, Any]) -> list[str]:
     fields = ["controls"] if "controls" in raw else []
     camera, tts, safety = (raw.get(name) for name in ("camera", "tts", "safety"))
@@ -44,13 +67,8 @@ def legacy_fields(raw: dict[str, Any]) -> list[str]:
             fields.append("tts.enabled (implicit)")
     if isinstance(safety, dict) and "emergency_stop_pin" in safety:
         fields.append("safety.emergency_stop_pin")
-    for section, aliases in PROFILE_ALIASES.items():
-        block = raw.get(section)
-        if (
-            isinstance(block, dict)
-            and isinstance(block.get("type"), str)
-            and block["type"] in aliases
-        ):
+    for section, block, aliases in _profile_blocks(raw):
+        if _normalized_profile(block) in aliases:
             fields.append(f"{section}.type")
     return fields
 
@@ -114,7 +132,11 @@ def migrate_config(raw: dict[str, Any]) -> dict[str, Any]:
             tts["playback_device"] = speaker
         if "delay_ms" not in tts and legacy.get("delay_tts"):
             delay = legacy.get("delay", 0)
-            if not isinstance(delay, (int, float)) or isinstance(delay, bool):
+            if (
+                not isinstance(delay, (int, float))
+                or isinstance(delay, bool)
+                or not math.isfinite(delay)
+            ):
                 raise ValueError("tts.delay must be numeric seconds")
             tts["delay_ms"] = int(delay * 1000)
         for old, new in (
@@ -128,12 +150,10 @@ def migrate_config(raw: dict[str, Any]) -> dict[str, Any]:
     safety = raw.get("safety")
     if isinstance(safety, dict):
         safety.pop("emergency_stop_pin", None)
-    for section, aliases in PROFILE_ALIASES.items():
-        block = raw.get(section)
-        if isinstance(block, dict):
-            profile = block.get("type")
-            if isinstance(profile, str) and profile in aliases:
-                block["type"] = aliases[profile]
+    for _section, block, aliases in _profile_blocks(raw):
+        profile = _normalized_profile(block)
+        if profile in aliases:
+            block["type"] = aliases[profile]
     reject_legacy_config(raw)
     RobotConfig.model_validate(raw)
     return raw
