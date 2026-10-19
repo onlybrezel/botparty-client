@@ -212,8 +212,6 @@ class HardwareConfig(ConfigModel):
     @classmethod
     def _known_profile(cls, value: str) -> str:
         normalized = value.strip().lower().replace("-", "_").replace("/", "_")
-        aliases = {"hardware_custom": "custom", "hardware_custom_example": "custom"}
-        normalized = aliases.get(normalized, normalized)
         if normalized not in HARDWARE_PROFILES:
             raise ValueError(
                 f"unknown hardware profile {value!r}; choose one of: "
@@ -239,12 +237,6 @@ class VideoConfig(ConfigModel):
     @classmethod
     def _known_profile(cls, value: str) -> str:
         normalized = value.strip().lower().replace("-", "_").replace("/", "_")
-        aliases = {
-            "ffmpeg_tcp_livekit": "botparty_streamer",
-            "go_h264_publisher": "botparty_streamer",
-            "lk_h264_publisher": "botparty_streamer",
-        }
-        normalized = aliases.get(normalized, normalized)
         if normalized not in VIDEO_PROFILES:
             raise ValueError(
                 f"unknown video profile {value!r}; choose one of: "

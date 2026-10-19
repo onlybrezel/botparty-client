@@ -63,7 +63,28 @@ unchanged.
 
 ## Migrations
 
-The loader maps the legacy `camera.pipeline` value to a video profile and accepts known profile
-aliases with a warning through 2026-09-01. The nonfunctional `emergency_stop_pin` and
-`preview_only` options are removed. Add a physical stop in the motor power circuit; it is
-independent of software and network state.
+The automatic compatibility period ended on **2026-09-01**. Startup, validation and backup restore
+now reject legacy fields with migration instructions, before connecting to hardware or writing
+device state. Convert an old file explicitly before upgrading a running installation:
+
+```bash
+botparty-robot --config old-config.yaml config migrate --output migrated-config.yaml
+botparty-robot --config migrated-config.yaml config validate
+```
+
+Migration runs offline and creates a new mode-0600 file. It preserves credentials, does not apply
+environment overrides, never overwrites the source or an existing output, and prints no secrets.
+Review the generated YAML before installing it with the ownership and permissions required by
+your service. Keep the original for rollback. Legacy encrypted backups must first be restored
+using the previous client, then migrated before upgrading.
+
+The converter handles `controls`, `camera.pipeline`, retired hardware/video profile aliases and
+the old TTS speaker, delay, volume, URL-filter and anonymous-sender fields. It makes the former
+implicit TTS enabled state explicit. Existing modern values take precedence. Motor pins retain
+the previous effective forward/backward/left/right mapping; unknown control settings or invalid
+values fail validation instead of being silently discarded or replaced.
+
+The nonfunctional `safety.emergency_stop_pin` is removed during conversion; it never provided a
+physical emergency stop. The unsupported `preview_only` option remains rejected. Add a physical
+stop in the motor power circuit, independent of software and network state, and verify the pin
+mapping with motor power disconnected before commissioning.
