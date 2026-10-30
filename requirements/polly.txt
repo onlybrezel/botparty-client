@@ -191,13 +191,13 @@ attrs==26.1.0 \
     --hash=sha256:c647aa4a12dfbad9333ca4e71fe62ddc36f4e63b2d260a37a8b83d2f043ac309 \
     --hash=sha256:d03ceb89cb322a8fd706d4fb91940737b6642aa36998fe130a9bc96c985eff32
     # via aiohttp
-boto3==1.43.112 \
-    --hash=sha256:599548a8c8e93cf0223bcb35b615c82f29d30295e992b94863cfbb2405ee33e5 \
-    --hash=sha256:add1216791e16c4f737676a0f5d6d2fa6240eef61619c6c44df9eeeaf88f24ff
+boto3==1.43.119 \
+    --hash=sha256:d1718edae48c3241d289c0ece8a515399a7242c406e35328b9685c4d24039186 \
+    --hash=sha256:e12c3b1d81713e14bd6947b7412d9d0ea49b320642d795ded1d64d6483ca6f49
     # via botparty-robot (pyproject.toml)
-botocore==1.43.112 \
-    --hash=sha256:1e67a3dcf4a308c695d880b65463a492a971d5b28761b49add92f71e4322130f \
-    --hash=sha256:9ce0d70e09fabbb3a2e1126d3ec79ed67d14c88bb3f064e62ab2881d5eaf3c7b
+botocore==1.43.119 \
+    --hash=sha256:6026aec97914a4fa116915fd3b05af899912eff51b93fb8dff95aa228a3e761b \
+    --hash=sha256:ed11934be6e6d398ac21b7fe03778c9584368eeff8ba5371581f19bb47db0b6a
     # via
     #   boto3
     #   s3transfer
@@ -508,13 +508,13 @@ jmespath==1.1.0 \
     # via
     #   boto3
     #   botocore
-livekit==1.1.20 \
-    --hash=sha256:253e4d15a78bbb408e926d0b317c7a47c2ca3f6bb9f9d2c7d10528a49f9b4fd9 \
-    --hash=sha256:64ea60b3293e3ce92c60592ff32c518bb7c278548b97de8026c1d0617510af4d \
-    --hash=sha256:83c0ea54d7ff505e92c3e88943e050e54825b0bf0f7e90652fb126eb447b3d76 \
-    --hash=sha256:93f0ed9e8ee9ef356da6cbf71f98edcc891678da6872946a87e34e1458528c9c \
-    --hash=sha256:a29120a0278a20ede380ac719cd084e39241546cfd3b415aa503c7b8a21afb4e \
-    --hash=sha256:c29a5f966806db961a0607ca8e2e4957e6900bbd44710f5f618b284043be584c
+livekit==1.2.0 \
+    --hash=sha256:08774b3ffe04491515e7ae3bf920051a0a1d40bf7e2f74a499cf9ef444c42e1f \
+    --hash=sha256:1dee2aa01f01951c0798b713d40331dd958e5166196d2d8d1b85e6ce900b0a23 \
+    --hash=sha256:34a44cd884badb596c01d3ba99ba2d67de3d84d253bc62a1c07b4739f6b68c32 \
+    --hash=sha256:9eae2fbf857e0af2516eb03f5285eb5edf0ea0b1aa238268291ccb1a7e11d4d4 \
+    --hash=sha256:a7ac564de20c54d532ff59ebb92d0018d088c96dc36a81d0e02be8b9efa7584c \
+    --hash=sha256:d6279a25ca7b25667908dc43fbc69374f84fa63b7fc857639483a7a3a3850070
     # via botparty-robot (pyproject.toml)
 multidict==7.1.0 \
     --hash=sha256:0179698c3c913eb64f32397083747fad20ed0f0a2b7469a08cd1a8a95d14d90e \
@@ -1119,9 +1119,9 @@ pydantic-core==2.50.1 \
     --hash=sha256:f77ac30b19221cd9bd3fcfa3d4614eff93140d0572ab730cded17b64adca05f3 \
     --hash=sha256:fe90228920fd8ff2be62622b6bb8a2b11acd65046d50c6b130614b5879605a20
     # via pydantic
-python-dateutil==2.9.0.post0 \
-    --hash=sha256:37dd54208da7e1cd875388217d5e00ebd4179249f90fb72437e91a35459a0ad3 \
-    --hash=sha256:a8b2bc7bffae282281c8140a97d3aa9c14da0b136dfe83f850eea9a5f7470427
+python-dateutil==3.0.0 \
+    --hash=sha256:3c79630202e4152c6add678446984236efe4f57e84d8e892aab0637bab82e9fd \
+    --hash=sha256:7ebcb3c29a92f3ceafe79a7a48a5c45677e9e004bbeec5742ac0bbb00560b7a2
     # via botocore
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
@@ -1198,9 +1198,9 @@ pyyaml==6.0.3 \
     --hash=sha256:fa160448684b4e94d80416c0fa4aac48967a969efe22931448d853ada8baf926 \
     --hash=sha256:fc09d0aa354569bc501d4e787133afc08552722d3ab34836a80547331bb5d4a0
     # via botparty-robot (pyproject.toml)
-s3transfer==0.19.2 \
-    --hash=sha256:ba0309fd86be3c27dbf78cdd813c13c5e1df16e5874b99d2535ebbdfb9892993 \
-    --hash=sha256:d8168eccca828cbb2cd573675333f3bddd254313a9c42494b84c76b539e8ba25
+s3transfer==0.19.3 \
+    --hash=sha256:24eb7535804306355e31c952a90022bf5b2f9d760f9a11062c7493a217c08553 \
+    --hash=sha256:8326acc3d056d7f7b8a37110c7d2aea41f67e83f6ae79cd3b5fbcca34c726406
     # via boto3
 six==1.17.0 \
     --hash=sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274 \
